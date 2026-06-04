@@ -25,23 +25,38 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json()); // Parse JSON bodies
 
-// Set up MySQL connection with your database details
-const db = mysql.createConnection({
+// Set up MySQL pool with your database details. A pool recovers cleanly if
+// MySQL is still finishing startup when the API container starts.
+const dbConfig = {
     host: process.env.DB_HOST || 'localhost',
     port: Number(process.env.DB_PORT || 3306),
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'mydatabase'
-});
+    database: process.env.DB_NAME || 'mydatabase',
+    waitForConnections: true,
+    connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 10),
+    queueLimit: 0
+};
 
-// Log connection success or errors
-db.connect((err) => {
-    if (err) {
-        console.error('Error connecting to the database:', err);
-        return;
-    }
-    console.log('Connected to the MySQL database');
-});
+const db = mysql.createPool(dbConfig);
+
+function verifyDatabaseConnection(attempt = 1) {
+    db.getConnection((err, connection) => {
+        if (err) {
+            console.error(
+                `Error connecting to the database on attempt ${attempt}. Retrying in 5 seconds:`,
+                err.message
+            );
+            setTimeout(() => verifyDatabaseConnection(attempt + 1), 5000);
+            return;
+        }
+
+        connection.release();
+        console.log('Connected to the MySQL database');
+    });
+}
+
+verifyDatabaseConnection();
 
 
 app.use((req, res, next) => {
