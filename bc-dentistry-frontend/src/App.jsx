@@ -10,7 +10,7 @@ function App() {
   const location = useLocation();
   const { userRole } = useRole();
   const user = JSON.parse(localStorage.getItem("user")); // Retrieve user details
-  const role = user.role.toLowerCase(); // Convert role to lowercase for comparison
+  const role = user?.role?.toLowerCase() || ""; // Convert role to lowercase for comparison
   return (
     <div className="flex w-full p-5 h-[100vh]" style={{gridTemplateColumns: '1fr 5fr'}} >
       
@@ -27,7 +27,7 @@ function App() {
           <Route path="/Appointments" element={<Appointments/>} />
           <Route path="/Patients" element={<Patients/>} />
           <Route path="/Patients/:id" element={<Patient/>} />
-          {role == 'admin' && 
+          {role === 'admin' && 
           <Route path="/DataRequests" element={<DataRequests/>} />
            } 
           <Route path="/LabResults" element={<LabResults/>} />
