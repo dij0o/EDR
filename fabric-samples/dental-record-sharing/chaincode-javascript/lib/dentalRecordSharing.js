@@ -11,6 +11,23 @@ const stringify  = require('json-stringify-deterministic');
 const sortKeysRecursive  = require('sort-keys-recursive');
 const { Contract } = require('fabric-contract-api');
 
+const parseArrayArgument = (value) => {
+    if (Array.isArray(value)) {
+        return value;
+    }
+
+    if (!value) {
+        return [];
+    }
+
+    try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [parsed];
+    } catch (error) {
+        return [value];
+    }
+};
+
 class DentalRecordSharing extends Contract {
 
     async InitLedger(ctx) {
@@ -475,12 +492,12 @@ class DentalRecordSharing extends Contract {
                 emiratesID: emiratesID,
                 speciality: speciality,
                 worksAt: worksAt,
-                clinicID: clinicID,
+                clinicID: parseInt(clinicID),
                 email: email,
                 contactNumber: contactNumber,
                 role: 'doctor',
                 createdDate: createdDate,
-                patients: patients
+                patients: parseArrayArgument(patients)
             };
     
             doctor.docType = 'doctor';
@@ -522,7 +539,7 @@ class DentalRecordSharing extends Contract {
                 role: 'patient',
                 createdDate: createdDate,
                 clinicIDs: Array.isArray(clinicID) ? clinicID : [parseInt(clinicID)],
-                doctors: doctors,  // Pre-assigned doctors
+                doctors: parseArrayArgument(doctors),  // Pre-assigned doctors
                 dentalChart: [],    // Initialize an empty dental chart for new patients
                 medicalRecords:[], 
                 sharedWith: [],
@@ -901,7 +918,8 @@ class DentalRecordSharing extends Contract {
         const doctor = JSON.parse(doctorJSON.toString());
     
         // ✅ Ensure at least one shared clinic between the doctor and patient
-        const sharedClinics = patient.clinicIDs.filter(clinic => clinic === doctor.clinicID);
+        const doctorClinicID = parseInt(doctor.clinicID);
+        const sharedClinics = patient.clinicIDs.map(Number).filter(clinic => clinic === doctorClinicID);
         if (sharedClinics.length === 0) {
             throw new Error(`Doctor ${doctorID} and Patient ${patientID} do not belong to the same clinic`);
         }
@@ -1163,7 +1181,7 @@ class DentalRecordSharing extends Contract {
             }
     
             // ✅ Filter only requests where the patientID matches and status is "APPROVED" or "REJECTED"
-            if (record.patientID === patientID && record.status === 'PENDING_PATIENT_CONSENT') {
+            if (record.patientID === patientID && ['CONSENT_GRANTED', 'REJECTED'].includes(record.status)) {
                 allRequests.push(record);
             }
             result = await iterator.next();

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import AppointmentTableRow from "./AppointmentTableRow";
-import { databaseUrl } from "../../../config/api";
+import { databaseUrl } from '../../config/api.js';
 
 const AppointmentsTable = () => {
     

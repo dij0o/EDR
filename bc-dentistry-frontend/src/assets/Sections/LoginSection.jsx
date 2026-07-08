@@ -5,13 +5,15 @@ import Input from '../components/Input';
 import LoginOption from '../components/LoginOption';
 import LoginSignUpBtn from '../components/LoginSignUpBtn';
 import axios from 'axios';
-import { databaseUrl } from '../../config/api';
+import { databaseUrl } from '../config/api.js';
+import { useRole } from '../Context/RoleContext.jsx';
 
 const LoginSection = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const navigate = useNavigate();
+    const { setUserRole } = useRole();
 
     const [ isSignup, setIsSignup ] = useState(false);
     const path = useLocation().pathname;
@@ -43,6 +45,7 @@ const LoginSection = () => {
             // Store the token and user details in localStorage
             localStorage.setItem('token', token);
             localStorage.setItem('user', JSON.stringify(user));
+            setUserRole(user.role?.toLowerCase() || null);
     
             // Redirect to the dashboard
             navigate('/dashboard');

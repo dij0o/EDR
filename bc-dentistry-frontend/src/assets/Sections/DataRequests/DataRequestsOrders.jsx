@@ -31,18 +31,23 @@
 import React, { useEffect, useState } from 'react';
 import UpcomingDataRequest from './UpcomingDataRequest';
 import { DataRequestsData } from '../../../../dataRequests'; // Import the global data store
-import { blockchainUrl } from '../../../config/api';
+import { blockchainUrl } from '../../config/api.js';
+import { getStoredUser } from '../../utils/auth.js';
 
 const DataRequestsOrders = () => {
     const [onHoldRequests, setOnHoldRequests] = useState([]);
-    const user = JSON.parse(localStorage.getItem("user")); // Retrieve user details
-    const adminClinicID = user.organizationId; // Admin's clinic ID
-    const adminID = user.id;
+    const user = getStoredUser(); // Retrieve user details
+    const adminClinicID = user?.organizationId; // Admin's clinic ID
+    const adminID = user?.id;
 
     // console.log("Admin ID:", adminID); 
 
     useEffect(() => {
         const fetchRequests = async () => {
+            if (!adminClinicID) {
+                return;
+            }
+
             try {
                 const response = await fetch(blockchainUrl(`/getRequestsForAdmin/${adminClinicID}`));
                 const data = await response.json();
@@ -70,7 +75,7 @@ const DataRequestsOrders = () => {
         };
 
         fetchRequests();
-    }, []);
+    }, [adminClinicID]);
 
     // Function to approve a request
     const handleApproveRequest = async (requestID, doctorID, patientID) => {

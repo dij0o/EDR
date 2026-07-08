@@ -45,12 +45,13 @@ import DentalRecord from "../components/Patient/DentalRecord";
 import { useRole } from '../Context/RoleContext.jsx';
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { blockchainUrl } from "../../config/api";
+import { blockchainUrl } from "../config/api.js";
+import { getStoredUser } from "../utils/auth.js";
 
 const Patient = () => {
     const path = useLocation().pathname;
     const { userRole } = useRole();
-    const user = JSON.parse(localStorage.getItem("user")); // Retrieve user details
+    const user = getStoredUser(); // Retrieve user details
 
     // const patientDetails = Data.filter((patient) => {
     //     return patient.id == path.split('/').pop();
@@ -87,8 +88,12 @@ const Patient = () => {
         return <div>Patient not found</div>;
     }
 
+    if (!user) {
+        return <div>Please log in to view patient details.</div>;
+    }
+
     // Check if the patient has shared data with Doctor1
-    const isSharedWithDoctor1 = patientDetails.sharedWith.includes(user.blockchainID);
+    const isSharedWithDoctor1 = Array.isArray(patientDetails.sharedWith) && patientDetails.sharedWith.includes(user.blockchainID);
     console.log('Result of checking deoctor shared with details:', isSharedWithDoctor1);
     
     return (

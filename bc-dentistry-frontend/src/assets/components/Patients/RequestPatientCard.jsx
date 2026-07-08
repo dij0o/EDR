@@ -78,15 +78,16 @@
 import { useEffect, useRef, useState } from "react";
 import PatientRequestInput from "./PatientRequestInput";
 import RequestPatientCardSubmit from "./RequestPatientCardSubmit";
-import { blockchainUrl } from "../../../config/api";
+import { blockchainUrl } from "../../config/api.js";
+import { getStoredUser } from "../../utils/auth.js";
 
 const RequestPatientCard = () => {
     const requestDataForm = useRef();
     const [patientName, setPatientName] = useState('');
     const [patientID, setPatientID] = useState('');
     const [clinicID, setClinicID] = useState('');
-    const user = JSON.parse(localStorage.getItem("user")); 
-    const doctorID = user.blockchainID; 
+    const user = getStoredUser();
+    const doctorID = user?.blockchainID;
 
     const expandRequestForm = () => {
         requestDataForm.current.classList.replace("h-0", "h-80");
@@ -113,8 +114,8 @@ const RequestPatientCard = () => {
     const handleSubmit = async () => {
         console.log("Submitting Request with:", { doctorID, patientID, clinicID });
 
-        if (!patientID || !clinicID) {
-            alert("Please enter both Patient ID and Clinic ID.");
+        if (!doctorID || !patientID || !clinicID) {
+            alert("Please enter Doctor, Patient, and Clinic details before submitting.");
             return;
         }
 

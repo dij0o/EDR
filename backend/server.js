@@ -3,60 +3,56 @@ const mysql = require('mysql2');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+
 require('dotenv').config();
 
 const app = express();
-const PORT = Number(process.env.PORT || 3001);
-const SECRET_KEY = process.env.JWT_SECRET || 'dev-only-change-me';
-const BLOCKCHAIN_API_URL = (process.env.BLOCKCHAIN_API_URL || 'http://localhost:3000').replace(/\/$/, '');
-const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+const SECRET_KEY = process.env.JWT_SECRET;
+const BLOCKCHAIN_API_URL = process.env.BLOCKCHAIN_API_URL?.replace(/\/+$/, '');
 
-// // Set CORS options to allow requests from your frontend
-// const corsOptions = {
-//     origin: 'http://localhost:5174',  // Only allow requests from this origin
-//     optionsSuccessStatus: 200 // Legacy browsers support
-// };
+const parseCorsOrigin = (value) => {
+    if (!value || value === '*') {
+        return '*';
+    }
+
+    return value.split(',').map((origin) => origin.trim()).filter(Boolean);
+};
+
 const corsOptions = {
-    origin: CORS_ORIGIN,
+    origin: parseCorsOrigin(process.env.CORS_ORIGIN),
     optionsSuccessStatus: 200
 };
 
-
-app.use(cors(corsOptions));
-app.use(express.json()); // Parse JSON bodies
-
-// Set up MySQL pool with your database details. A pool recovers cleanly if
-// MySQL is still finishing startup when the API container starts.
-const dbConfig = {
-    host: process.env.DB_HOST || 'localhost',
-    port: Number(process.env.DB_PORT || 3306),
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'mydatabase',
-    waitForConnections: true,
-    connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 10),
-    queueLimit: 0
-};
-
-const db = mysql.createPool(dbConfig);
-
-function verifyDatabaseConnection(attempt = 1) {
-    db.getConnection((err, connection) => {
-        if (err) {
-            console.error(
-                `Error connecting to the database on attempt ${attempt}. Retrying in 5 seconds:`,
-                err.message
-            );
-            setTimeout(() => verifyDatabaseConnection(attempt + 1), 5000);
-            return;
-        }
-
-        connection.release();
-        console.log('Connected to the MySQL database');
-    });
+if (!SECRET_KEY) {
+    console.warn('JWT_SECRET is not configured. Login and protected endpoints will return a configuration error.');
 }
 
-verifyDatabaseConnection();
+if (!BLOCKCHAIN_API_URL) {
+    console.warn('BLOCKCHAIN_API_URL is not configured. /syncOnChainPatients will return a configuration error.');
+}
+
+app.use(cors(corsOptions));
+app.use(express.json());
+
+// Connection pool — handles reconnects automatically, reads config from .env
+const db = mysql.createPool({
+    host:     process.env.DB_HOST     || 'localhost',
+    port:     process.env.DB_PORT     || 3306,
+    user:     process.env.DB_USER     || 'root',
+    password: process.env.DB_PASSWORD || 'CHANGE_ME',
+    database: process.env.DB_NAME     || 'mydatabase',
+    waitForConnections: true,
+    connectionLimit: 10,
+});
+
+db.getConnection((err, connection) => {
+    if (err) {
+        console.error('Error connecting to the database:', err);
+        return;
+    }
+    console.log('Connected to the MySQL database');
+    connection.release();
+});
 
 
 app.use((req, res, next) => {
@@ -127,6 +123,10 @@ app.post('/login', async (req, res) => {
             role: user.Role_Name,
             ...(user.Role_Name === "Doctor" && { blockchainID: user.BlockchainID })
         };
+
+        if (!SECRET_KEY) {
+            return res.status(500).json({ error: 'JWT secret is not configured' });
+        }
 
         const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: '2h' });
 
@@ -296,6 +296,10 @@ const authenticateToken = (req, res, next) => {
 
     if (!token) return res.status(401).json({ error: 'Access denied' });
 
+    if (!SECRET_KEY) {
+        return res.status(500).json({ error: 'JWT secret is not configured' });
+    }
+
     jwt.verify(token, SECRET_KEY, (err, user) => {
         if (err) return res.status(403).json({ error: 'Invalid token' });
         req.user = user;
@@ -312,6 +316,10 @@ app.get('/protected', authenticateToken, (req, res) => {
 // Sync On-Chain Patients to Off-Chain MySQL
 // Route to sync on-chain patients into MySQL Patient and User tables
 app.post('/syncOnChainPatients', async (req, res) => {
+    if (!BLOCKCHAIN_API_URL) {
+        return res.status(500).json({ error: 'Blockchain API URL is not configured' });
+    }
+
     try {
         const response = await fetch(`${BLOCKCHAIN_API_URL}/getAllPatients`);
         const onChainPatients = await response.json();
@@ -384,50 +392,79 @@ app.post('/register', async (req, res) => {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    try {
-        // Check if the user already exists
-        const checkUserSQL = "SELECT * FROM User WHERE Email = ?";
-        db.query(checkUserSQL, [username], async (err, results) => {
-            if (err) {
-                console.error(err);
-                return res.status(500).json({ error: 'Database error during user check' });
-            }
-            if (results.length > 0) {
+    db.getConnection(async (connectionErr, connection) => {
+        if (connectionErr) {
+            console.error(connectionErr);
+            return res.status(500).json({ error: 'Database connection error during registration' });
+        }
+
+        const query = (sql, params = []) => new Promise((resolve, reject) => {
+            connection.query(sql, params, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
+        const beginTransaction = () => new Promise((resolve, reject) => {
+            connection.beginTransaction((err) => err ? reject(err) : resolve());
+        });
+        const commit = () => new Promise((resolve, reject) => {
+            connection.commit((err) => err ? reject(err) : resolve());
+        });
+        const rollback = () => new Promise((resolve) => connection.rollback(() => resolve()));
+
+        try {
+            await beginTransaction();
+
+            const existingUsers = await query("SELECT ID FROM User WHERE Email = ? LIMIT 1", [username]);
+            if (existingUsers.length > 0) {
+                await rollback();
                 return res.status(400).json({ error: 'User already exists' });
             }
 
-            // Hash the password
-            const hashedPassword = await bcrypt.hash(password, 10);
+            const existingAdmins = await query(
+                "SELECT User_ID FROM Admin WHERE Organization_ID = ? LIMIT 1",
+                [organizationId]
+            );
+            if (existingAdmins.length > 0) {
+                await rollback();
+                return res.status(400).json({ error: 'An admin is already registered for this organization' });
+            }
 
-            // Insert into User table (Only for Admin)
+            const hashedPassword = await bcrypt.hash(password, 10);
             const insertUserSQL = `
                 INSERT INTO User 
                 (First_Name, Last_Name, Email, Contact_Number, Password, Role_ID, Created_Date, IsActive) 
                 VALUES (?, ?, ?, ?, ?, ?, NOW(), 1)
             `;
-            db.query(insertUserSQL, [firstName, lastName, username, contactNumber, hashedPassword, roleId], (err, result) => {
-                if (err) {
-                    console.error(err);
-                    return res.status(500).json({ error: 'Database error during user registration' });
-                }
+            const userResult = await query(insertUserSQL, [
+                firstName,
+                lastName,
+                username,
+                contactNumber,
+                hashedPassword,
+                roleId
+            ]);
 
-                const userId = result.insertId; // Get newly inserted Admin's User ID
+            await query(
+                `INSERT INTO Admin (User_ID, Organization_ID) VALUES (?, ?)`,
+                [userResult.insertId, organizationId]
+            );
 
-                // Insert into Admin table
-                const insertAdminSQL = `INSERT INTO Admin (User_ID, Organization_ID) VALUES (?, ?)`;
-                db.query(insertAdminSQL, [userId, organizationId], (err) => {
-                    if (err) {
-                        console.error(err);
-                        return res.status(500).json({ error: 'Database error during admin registration' });
-                    }
-                    return res.json({ message: 'Admin registered successfully' });
-                });
-            });
-        });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Error processing registration' });
-    }
+            await commit();
+            return res.json({ message: 'Admin registered successfully' });
+        } catch (err) {
+            await rollback();
+            console.error(err);
+
+            if (err.code === 'ER_DUP_ENTRY') {
+                return res.status(400).json({ error: 'User or organization admin already exists' });
+            }
+
+            return res.status(500).json({ error: 'Error processing registration' });
+        } finally {
+            connection.release();
+        }
+    });
 });
 
 app.post('/registerDoctor', async (req, res) => {
@@ -617,6 +654,11 @@ app.get('/users', (req, res) => {
     });
 });
 
+// Start the server
+// app.listen(8080, () => {
+//     console.log("listening on port 8080");
+// });
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Database API listening on http://0.0.0.0:${PORT}`);
+    console.log(`listening on port ${PORT}`);
 });

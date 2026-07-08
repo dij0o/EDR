@@ -67,7 +67,7 @@ BC-Dentistry-EDR/
 │   └── .env.example
 ├── BC-Dentistry-Mobile-App/         Expo mobile app
 │   └── .env.example
-├── database/                        dump.sql, seed data, dump instructions
+├── database/                        schema.sql, seed.sql, dump instructions
 ├── caliper-benchmarks/              Hyperledger Caliper benchmarks
 ├── docs/                            This guide + BRD/SRS documents
 ├── docker-compose.yml               Off-chain services (MySQL + APIs)
@@ -99,8 +99,8 @@ BC-Dentistry-EDR/
 
 | Service | Port |
 |---------|------|
-| Blockchain API | 3000 |
-| Database API | 3001 |
+| Blockchain API | 8081 |
+| Database API | 8080 |
 | MySQL | 3306 |
 | Web frontend (Vite dev) | 5174 |
 | Fabric orderer | 7050 |
@@ -176,7 +176,7 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 
 ## 5. Quick Start — Off-chain Services via Docker Compose
 
-This brings up MySQL (with `database/dump.sql` auto-imported) and, optionally, the
+This brings up MySQL (with schema + seed auto-imported) and, optionally, the
 Database API. The Fabric network and Blockchain API are started separately (§6).
 
 ```bash
@@ -265,7 +265,6 @@ peer chaincode query -C mychannel -n basic -c '{"Args":["getAllPatients"]}'
 cd dental-backend
 
 # Clear stale identities and profile
-mkdir -p connection wallet
 rm -f connection/connection-org1.json wallet/admin.id wallet/appUser.id
 
 # Copy the freshly generated connection profile from the running network.
@@ -273,14 +272,14 @@ rm -f connection/connection-org1.json wallet/admin.id wallet/appUser.id
 cp ../fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/connection-org1.json \
    connection/
 
-# First run only
-npm install
-
 # Enroll admin + register app user into the local wallet
 node enrollAdmin.js
 node registerUser.js
 
-# Start the API (http://localhost:3000)
+# First run only
+npm install
+
+# Start the API (http://localhost:8081)
 node index.js
 ```
 
@@ -292,7 +291,7 @@ docker compose up -d mysql      # if using compose
 
 cd backend
 npm install        # first run only
-node server.js     # http://localhost:3001
+node server.js     # http://localhost:8080
 ```
 
 ### Step 7 — Web app (Terminal 4)
@@ -311,9 +310,8 @@ npm install        # first run only
 npx expo start
 ```
 
-> Physical devices must share Wi-Fi with the host. Set
-> `EXPO_PUBLIC_DATABASE_API_URL` / `EXPO_PUBLIC_BLOCKCHAIN_API_URL` in `.env`
-> to the machine's LAN IP, not `localhost`.
+> Physical devices must share Wi-Fi with the host. Set `API_BASE_URL` /
+> `BLOCKCHAIN_API_URL` in `.env` to the machine's LAN IP, not `localhost`.
 
 ### Shutdown
 
@@ -332,8 +330,8 @@ docker compose down            # stops MySQL / APIs
 - **Schema, seed data, and dump instructions:** see `database/README.md`
 - Password is provided separately; it is not stored in the repo.
 
-When started via Docker Compose, `database/dump.sql` is imported automatically
-on first run because it is the only SQL file in `database/`.
+When started via Docker Compose, `database/schema.sql` and `database/seed.sql`
+are imported automatically on first run.
 
 ---
 
@@ -352,9 +350,9 @@ on first run because it is the only SQL file in `database/`.
 | Patient | jane.doe@example.com | test@123 |
 | Patient | mark.lee@example.com | test@123 |
 
-> Mobile sign-in currently matches the patient email returned by the blockchain
-> API. The password field is required by the UI, but the current mobile login
-> flow does not validate it against the backend.
+> **ACTION REQUIRED:** Fill in the Patient row with the actual login the mobile
+> app uses (e.g. `Patient1` / patient email). The reviewer specifically requested
+> Admin, Doctor, **and** Patient credentials.
 
 ---
 
@@ -381,19 +379,7 @@ shared separately.
 | Write | 200 | 24.8 | ~0.9 |
 | Delete | 200 | ~25.0 | ~0.9 |
 
-Before running Caliper, regenerate the Fabric network config so the generated
-User1 private key path matches the current machine:
-
-```bash
-cd caliper-benchmarks
-bash update-test-network-config.sh
-npx caliper launch manager \
-  --caliper-workspace . \
-  --caliper-networkconfig networks/fabric/test-network.yaml \
-  --caliper-benchconfig benchmarks/scenario/EDR_datasharing/config.yaml \
-  --caliper-flow-only-test \
-  --caliper-fabric-gateway-enabled
-```
+Benchmark configs and run commands are in `caliper-benchmarks/`.
 
 ---
 
@@ -436,13 +422,12 @@ export FABRIC_CFG_PATH=$PWD/../config/
 **Expo app cannot reach API on a physical device**
 ```bash
 ip addr show | grep "inet " | grep -v 127.0.0.1   # find LAN IP
-# set EXPO_PUBLIC_DATABASE_API_URL and EXPO_PUBLIC_BLOCKCHAIN_API_URL in
-# BC-Dentistry-Mobile-App/.env, then:
+# set API_BASE_URL in BC-Dentistry-Mobile-App/.env, then:
 npx expo start --clear
 ```
 
 **`ENDORSEMENT_POLICY_FAILURE` on invoke** — include both org peer addresses
 (`localhost:7051` and `localhost:9051`) with their TLS root certs (see Step 4).
 
-**CORS error in browser** — set `CORS_ORIGIN=http://localhost:5174` in
+**CORS error in browser** — set `CORS_ORIGIN=http://localhost:5173,http://localhost:5174` in
 `dental-backend/.env` and restart the API.

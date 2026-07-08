@@ -43,15 +43,20 @@
 import React, { useEffect, useState } from "react";
 import DataRequest from "../Sections/DataRequests/DataRequest.jsx";
 import DataRequestsOrders from "../Sections/DataRequests/DataRequestsOrders.jsx";
-import { blockchainUrl } from "../../config/api";
+import { blockchainUrl } from "../config/api.js";
+import { getStoredUser } from "../utils/auth.js";
 
 const DataRequests = () => {
     const [allRequests, setAllRequests] = useState([]);
-    const user = JSON.parse(localStorage.getItem("user"));
-    const adminClinicID = user.organizationId;
+    const user = getStoredUser();
+    const adminClinicID = user?.organizationId;
 
     useEffect(() => {
         const fetchAllRequests = async () => {
+            if (!adminClinicID) {
+                return;
+            }
+
             try {
                 const response = await fetch(blockchainUrl(`/getRequestsForAdmin/${adminClinicID}`));
                 const data = await response.json();
@@ -84,7 +89,11 @@ const DataRequests = () => {
         };
 
         fetchAllRequests();
-    }, []);
+    }, [adminClinicID]);
+
+    if (!adminClinicID) {
+        return <div className="w-full border rounded-xl p-4 text-center">Please log in as an admin to view data requests.</div>;
+    }
 
     return (
         <div id="DataRequests" className="my-6 px-0">

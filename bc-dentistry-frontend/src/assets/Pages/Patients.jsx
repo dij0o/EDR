@@ -39,11 +39,13 @@ import PatientsFilters from "../Sections/Patients/PatientsFilters";
 import axios from "axios";
 import { useEffect, useState } from "react";
 import Lo from "../images/icons/calendar.svg";
-import { blockchainUrl } from "../../config/api";
+import { blockchainUrl } from "../config/api.js";
+import { getStoredUser } from "../utils/auth.js";
 
 const Patients = () => {
     const [patients, setPatients] = useState([]);
-    const user = JSON.parse(localStorage.getItem("user")); // Retrieve user details
+    const user = getStoredUser(); // Retrieve user details
+    const role = user?.role?.toLowerCase();
 
     useEffect(() => {
         console.log("✅ User Details:", user); // Debugging
@@ -56,7 +58,6 @@ const Patients = () => {
         const fetchPatients = async () => {
             try {
                 let response;
-                const role = user.role.toLowerCase(); // Convert role to lowercase for comparison
                 console.log("role:", role);
                 console.log("user.organizationId:", user.organizationId);
                 console.log("user.blockchainID:", user.blockchainID);
@@ -80,7 +81,11 @@ const Patients = () => {
         };
 
         fetchPatients();
-    }, []); // Run once after component mounts
+    }, [user?.id, user?.role, user?.organizationId, user?.blockchainID, role]); // Run when persisted user changes
+
+    if (!user) {
+        return <div className="w-full border rounded-xl p-4 text-center">Please log in to view patients.</div>;
+    }
 
     return (
         <div id="Patients" className="grid grid-cols-12 gap-x-8" style={{ gridTemplateColumns: "2fr 8fr" }}>
@@ -89,7 +94,7 @@ const Patients = () => {
                 <div className="flex items-center border bg-white px-4 py-4 rounded-xl w-full justify-between">
                     <h1 className="patients-header text-2xl font-bold">Patients</h1>
 
-                    {user.role.toLowerCase() === "admin" && (
+                    {role === "admin" && (
                         <div className="new-patient bg-gradient-to-r from-blue-800 to-blue-950 py-2 px-3 rounded-md text-white flex items-center gap-x-3 w-fit">
                             <div className="icon">
                                 <img className="w-5 h-5" src={Lo} alt="" />
@@ -107,4 +112,3 @@ const Patients = () => {
 };
 
 export default Patients;
-

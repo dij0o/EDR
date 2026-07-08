@@ -1,32 +1,113 @@
 
 import NewPatientDialog1 from "./NewPatientDialog1";
 import NewPatientDialog2 from "./NewPatientDialog2";
+import { useState } from "react";
+import { blockchainUrl } from "../../config/api.js";
 
 const NewPatientDialog = () => {
+    const storedUser = (() => {
+        try {
+            return JSON.parse(localStorage.getItem('user') || '{}');
+        } catch {
+            return {};
+        }
+    })();
+    const [formData, setFormData] = useState({
+        patientID: '',
+        fullName: '',
+        emiratesID: '',
+        dateOfBirth: '',
+        gender: '',
+        address: '',
+        email: '',
+        contactNumber: '',
+        clinicID: storedUser.organizationId ? String(storedUser.organizationId) : '',
+    });
+
+    const handleFieldChange = (event) => {
+        const { name, value } = event.target;
+        setFormData((current) => ({ ...current, [name]: value }));
+    };
+
+    const handleSubmitPatient = async () => {
+        const requiredFields = ['patientID', 'fullName', 'emiratesID', 'dateOfBirth', 'gender', 'address', 'email', 'contactNumber', 'clinicID'];
+        const missingField = requiredFields.find((field) => !formData[field]);
+
+        if (missingField) {
+            alert('Please complete all required patient fields before submitting.');
+            return;
+        }
+
+        const [firstName, ...lastNameParts] = formData.fullName.trim().split(/\s+/);
+        const lastName = lastNameParts.join(' ') || firstName;
+
+        try {
+            const response = await fetch(blockchainUrl('/addPatient'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    patientID: formData.patientID,
+                    firstName,
+                    lastName,
+                    dateOfBirth: formData.dateOfBirth,
+                    gender: formData.gender,
+                    emiratesID: formData.emiratesID,
+                    email: formData.email,
+                    contactNumber: formData.contactNumber,
+                    address: formData.address,
+                    clinicID: formData.clinicID,
+                    doctors: [],
+                }),
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                alert(data.error || 'Failed to add patient.');
+                return;
+            }
+
+            alert(`Patient ${data.patientID} added successfully.`);
+            window.location.reload();
+        } catch (error) {
+            console.error('Failed to add patient:', error);
+            alert('Failed to add patient. Please try again later.');
+        }
+    };
 
     const PersonalInfoObj = {
         header: 'Personal Info',
         inputs: [
             {
+                header: 'Patient ID',
+                type: 'text',
+                name: 'patientID',
+                classes: { w60: true },
+                placeholder: 'e.g. Patient4'
+            },
+            {
                 header: 'Full Name',
                 type: 'text',
+                name: 'fullName',
                 classes:  ['grow'] ,
                 placeholder: 'Full name'
             },
             {
                 header: 'Emirates Id',
                 type: 'text',
+                name: 'emiratesID',
                 classes: { w60: true },
                 placeholder: 'XXX-XXXXXXXXXXX-X'
             },
             {
                 header: 'Date of Birth',
                 type: 'date',
+                name: 'dateOfBirth',
                 classes: {}
             },
             {
                 header: 'Gender',
                 type: 'select',
+                name: 'gender',
                 classes: {},
                 options: ['Female', 'Male']
             },
@@ -45,20 +126,30 @@ const NewPatientDialog = () => {
             {
                 header: 'Address',
                 type: 'text',
+                name: 'address',
                 classes:  ['grow'] ,
                 placeholder: 'e.g. Barsha, Jumairah'
             },
             {
                 header: 'Email',
                 type: 'text',
+                name: 'email',
                 classes: {},
                 placeholder: 'example@gmail.com'
             },
             {
                 header: 'Phone Number',
                 type: 'text',
+                name: 'contactNumber',
                 classes: {},
                 placeholder: '05XXXXXXXX'
+            },
+            {
+                header: 'Clinic ID',
+                type: 'text',
+                name: 'clinicID',
+                classes: {},
+                placeholder: 'e.g. 1'
             }
         ]
     }
@@ -183,9 +274,9 @@ const NewPatientDialog = () => {
         <div id='AddNewPatientDialog' className='fixed bg-white drop-shadow-xl w-[68em] h-[36em] inset-1/2 -translate-x-1/2 translate-y-[30em] z-50 rounded-md opacity-0 grid grid-cols-12 gap-x-6 overflow-hidden' style={{gridTemplateColumns: '3fr 7fr'}}>
             <NewPatientDialog1 />
             <div className="h-[36em] overflow-y-scroll no-scrollbar">
-                <NewPatientDialog2 dialogStructure={PersonalInfoObj} buttonTextP={''} buttonTextN={'Next'} hashhN={'#sp2'} dialogSectionId={'addNewPatient'} />
+                <NewPatientDialog2 dialogStructure={PersonalInfoObj} values={formData} onFieldChange={handleFieldChange} buttonTextP={''} buttonTextN={'Next'} hashhN={'#sp2'} dialogSectionId={'addNewPatient'} />
                 <NewPatientDialog2 dialogStructure={MedicalInfoObj} buttonTextP={'Prev'}  buttonTextN={'Next'} hashhP={'#addNewPatient'} hashhN={'#sp3'} dialogSectionId={'sp2'} />
-                <NewPatientDialog2 dialogStructure={InusranceInfoObj} buttonTextP={'Prev'}  buttonTextN={'Submit'} hashhP={'#sp2'} hashhN={'#'} dialogSectionId={'sp3'} />
+                <NewPatientDialog2 dialogStructure={InusranceInfoObj} buttonTextP={'Prev'}  buttonTextN={'Submit'} hashhP={'#sp2'} hashhN={'#'} dialogSectionId={'sp3'} onSubmit={handleSubmitPatient} />
             </div>
 
         </div>

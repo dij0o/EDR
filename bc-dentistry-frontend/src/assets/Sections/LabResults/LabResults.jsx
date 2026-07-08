@@ -2,7 +2,7 @@ import React, { useEffect, useState, useContext } from 'react';
 import LabResult from '../../components/LabResults/LabResult'; // Update the path based on your file structure
 
 import { FiltersContext } from "../../Context/FiltersContext";
-import { databaseUrl } from "../../../config/api";
+import { databaseUrl } from '../../config/api.js';
 
 
 const LabResults = () => {
@@ -21,7 +21,7 @@ const LabResults = () => {
     useEffect(() => {
         const fetchLabResults = async () => {
             try {
-                const response = await fetch(databaseUrl('/Lab_Results'));
+                const response = await fetch(databaseUrl('/Lab_Results')); // Fetch from your API endpoint
                 if (!response.ok) {
                     throw new Error('Network response was not ok: ' + response.statusText);
                 }
