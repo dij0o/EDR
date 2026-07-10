@@ -22,3 +22,15 @@ const buildUrl = (baseUrl, path) => {
 
 export const databaseUrl = (path) => buildUrl(DATABASE_API_URL, path);
 export const blockchainUrl = (path) => buildUrl(BLOCKCHAIN_API_URL, path);
+
+export const getAuthToken = () => localStorage.getItem("token");
+
+export const authHeaders = (headers = {}) => {
+    const token = getAuthToken();
+    return token ? { ...headers, Authorization: `Bearer ${token}` } : { ...headers };
+};
+
+export const jsonHeaders = (headers = {}) => authHeaders({
+    "Content-Type": "application/json",
+    ...headers,
+});

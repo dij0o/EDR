@@ -31,7 +31,7 @@
 import React, { useEffect, useState } from 'react';
 import UpcomingDataRequest from './UpcomingDataRequest';
 import { DataRequestsData } from '../../../../dataRequests'; // Import the global data store
-import { blockchainUrl } from '../../config/api.js';
+import { authHeaders, blockchainUrl, jsonHeaders } from '../../config/api.js';
 import { getStoredUser } from '../../utils/auth.js';
 
 const DataRequestsOrders = () => {
@@ -49,7 +49,9 @@ const DataRequestsOrders = () => {
             }
 
             try {
-                const response = await fetch(blockchainUrl(`/getRequestsForAdmin/${adminClinicID}`));
+                const response = await fetch(blockchainUrl(`/getRequestsForAdmin/${adminClinicID}`), {
+                    headers: authHeaders(),
+                });
                 const data = await response.json();
                 console.log("Fetched Admin Requests:", data);
 
@@ -82,9 +84,7 @@ const DataRequestsOrders = () => {
         try {
             const response = await fetch(blockchainUrl('/approveRequest'), {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: jsonHeaders(),
                 body: JSON.stringify({
                     adminID: adminID, 
                     requestID: requestID,

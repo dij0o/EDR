@@ -43,7 +43,7 @@
 import React, { useEffect, useState } from "react";
 import DataRequest from "../Sections/DataRequests/DataRequest.jsx";
 import DataRequestsOrders from "../Sections/DataRequests/DataRequestsOrders.jsx";
-import { blockchainUrl } from "../config/api.js";
+import { authHeaders, blockchainUrl } from "../config/api.js";
 import { getStoredUser } from "../utils/auth.js";
 
 const DataRequests = () => {
@@ -58,7 +58,9 @@ const DataRequests = () => {
             }
 
             try {
-                const response = await fetch(blockchainUrl(`/getRequestsForAdmin/${adminClinicID}`));
+                const response = await fetch(blockchainUrl(`/getRequestsForAdmin/${adminClinicID}`), {
+                    headers: authHeaders(),
+                });
                 const data = await response.json();
                 console.log("Fetched All Requests:", data);
 

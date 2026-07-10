@@ -4,14 +4,15 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 import { RequestsHeader, DataRequest, NoRequests } from '../../components';
-import { blockchainUrl } from '../../config/api';
+import { authHeaders, blockchainUrl, getPatientBlockchainID } from '../../utils/api';
 
 import { useUser } from '../../Context/UserContext';
 
 
 const Requests = () => {
 
-    const { user } = useUser()
+    const { user, token } = useUser()
+    const patientID = getPatientBlockchainID(user);
 
 
     // useEffect(() => {
@@ -29,8 +30,16 @@ const Requests = () => {
 
     useEffect(() => {
         const fetchRequests = async () => {
+            if (!token || !patientID) {
+                console.warn("Missing authenticated patient identity. Cannot fetch requests.");
+                setLoading(false);
+                return;
+            }
+
             try {
-                const response = await axios.get(blockchainUrl('/getAllRequestsForPatient/Patient1'));
+                const response = await axios.get(blockchainUrl(`/getAllRequestsForPatient/${patientID}`), {
+                    headers: authHeaders(token),
+                });
                 // console.log("Fetched Requests:", response.data);
                 
                 if (response.data.length > 0) {
@@ -46,7 +55,7 @@ const Requests = () => {
         };
 
         fetchRequests();
-    }, []);
+    }, [token, patientID]);
 
     return (
         <View>
@@ -71,6 +80,8 @@ const Requests = () => {
                     /> */}
                     {loading ? (
                         <Text>Loading requests...</Text>
+                    ) : !token || !patientID ? (
+                        <NoRequests text={"Patient blockchain identity is not linked to this account yet."} />
                     ) : requests.length === 0 ? (
                         <NoRequests text={"All done, you don't have any pending requests!"} />
                     ) : (

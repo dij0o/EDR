@@ -1,6 +1,6 @@
 # Blockchain-Based Electronic Dental Record (EDR) Sharing & Management System
 
-> **University of Sharjah - OpenUAE Research & Development Group**
+> **University of Sharjah - OpenUAE Research & Development Group**  
 > Built on **Hyperledger Fabric 2.5** · **Node.js** · **React.js** · **Expo (React Native)** · **MySQL**
 
 ---
@@ -724,6 +724,8 @@ DB_NAME=mydatabase
 DB_USER=root
 DB_PASSWORD=CHANGE_ME
 JWT_SECRET=CHANGE_ME
+JWT_EXPIRES_IN=8h
+ADMIN_BOOTSTRAP_TOKEN=CHANGE_ME
 ```
 
 ### `bc-dentistry-frontend/.env`

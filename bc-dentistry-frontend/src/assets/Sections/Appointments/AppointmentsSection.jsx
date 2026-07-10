@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { MainContainer } from "../../components";
 import AppointmentTicket from "../../components/Appointments/AppointmentTicket";
-import { databaseUrl } from '../../config/api.js';
+import { authHeaders, databaseUrl } from '../../config/api.js';
 
 const AppointmentsSection = () => {
     // State to store fetched appointments data
@@ -11,7 +11,7 @@ const AppointmentsSection = () => {
     useEffect(() => {
         const fetchAppointments = async () => {
             try {
-                const response = await fetch(databaseUrl('/Appointment')); // Adjust the endpoint if needed
+                const response = await fetch(databaseUrl('/Appointment'), { headers: authHeaders() }); // Adjust the endpoint if needed
                 const data = await response.json();
                 setAppointmentsTickets(data); // Set the fetched data to the state
             } catch (error) {

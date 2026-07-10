@@ -3,12 +3,29 @@ const mysql = require('mysql2');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
 require('dotenv').config();
 
 const app = express();
 const SECRET_KEY = process.env.JWT_SECRET;
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '2h';
+const ADMIN_BOOTSTRAP_TOKEN = process.env.ADMIN_BOOTSTRAP_TOKEN;
 const BLOCKCHAIN_API_URL = process.env.BLOCKCHAIN_API_URL?.replace(/\/+$/, '');
+
+const ROLE_ALIASES = {
+    admin: 'admin',
+    administrator: 'admin',
+    doctor: 'doctor',
+    patient: 'patient',
+    system: 'system',
+    sysadmin: 'system'
+};
+
+const normalizeRole = (role) => {
+    const normalized = String(role || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+    return ROLE_ALIASES[normalized] || normalized;
+};
 
 const parseCorsOrigin = (value) => {
     if (!value || value === '*') {
@@ -29,6 +46,10 @@ if (!SECRET_KEY) {
 
 if (!BLOCKCHAIN_API_URL) {
     console.warn('BLOCKCHAIN_API_URL is not configured. /syncOnChainPatients will return a configuration error.');
+}
+
+if (!ADMIN_BOOTSTRAP_TOKEN) {
+    console.warn('ADMIN_BOOTSTRAP_TOKEN is not configured. /register requires an Admin/System JWT.');
 }
 
 app.use(cors(corsOptions));
@@ -85,11 +106,12 @@ app.post('/login', async (req, res) => {
             COALESCE(Admin.Organization_ID, NULL) AS Organization_ID,
             COALESCE(Doctor.Works_At, NULL) AS WorksAt,
             COALESCE(Doctor.Specialty, NULL) AS Specialty,
-            COALESCE(Doctor.Blockchain_ID, NULL) AS BlockchainID
+            COALESCE(Doctor.Blockchain_ID, Patient.Blockchain_ID, NULL) AS BlockchainID
         FROM User 
         INNER JOIN UserRole ON User.Role_ID = UserRole.Role_ID
         LEFT JOIN Admin ON User.ID = Admin.User_ID
         LEFT JOIN Doctor ON User.ID = Doctor.ID
+        LEFT JOIN Patient ON User.ID = Patient.ID
         WHERE User.Email = ?
     `;
 
@@ -121,14 +143,17 @@ app.post('/login', async (req, res) => {
         const tokenPayload = {
             id: user.ID,
             role: user.Role_Name,
-            ...(user.Role_Name === "Doctor" && { blockchainID: user.BlockchainID })
+            organizationId: user.Organization_ID || null,
+            worksAt: user.WorksAt || null,
+            specialty: user.Specialty || null,
+            blockchainID: user.BlockchainID || null
         };
 
         if (!SECRET_KEY) {
             return res.status(500).json({ error: 'JWT secret is not configured' });
         }
 
-        const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: '2h' });
+        const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: JWT_EXPIRES_IN });
 
         // User data to return
         const userData = {
@@ -290,9 +315,27 @@ app.post('/login', async (req, res) => {
 
 
 
-const authenticateToken = (req, res, next) => {
+const getBearerToken = (req) => {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    if (!authHeader) return null;
+
+    const [scheme, token] = authHeader.split(' ');
+    return /^Bearer$/i.test(scheme) ? token : null;
+};
+
+const safeTokenEquals = (receivedToken, expectedToken) => {
+    const received = Buffer.from(String(receivedToken || ''), 'utf8');
+    const expected = Buffer.from(String(expectedToken || ''), 'utf8');
+
+    if (received.length !== expected.length) {
+        return false;
+    }
+
+    return crypto.timingSafeEqual(received, expected);
+};
+
+const authenticateToken = (req, res, next) => {
+    const token = getBearerToken(req);
 
     if (!token) return res.status(401).json({ error: 'Access denied' });
 
@@ -307,6 +350,57 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
+const requireRoles = (...allowedRoles) => {
+    const allowed = allowedRoles.map(normalizeRole);
+
+    return (req, res, next) => {
+        const userRole = normalizeRole(req.user?.role);
+
+        if (!userRole || !allowed.includes(userRole)) {
+            return res.status(403).json({ error: 'Forbidden: insufficient role permissions' });
+        }
+
+        next();
+    };
+};
+
+const authorizeAdminRegistration = (req, res, next) => {
+    const bootstrapToken = req.headers['x-bootstrap-token'];
+
+    if (bootstrapToken) {
+        if (!ADMIN_BOOTSTRAP_TOKEN || !safeTokenEquals(bootstrapToken, ADMIN_BOOTSTRAP_TOKEN)) {
+            return res.status(403).json({ error: 'Invalid admin bootstrap token' });
+        }
+
+        req.user = { role: 'system', bootstrap: true };
+        return next();
+    }
+
+    const token = getBearerToken(req);
+
+    if (!token) {
+        return res.status(401).json({ error: 'Admin registration requires an Admin/System token or configured bootstrap token' });
+    }
+
+    if (!SECRET_KEY) {
+        return res.status(500).json({ error: 'JWT secret is not configured' });
+    }
+
+    try {
+        const user = jwt.verify(token, SECRET_KEY);
+        const userRole = normalizeRole(user?.role);
+
+        if (!['admin', 'system'].includes(userRole)) {
+            return res.status(403).json({ error: 'Forbidden: admin registration requires Admin/System permissions' });
+        }
+
+        req.user = user;
+        return next();
+    } catch (err) {
+        return res.status(403).json({ error: 'Invalid token' });
+    }
+};
+
 // Protected route example
 app.get('/protected', authenticateToken, (req, res) => {
     res.json({ message: 'Access granted', user: req.user });
@@ -315,22 +409,42 @@ app.get('/protected', authenticateToken, (req, res) => {
 
 // Sync On-Chain Patients to Off-Chain MySQL
 // Route to sync on-chain patients into MySQL Patient and User tables
-app.post('/syncOnChainPatients', async (req, res) => {
+app.post('/syncOnChainPatients', authenticateToken, requireRoles('admin', 'system'), async (req, res) => {
     if (!BLOCKCHAIN_API_URL) {
         return res.status(500).json({ error: 'Blockchain API URL is not configured' });
     }
 
     try {
-        const response = await fetch(`${BLOCKCHAIN_API_URL}/getAllPatients`);
+        const response = await fetch(`${BLOCKCHAIN_API_URL}/getAllPatients`, {
+            headers: { Authorization: req.headers.authorization }
+        });
         const onChainPatients = await response.json();
 
         const insertPatient = (patient) => {
             return new Promise((resolve, reject) => {
-                const selectSQL = 'SELECT * FROM Patient WHERE Emirates_ID = ?';
-                db.query(selectSQL, [patient.emiratesID], async (err, results) => {
+                const blockchainPatientID = patient.patientID || patient.PatientID || patient.id || null;
+                const selectSQL = 'SELECT * FROM Patient WHERE Emirates_ID = ? OR Blockchain_ID = ?';
+                db.query(selectSQL, [patient.emiratesID, blockchainPatientID], async (err, results) => {
                     if (err) return reject(err);
 
-                    if (results.length > 0) return resolve('Patient already exists');
+                    if (results.length > 0) {
+                        const existingPatient = results[0];
+
+                        if (blockchainPatientID && existingPatient.Blockchain_ID && existingPatient.Blockchain_ID !== blockchainPatientID) {
+                            return resolve(`Patient already exists with blockchain ID ${existingPatient.Blockchain_ID}`);
+                        }
+
+                        if (blockchainPatientID && !existingPatient.Blockchain_ID) {
+                            const updatePatientSQL = 'UPDATE Patient SET Blockchain_ID = ? WHERE ID = ?';
+                            db.query(updatePatientSQL, [blockchainPatientID, existingPatient.ID], (err) => {
+                                if (err) return reject(err);
+                                resolve(`Linked existing patient ${existingPatient.ID} to ${blockchainPatientID}`);
+                            });
+                            return;
+                        }
+
+                        return resolve('Patient already exists');
+                    }
 
                     const insertUserSQL = `INSERT INTO User (First_Name, Last_Name, Email, Contact_Number, Password, Role_ID, Created_Date, IsActive) VALUES (?, ?, ?, ?, ?, ?, NOW(), 1)`;
                     const hashedPassword = await bcrypt.hash('DefaultPassword123!', 10); // Default password
@@ -346,12 +460,13 @@ app.post('/syncOnChainPatients', async (req, res) => {
                         if (err) return reject(err);
                         const userId = userResult.insertId;
 
-                        const insertPatientSQL = `INSERT INTO Patient (ID, Date_of_Birth, Gender, Emirates_ID) VALUES (?, ?, ?, ?)`;
+                        const insertPatientSQL = `INSERT INTO Patient (ID, Date_of_Birth, Gender, Emirates_ID, Blockchain_ID) VALUES (?, ?, ?, ?, ?)`;
                         db.query(insertPatientSQL, [
                             userId,
                             patient.dateOfBirth,
                             patient.gender,
-                            patient.emiratesID
+                            patient.emiratesID,
+                            blockchainPatientID
                         ], (err) => {
                             if (err) return reject(err);
                             resolve(`Inserted patient ${patient.firstName} ${patient.lastName}`);
@@ -380,10 +495,8 @@ app.post('/syncOnChainPatients', async (req, res) => {
 
 
 // Authentication APIs
-// Register a new user
-app.post('/register', async (req, res) => {
-    console.log("Received Data:", req.body); // Debugging Line
-    
+// Register a new organization admin through an Admin/System JWT or deployment bootstrap token.
+app.post('/register', authorizeAdminRegistration, async (req, res) => {
     const { firstName, lastName, username, contactNumber, password, organizationId } = req.body;
     const roleId = 2; // Hardcoded for Admin role (Only Admins can register)
 
@@ -467,7 +580,7 @@ app.post('/register', async (req, res) => {
     });
 });
 
-app.post('/registerDoctor', async (req, res) => {
+app.post('/registerDoctor', authenticateToken, requireRoles('admin'), async (req, res) => {
     const { firstName, lastName, username, contactNumber, password, worksAt, speciality, doctorID } = req.body;
     const roleId = 3; // Role ID for Doctor
 
@@ -530,7 +643,7 @@ app.post('/registerDoctor', async (req, res) => {
 });
 
 // Route to fetch Patients
-app.get('/Patient', (req, res) => {
+app.get('/Patient', authenticateToken, requireRoles('admin', 'doctor'), (req, res) => {
     const sql = "SELECT * FROM Patient";
     db.query(sql, (err, data) => {
         if (err) {
@@ -542,7 +655,7 @@ app.get('/Patient', (req, res) => {
 });
 
 // Route to fetch Appointments
-app.get('/Appointment', (req, res) => {
+app.get('/Appointment', authenticateToken, requireRoles('admin', 'doctor', 'patient'), (req, res) => {
     const sql = "SELECT * FROM Appointment";
     db.query(sql, (err, data) => {
         if (err) {
@@ -554,7 +667,7 @@ app.get('/Appointment', (req, res) => {
 });
 
 // Route to fetch Doctors
-app.get('/Doctor', (req, res) => {
+app.get('/Doctor', authenticateToken, requireRoles('admin', 'doctor'), (req, res) => {
     const sql = "SELECT * FROM Doctor";
     db.query(sql, (err, data) => {
         if (err) {
@@ -566,7 +679,7 @@ app.get('/Doctor', (req, res) => {
 });
 
 // Route to fetch Lab Results
-app.get('/Lab_Results', (req, res) => {
+app.get('/Lab_Results', authenticateToken, requireRoles('admin', 'doctor'), (req, res) => {
     // Sample test data
     const testData = [
         {
@@ -638,11 +751,11 @@ app.get('/Lab_Results', (req, res) => {
     res.json(testData);
 });
 
-// Route to fetch all users (including encrypted passwords)
-app.get('/users', (req, res) => {
+// Route to fetch all users
+app.get('/users', authenticateToken, requireRoles('admin'), (req, res) => {
     const sql = `
         SELECT 
-            ID, First_Name, Last_Name, Email, Contact_Number, Password, Role_ID, Created_Date, IsActive, Last_Login_Date 
+            ID, First_Name, Last_Name, Email, Contact_Number, Role_ID, Created_Date, IsActive, Last_Login_Date 
         FROM User
     `;
     db.query(sql, (err, results) => {
@@ -657,7 +770,7 @@ app.get('/users', (req, res) => {
 // Start the server
 // app.listen(8080, () => {
 //     console.log("listening on port 8080");
-// });
+// }); 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`listening on port ${PORT}`);

@@ -6,6 +6,7 @@ const cors = require('cors');
 const { Gateway, Wallets } = require('fabric-network');
 const path = require('path');
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
 
 require('dotenv').config();
 
@@ -32,9 +33,174 @@ const fabricChannel = process.env.FABRIC_CHANNEL || 'mychannel';
 const fabricChaincode = process.env.FABRIC_CHAINCODE || 'basic';
 const discoveryEnabled = process.env.FABRIC_DISCOVERY_ENABLED !== 'false';
 const discoveryAsLocalhost = process.env.FABRIC_DISCOVERY_AS_LOCALHOST !== 'false';
+const SECRET_KEY = process.env.JWT_SECRET;
+
+const ROLE_ALIASES = {
+    admin: 'admin',
+    administrator: 'admin',
+    doctor: 'doctor',
+    patient: 'patient',
+    system: 'system',
+    sysadmin: 'system'
+};
+
+const normalizeRole = (role) => {
+    const normalized = String(role || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+    return ROLE_ALIASES[normalized] || normalized;
+};
+
+const isRole = (req, role) => normalizeRole(req.user?.role) === normalizeRole(role);
+
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ error: 'Access denied' });
+    }
+
+    if (!SECRET_KEY) {
+        return res.status(500).json({ error: 'JWT secret is not configured' });
+    }
+
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) {
+            return res.status(403).json({ error: 'Invalid token' });
+        }
+
+        req.user = user;
+        next();
+    });
+};
+
+const requireRoles = (...allowedRoles) => {
+    const allowed = allowedRoles.map(normalizeRole);
+
+    return (req, res, next) => {
+        const userRole = normalizeRole(req.user?.role);
+
+        if (!userRole || !allowed.includes(userRole)) {
+            return res.status(403).json({ error: 'Forbidden: insufficient role permissions' });
+        }
+
+        next();
+    };
+};
+
+const requireAdminClinicParam = (paramName) => (req, res, next) => {
+    if (!isRole(req, 'admin')) {
+        return next();
+    }
+
+    const requestedClinicID = req.params[paramName];
+
+    if (requestedClinicID === undefined || requestedClinicID === null || requestedClinicID === '') {
+        return next();
+    }
+
+    if (!req.user.organizationId || String(req.user.organizationId) !== String(requestedClinicID)) {
+        return res.status(403).json({ error: 'Forbidden: clinic access is limited to the authenticated admin organization' });
+    }
+
+    next();
+};
+
+const requireAdminClinicBody = (fieldName) => (req, res, next) => {
+    if (!isRole(req, 'admin')) {
+        return next();
+    }
+
+    const requestedClinicID = req.body[fieldName];
+
+    if (requestedClinicID === undefined || requestedClinicID === null || requestedClinicID === '') {
+        return next();
+    }
+
+    if (!req.user.organizationId || String(req.user.organizationId) !== String(requestedClinicID)) {
+        return res.status(403).json({ error: 'Forbidden: clinic access is limited to the authenticated admin organization' });
+    }
+
+    next();
+};
+
+const requireDoctorSelfParam = (paramName) => (req, res, next) => {
+    if (!isRole(req, 'doctor')) {
+        return next();
+    }
+
+    const requestedDoctorID = req.params[paramName];
+
+    if (requestedDoctorID === undefined || requestedDoctorID === null || requestedDoctorID === '') {
+        return next();
+    }
+
+    if (!req.user.blockchainID || String(req.user.blockchainID) !== String(requestedDoctorID)) {
+        return res.status(403).json({ error: 'Forbidden: doctor access is limited to the authenticated doctor identity' });
+    }
+
+    next();
+};
+
+const requireDoctorSelfBody = (fieldName) => (req, res, next) => {
+    if (!isRole(req, 'doctor')) {
+        return next();
+    }
+
+    const requestedDoctorID = req.body[fieldName];
+
+    if (requestedDoctorID === undefined || requestedDoctorID === null || requestedDoctorID === '') {
+        return next();
+    }
+
+    if (!req.user.blockchainID || String(req.user.blockchainID) !== String(requestedDoctorID)) {
+        return res.status(403).json({ error: 'Forbidden: doctor access is limited to the authenticated doctor identity' });
+    }
+
+    next();
+};
+
+const requirePatientSelfParam = (paramName) => (req, res, next) => {
+    if (!isRole(req, 'patient')) {
+        return next();
+    }
+
+    const requestedPatientID = req.params[paramName];
+
+    if (requestedPatientID === undefined || requestedPatientID === null || requestedPatientID === '') {
+        return next();
+    }
+
+    if (!req.user.blockchainID || String(req.user.blockchainID) !== String(requestedPatientID)) {
+        return res.status(403).json({ error: 'Forbidden: patient access is limited to the authenticated patient identity' });
+    }
+
+    next();
+};
+
+const requirePatientSelfBody = (fieldName) => (req, res, next) => {
+    if (!isRole(req, 'patient')) {
+        return next();
+    }
+
+    const requestedPatientID = req.body[fieldName];
+
+    if (requestedPatientID === undefined || requestedPatientID === null || requestedPatientID === '') {
+        return next();
+    }
+
+    if (!req.user.blockchainID || String(req.user.blockchainID) !== String(requestedPatientID)) {
+        return res.status(403).json({ error: 'Forbidden: patient access is limited to the authenticated patient identity' });
+    }
+
+    next();
+};
 
 console.log('Connection profile path:', ccpPath);
 console.log('Fabric wallet path:', walletPath);
+
+if (!SECRET_KEY) {
+    console.warn('JWT_SECRET is not configured. Protected blockchain endpoints will return a configuration error.');
+}
 
 let connectionProfile;
 
@@ -92,7 +258,7 @@ const requireFields = (body, fields) => {
     }
 };
 
-app.post('/addPatient', async (req, res) => {
+app.post('/addPatient', authenticateToken, requireRoles('admin'), requireAdminClinicBody('clinicID'), async (req, res) => {
     try {
         requireFields(req.body, [
             'patientID',
@@ -145,7 +311,7 @@ app.post('/addPatient', async (req, res) => {
     }
 });
 
-app.post('/addDoctor', async (req, res) => {
+app.post('/addDoctor', authenticateToken, requireRoles('admin'), requireAdminClinicBody('clinicID'), async (req, res) => {
     try {
         requireFields(req.body, [
             'doctorID',
@@ -195,7 +361,7 @@ app.post('/addDoctor', async (req, res) => {
     }
 });
 
-app.post('/registerPatientInClinic', async (req, res) => {
+app.post('/registerPatientInClinic', authenticateToken, requireRoles('admin'), requireAdminClinicBody('clinicID'), async (req, res) => {
     try {
         requireFields(req.body, ['patientID', 'clinicID']);
         const result = await withContract((contract) => contract.submitTransaction(
@@ -211,7 +377,7 @@ app.post('/registerPatientInClinic', async (req, res) => {
     }
 });
 
-app.post('/assignPatientToDoctor', async (req, res) => {
+app.post('/assignPatientToDoctor', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
         requireFields(req.body, ['patientID', 'doctorID']);
         const result = await withContract((contract) => contract.submitTransaction(
@@ -227,7 +393,7 @@ app.post('/assignPatientToDoctor', async (req, res) => {
     }
 });
 
-app.get('/getAllPatients', async (req, res) => {
+app.get('/getAllPatients', authenticateToken, requireRoles('admin', 'system'), async (req, res) => {
     try {
         const wallet = await Wallets.newFileSystemWallet(walletPath);
 
@@ -250,7 +416,7 @@ app.get('/getAllPatients', async (req, res) => {
     }
 });
 
-app.get('/readPatient/:patientID', async (req, res) => {
+app.get('/readPatient/:patientID', authenticateToken, requireRoles('admin', 'doctor'), async (req, res) => {
     try {
         const wallet = await Wallets.newFileSystemWallet(walletPath);
 
@@ -275,7 +441,7 @@ app.get('/readPatient/:patientID', async (req, res) => {
     }
 });
 
-app.get('/getPatientsAssignedToDoctor/:doctorID', async (req, res) => {
+app.get('/getPatientsAssignedToDoctor/:doctorID', authenticateToken, requireRoles('admin', 'doctor'), requireDoctorSelfParam('doctorID'), async (req, res) => {
     try {
         const wallet = await Wallets.newFileSystemWallet(walletPath);
 
@@ -300,7 +466,7 @@ app.get('/getPatientsAssignedToDoctor/:doctorID', async (req, res) => {
     }
 });
 
-app.get('/getPatientsByClinic/:clinicID', async (req, res) => {
+app.get('/getPatientsByClinic/:clinicID', authenticateToken, requireRoles('admin'), requireAdminClinicParam('clinicID'), async (req, res) => {
     try {
         const wallet = await Wallets.newFileSystemWallet(walletPath);
 
@@ -327,7 +493,7 @@ app.get('/getPatientsByClinic/:clinicID', async (req, res) => {
 
 
 // Endpoint for doctor to request data access
-app.post('/requestDataAccess', async (req, res) => {
+app.post('/requestDataAccess', authenticateToken, requireRoles('doctor'), requireDoctorSelfBody('doctorID'), async (req, res) => {
     try {
         // console.log("Received API request:", req.body);
 
@@ -365,7 +531,7 @@ app.post('/requestDataAccess', async (req, res) => {
     }
 });
 
-app.get('/getRequestsForAdmin/:clinicID', async (req, res) => {
+app.get('/getRequestsForAdmin/:clinicID', authenticateToken, requireRoles('admin'), requireAdminClinicParam('clinicID'), async (req, res) => {
     try {
         console.log("Received request to get admin clinic requests for:", req.params.clinicID);
 
@@ -400,7 +566,7 @@ app.get('/getRequestsForAdmin/:clinicID', async (req, res) => {
     }
 });
 //admin from org approves request
-app.post('/approveRequest', async (req, res) => {
+app.post('/approveRequest', authenticateToken, requireRoles('admin'), requireAdminClinicBody('adminClinicID'), async (req, res) => {
     try {
         console.log("Received request to approve request:", req.body);
 
@@ -440,7 +606,7 @@ app.post('/approveRequest', async (req, res) => {
     }
 });
 
-app.get('/getPendingRequestsForPatient/:patientID', async (req, res) => {
+app.get('/getPendingRequestsForPatient/:patientID', authenticateToken, requireRoles('patient'), requirePatientSelfParam('patientID'), async (req, res) => {
     try {
         const wallet = await Wallets.newFileSystemWallet(walletPath);
 
@@ -465,7 +631,7 @@ app.get('/getPendingRequestsForPatient/:patientID', async (req, res) => {
     }
 });
 
-app.get('/getProcessedRequestsForPatient/:patientID', async (req, res) => {
+app.get('/getProcessedRequestsForPatient/:patientID', authenticateToken, requireRoles('patient'), requirePatientSelfParam('patientID'), async (req, res) => {
     try {
         const wallet = await Wallets.newFileSystemWallet(walletPath);
 
@@ -490,7 +656,7 @@ app.get('/getProcessedRequestsForPatient/:patientID', async (req, res) => {
     }
 });
 
-app.get('/getAllRequestsForPatient/:patientID', async (req, res) => {
+app.get('/getAllRequestsForPatient/:patientID', authenticateToken, requireRoles('patient'), requirePatientSelfParam('patientID'), async (req, res) => {
     try {
         const wallet = await Wallets.newFileSystemWallet(walletPath);
 
@@ -516,7 +682,7 @@ app.get('/getAllRequestsForPatient/:patientID', async (req, res) => {
 });
 
 
-app.post('/provideConsent', async (req, res) => {
+app.post('/provideConsent', authenticateToken, requireRoles('patient'), requirePatientSelfBody('patientID'), async (req, res) => {
     try {
         const { patientID, requestID } = req.body;
         
@@ -546,7 +712,7 @@ app.post('/provideConsent', async (req, res) => {
     }
 });
 
-app.post('/rejectRequest', async (req, res) => {
+app.post('/rejectRequest', authenticateToken, requireRoles('patient'), requirePatientSelfBody('patientID'), async (req, res) => {
     try {
         const { patientID, requestID, rejectionReason } = req.body;
         

@@ -3,17 +3,26 @@ import React, { useEffect, useState } from 'react'
 
 import { DataRequest } from '../components'
 import axios from 'axios';
-import { blockchainUrl } from '../config/api';
+import { authHeaders, blockchainUrl, getPatientBlockchainID } from '../utils/api';
+import { useUser } from '../Context/UserContext';
 
 
 const proceedRequests = () => {
 
   const [reqests, setRequests] = useState([])
   const [isLoading, setIsLoading] = useState(false)
+  const { user, token } = useUser()
+  const patientID = getPatientBlockchainID(user)
 
 
   useEffect(() => {
-    axios.get(blockchainUrl('/getAllRequestsForPatient/Patient1'))
+    if (!token || !patientID) {
+      return
+    }
+
+    axios.get(blockchainUrl(`/getAllRequestsForPatient/${patientID}`), {
+      headers: authHeaders(token),
+    })
     .then((response)=> {
       setRequests(response.data)
       setIsLoading(true)
@@ -22,9 +31,7 @@ const proceedRequests = () => {
       setIsLoading(false)
     })
 
-
-
-  }, [])
+  }, [token, patientID])
 
 
 

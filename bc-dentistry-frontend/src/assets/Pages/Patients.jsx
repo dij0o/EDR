@@ -39,7 +39,7 @@ import PatientsFilters from "../Sections/Patients/PatientsFilters";
 import axios from "axios";
 import { useEffect, useState } from "react";
 import Lo from "../images/icons/calendar.svg";
-import { blockchainUrl } from "../config/api.js";
+import { authHeaders, blockchainUrl } from "../config/api.js";
 import { getStoredUser } from "../utils/auth.js";
 
 const Patients = () => {
@@ -64,10 +64,10 @@ const Patients = () => {
 
                 if (role === "admin" && user.organizationId) {
                     console.log("🟢 Admin fetching patients for clinic:", user.organizationId);
-                    response = await axios.get(blockchainUrl(`/getPatientsByClinic/${user.organizationId}`));
+                    response = await axios.get(blockchainUrl(`/getPatientsByClinic/${user.organizationId}`), { headers: authHeaders() });
                 } else if (role === "doctor" && user.blockchainID) {
                     console.log("🔵 Doctor fetching assigned patients:", user.blockchainID);
-                    response = await axios.get(blockchainUrl(`/getPatientsAssignedToDoctor/${user.blockchainID}`));
+                    response = await axios.get(blockchainUrl(`/getPatientsAssignedToDoctor/${user.blockchainID}`), { headers: authHeaders() });
                 } else {
                     console.error("🚨 Invalid role or missing organization/blockchain ID.");
                     return;

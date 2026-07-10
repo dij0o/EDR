@@ -838,7 +838,9 @@ CREATE TABLE `Patient` (
   `Date_of_Birth` date DEFAULT NULL,
   `Gender` varchar(50) DEFAULT NULL,
   `Emirates_ID` varchar(255) DEFAULT NULL,
-  PRIMARY KEY (`ID`)
+  `Blockchain_ID` varchar(50) DEFAULT NULL,
+  PRIMARY KEY (`ID`),
+  UNIQUE KEY `Blockchain_ID` (`Blockchain_ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -848,7 +850,7 @@ CREATE TABLE `Patient` (
 
 LOCK TABLES `Patient` WRITE;
 /*!40000 ALTER TABLE `Patient` DISABLE KEYS */;
-INSERT INTO `Patient` VALUES (17,'1980-01-01','Male','1234567890'),(18,'1990-02-02','Female','9876543210'),(19,'1985-03-03','Male','1357924680');
+INSERT INTO `Patient` VALUES (17,'1980-01-01','Male','1234567890','Patient1'),(18,'1990-02-02','Female','9876543210','Patient2'),(19,'1985-03-03','Male','1357924680','Patient3');
 /*!40000 ALTER TABLE `Patient` ENABLE KEYS */;
 UNLOCK TABLES;
 

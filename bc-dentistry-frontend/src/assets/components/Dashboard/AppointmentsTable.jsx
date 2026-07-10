@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import AppointmentTableRow from "./AppointmentTableRow";
-import { databaseUrl } from '../../config/api.js';
+import { authHeaders, databaseUrl } from '../../config/api.js';
 
 const AppointmentsTable = () => {
     
@@ -10,7 +10,7 @@ const AppointmentsTable = () => {
     useEffect(() => {
         const fetchAppointments = async () => {
             try {
-                const response = await fetch(databaseUrl('/Appointment')); 
+                const response = await fetch(databaseUrl('/Appointment'), { headers: authHeaders() }); 
                 const data = await response.json();
                 setAppointments(data); 
             } catch (error) {

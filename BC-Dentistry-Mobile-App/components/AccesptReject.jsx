@@ -34,12 +34,19 @@ import { View, Text, Alert, Animated } from 'react-native';
 import React, { useState } from 'react';
 import axios from 'axios';
 import { CustomButton } from './index';
-import { blockchainUrl } from '../config/api';
+import { authHeaders, blockchainUrl } from '../utils/api';
+import { useUser } from '../Context/UserContext';
 
 const AccesptReject = ({ requestID, patientID, updateStatus, setCardStatus, requestLoadingStatus, setrequestLoadingFunc, expandCardFunc }) => {
     const [loading, setLoading] = useState(false);
+    const { token } = useUser();
 
     const handleAccept = async () => {
+      if (!token) {
+          Alert.alert("Login required", "Please sign in again before approving requests.");
+          return;
+      }
+
       setLoading(true);
       console.log('Accept');
       
@@ -48,6 +55,8 @@ const AccesptReject = ({ requestID, patientID, updateStatus, setCardStatus, requ
           const response = await axios.post(blockchainUrl('/provideConsent'), {
               patientID,
               requestID,
+            }, {
+              headers: authHeaders(token),
             });
             console.log("Consent Granted:", response.data);
             Alert.alert("Success", "Request accepted successfully!");
@@ -70,6 +79,11 @@ const AccesptReject = ({ requestID, patientID, updateStatus, setCardStatus, requ
     };
     
     const handleReject = async () => {
+        if (!token) {
+            Alert.alert("Login required", "Please sign in again before rejecting requests.");
+            return;
+        }
+
         setLoading(true);
         console.log('Reject');
         try {
@@ -78,6 +92,8 @@ const AccesptReject = ({ requestID, patientID, updateStatus, setCardStatus, requ
               patientID,
               requestID,
               rejectionReason: "Not authorized", // You can modify this
+            }, {
+              headers: authHeaders(token),
             });
             console.log("Request Rejected:", response.data);
             Alert.alert("Success", "Request rejected successfully!");

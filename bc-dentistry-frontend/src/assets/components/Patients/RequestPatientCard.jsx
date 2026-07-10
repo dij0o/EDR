@@ -78,7 +78,7 @@
 import { useEffect, useRef, useState } from "react";
 import PatientRequestInput from "./PatientRequestInput";
 import RequestPatientCardSubmit from "./RequestPatientCardSubmit";
-import { blockchainUrl } from "../../config/api.js";
+import { blockchainUrl, jsonHeaders } from "../../config/api.js";
 import { getStoredUser } from "../../utils/auth.js";
 
 const RequestPatientCard = () => {
@@ -86,8 +86,8 @@ const RequestPatientCard = () => {
     const [patientName, setPatientName] = useState('');
     const [patientID, setPatientID] = useState('');
     const [clinicID, setClinicID] = useState('');
-    const user = getStoredUser();
-    const doctorID = user?.blockchainID;
+    const user = getStoredUser(); 
+    const doctorID = user?.blockchainID; 
 
     const expandRequestForm = () => {
         requestDataForm.current.classList.replace("h-0", "h-80");
@@ -122,9 +122,7 @@ const RequestPatientCard = () => {
         try {
             const response = await fetch(blockchainUrl('/requestDataAccess'), {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: jsonHeaders(),
                 body: JSON.stringify({
                     doctorID,
                     patientID,

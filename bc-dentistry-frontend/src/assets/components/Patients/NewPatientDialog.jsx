@@ -2,7 +2,7 @@
 import NewPatientDialog1 from "./NewPatientDialog1";
 import NewPatientDialog2 from "./NewPatientDialog2";
 import { useState } from "react";
-import { blockchainUrl } from "../../config/api.js";
+import { blockchainUrl, jsonHeaders } from "../../config/api.js";
 
 const NewPatientDialog = () => {
     const storedUser = (() => {
@@ -44,7 +44,7 @@ const NewPatientDialog = () => {
         try {
             const response = await fetch(blockchainUrl('/addPatient'), {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: jsonHeaders(),
                 body: JSON.stringify({
                     patientID: formData.patientID,
                     firstName,

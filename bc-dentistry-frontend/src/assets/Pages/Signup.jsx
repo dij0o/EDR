@@ -4,7 +4,7 @@ import Input from '../components/Input';
 import LoginSignUpBtn from '../components/LoginSignUpBtn';
 import LoginOption from '../components/LoginOption';
 import axios from 'axios';
-import { databaseUrl } from '../config/api.js';
+import { databaseUrl, jsonHeaders } from '../config/api.js';
 const Signup = () => {
 
     
@@ -39,12 +39,14 @@ const Signup = () => {
         }
         try {
             const response = await axios.post(databaseUrl('/register'), {
-                firstName: firstname, // Use camelCase as expected by the backend
-                lastName: lastname,   // Use camelCase as expected by the backend
-                username,             // username (email)
-                contactNumber,        // Include contactNumber
+                firstName: firstname,
+                lastName: lastname,
+                username,
+                contactNumber,
                 organizationId,
-                password,             // Include password
+                password,
+            }, {
+                headers: jsonHeaders(),
             });
             setSuccess(response.data.message);
             setError('');

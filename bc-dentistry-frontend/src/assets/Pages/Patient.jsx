@@ -45,7 +45,7 @@ import DentalRecord from "../components/Patient/DentalRecord";
 import { useRole } from '../Context/RoleContext.jsx';
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { blockchainUrl } from "../config/api.js";
+import { authHeaders, blockchainUrl } from "../config/api.js";
 import { getStoredUser } from "../utils/auth.js";
 
 const Patient = () => {
@@ -66,7 +66,7 @@ const Patient = () => {
     useEffect(() => {
         const fetchPatientDetails = async () => {
             try {
-                const response = await axios.get(blockchainUrl(`/readPatient/${patientId}`));
+                const response = await axios.get(blockchainUrl(`/readPatient/${patientId}`), { headers: authHeaders() });
                 console.error('Fetched patients:', response.data);
                 setPatientDetails(response.data); // Store the fetched patient data
                 
