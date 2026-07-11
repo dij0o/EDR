@@ -85,6 +85,9 @@ Progress checkpoint - 2026-07-11:
 - AWS CA/wallet now contains clinic-bound admin, actor-bound doctor/patient, and system identities; the legacy shared `appUser` is no longer selected by active Phase 2 routes.
 - Chaincode `basic` version `1.0.1`, sequence `3`, is committed with Org1MSP and Org2MSP approval.
 - Verification passed: 16 chaincode unit tests, 4 gateway identity-mapping tests, 9 live Fabric identity checks, and the Phase 1 API smoke regression suite.
+- Git-synchronized redeployment - 2026-07-11: the AWS checkout was backed up to `/home/ubuntu/deployment-backups/20260711-094718` and aligned to pushed commit `4892875`. The Database API image, PM2 Blockchain API, and Nginx frontend were rebuilt/restarted from that commit. The Phase 1 public smoke suite, 16 direct chaincode tests, 4 gateway resolver tests, and 9 live Fabric identity checks passed again.
+- Known test-tooling item: the direct Mocha chaincode suite passes, but the inherited `npm test` ESLint pre-hook does not parse object spread syntax. Update the ESLint parser/`ecmaVersion` configuration so the standard test command runs end to end.
+- Dependency audit item: clean AWS installs reported 28 vulnerabilities in `dental-backend` (3 critical), 33 in the frontend (1 critical), and 19 in the chaincode package (1 critical). Remediate through reviewed dependency upgrades and compatibility tests; do not run `npm audit fix --force` directly in production.
 
 Exit criteria:
 
@@ -94,6 +97,8 @@ Exit criteria:
 ## Phase 3: REST API Parity With SRS
 
 SRS coverage: Section 5 API gateway specifications
+
+Status - 2026-07-11: **Implemented and source-verified; AWS deployment pending.** The Blockchain API now exposes all six SRS-named routes, patient update/delete, doctor read/update/delete, and separate admin/patient rejection routes. Canonical routes use `{ success, data }` or `{ success: false, error: { code, message } }`; legacy aliases remain available. All routes use JWT and role middleware, and actor/clinic-sensitive routes retain the Phase 2 JWT-to-wallet and MSP attribute binding. Source syntax checks and 7 Phase 2/3 API identity/route tests pass. AWS SSH was reachable but the current session had no accepted deployment key, so Phase 3 is not marked deployed.
 
 Tasks:
 
@@ -109,6 +114,12 @@ Tasks:
 - Add admin reject and patient reject endpoints if separate from generic rejection.
 - Normalize response shapes and error handling.
 - Document endpoints in README/setup docs.
+
+Implementation notes:
+
+- SRS aliases: `/getPatientByID/:id` -> `/readPatient/:patientID`, `/requestAccess` -> `/requestDataAccess`, `/grantConsent` -> `/provideConsent`, and `/getPendingRequests` -> `/getPendingRequestsForPatient/:patientID`.
+- New canonical routes: `POST /addMedicalRecord`, `GET /getDentalChartData/:id`, `PUT|DELETE /patient/:id`, `GET|PUT|DELETE /doctor/:id`, `POST /admin/rejectRequest`, and `POST /patient/rejectRequest`.
+- No database migration is required for Phase 3. Deployment requires publishing the Blockchain API and the updated chaincode because clinic-scoped delete enforcement changed on-chain.
 
 Exit criteria:
 

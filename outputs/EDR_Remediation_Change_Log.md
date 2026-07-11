@@ -1,7 +1,17 @@
 # EDR Remediation Change Log
 
-Prepared by: Codex
-Date: 2026-07-07
+## Phase 3 - REST API Parity With SRS (2026-07-11)
+
+- Added the six SRS Section 5 canonical Blockchain API routes with documented legacy aliases.
+- Added Admin-only patient update/delete and doctor update/delete routes plus identity-scoped doctor read.
+- Added separate clinic-bound admin rejection and owner-bound patient rejection endpoints.
+- Preserved Phase 2 JWT-to-wallet identity selection for every new handler and strengthened chaincode delete operations with stored-record clinic checks.
+- Standardized canonical success/error envelopes and JWT/role error envelopes across both APIs.
+- Added `dental-backend/test/phase3RouteParity.test.js`; API syntax and 7 route/identity checks pass locally.
+- No database migration is required. AWS rollout requires Blockchain API restart plus chaincode package/approval/commit and canonical/legacy route smoke tests. The current SSH session did not have an accepted key, so deployment remains pending.
+
+Prepared by: Codex  
+Date: 2026-07-07  
 Workspace: `C:\Workbench\EDR_Source`
 
 ## Scope and Method
@@ -149,6 +159,8 @@ These were created or refreshed to run and verify the remediation copy. They are
 | Phase 2 gateway identity mapping | Pass. 4 dependency-free Node tests passed. |
 | Phase 2 live Fabric identity suite | Pass. 9 direct gateway checks passed against role-bound certificates and deployed chaincode. |
 | Phase 2 AWS deployment | Pass. `basic` version `1.0.1`, sequence `3`, committed with Org1MSP and Org2MSP approvals; API regression smoke tests remained green. |
+| Git-synchronized AWS redeployment | Pass. VM checkout was backed up and aligned to pushed commit `4892875`; Database API, Blockchain API, and Nginx frontend were rebuilt/restarted; Phase 1 public smoke tests and Phase 2 identity checks passed again. |
+| Chaincode test execution after Git sync | Pass with warning. Direct Mocha execution passed all 16 tests; the inherited `npm test` ESLint pre-hook still rejects object spread syntax and needs a parser/`ecmaVersion` configuration update. |
 
 ## Known Items Not Fully Remediated
 
@@ -159,3 +171,5 @@ These were created or refreshed to run and verify the remediation copy. They are
 | Mobile app runtime | Mobile env template was corrected, but mobile screen logic with hardcoded values was not fully remediated in this pass. |
 | Frontend build warnings | Build succeeds, but font path, Cornerstone, and bundle-size warnings remain. |
 | Fabric ledger cleanliness | Verification created smoke-test ledger records. For a clean demo, reset the Fabric network and reinitialize the ledger. |
+| Chaincode lint pre-hook | The deployed chaincode and all direct tests pass, but the standard `npm test` command stops before Mocha because the inherited ESLint parser does not accept object spread syntax. |
+| Dependency audit findings | Clean AWS installs reported 28 vulnerabilities in `dental-backend` (3 critical), 33 in the frontend (1 critical), and 19 in chaincode (1 critical). Review dependency upgrades with compatibility tests; do not apply forced production upgrades. |

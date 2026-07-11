@@ -872,3 +872,22 @@ CORS_ORIGIN=http://localhost:5174
 ---
 
 *University of Sharjah — College of Computing and Informatics*
+# SRS Section 5 API compatibility
+
+The Blockchain API on port `8081` exposes the SRS route names below. All require `Authorization: Bearer <JWT>` and retain the Phase 2 mapping from JWT claims to role/actor/clinic-bound Fabric wallet identities.
+
+| SRS route | Role | Compatible legacy route |
+|---|---|---|
+| `GET /getPatientByID/:id` | Admin, Doctor, Patient (self), System | `GET /readPatient/:patientID` |
+| `POST /addMedicalRecord` | Doctor (self) | New canonical route |
+| `GET /getDentalChartData/:id` | Admin, Doctor, Patient (self), System | Chaincode `getAllDentalChartData` |
+| `POST /requestAccess` | Doctor (self) | `POST /requestDataAccess` |
+| `POST /grantConsent` | Patient (self) | `POST /provideConsent` |
+| `GET /getPendingRequests` | Patient; ID derived from JWT | `GET /getPendingRequestsForPatient/:patientID` |
+| `PUT`, `DELETE /patient/:id` | Admin (clinic-bound) | New canonical routes |
+| `GET /doctor/:id` | Admin, Doctor (self), System | New canonical route |
+| `PUT`, `DELETE /doctor/:id` | Admin (clinic-bound) | New canonical routes |
+| `POST /admin/rejectRequest` | Admin (clinic-bound) | Stage-specific replacement for generic rejection |
+| `POST /patient/rejectRequest` | Patient (self) | `POST /rejectRequest` |
+
+Canonical Phase 3 responses use `{ "success": true, "data": ... }`; errors use `{ "success": false, "error": { "code": "...", "message": "..." } }`. Legacy success payloads are preserved for existing clients.

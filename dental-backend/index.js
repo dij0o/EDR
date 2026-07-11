@@ -50,22 +50,23 @@ const normalizeRole = (role) => {
 };
 
 const isRole = (req, role) => normalizeRole(req.user?.role) === normalizeRole(role);
+const sendApiError = (res, status, code, message) => res.status(status).json({ success: false, error: { code, message } });
 
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
-        return res.status(401).json({ error: 'Access denied' });
+        return sendApiError(res, 401, 'AUTH_REQUIRED', 'Access denied');
     }
 
     if (!SECRET_KEY) {
-        return res.status(500).json({ error: 'JWT secret is not configured' });
+        return sendApiError(res, 500, 'AUTH_CONFIGURATION_ERROR', 'JWT secret is not configured');
     }
 
     jwt.verify(token, SECRET_KEY, (err, user) => {
         if (err) {
-            return res.status(403).json({ error: 'Invalid token' });
+            return sendApiError(res, 403, 'INVALID_TOKEN', 'Invalid token');
         }
 
         req.user = user;
@@ -80,7 +81,7 @@ const requireRoles = (...allowedRoles) => {
         const userRole = normalizeRole(req.user?.role);
 
         if (!userRole || !allowed.includes(userRole)) {
-            return res.status(403).json({ error: 'Forbidden: insufficient role permissions' });
+            return sendApiError(res, 403, 'FORBIDDEN', 'Forbidden: insufficient role permissions');
         }
 
         next();
@@ -221,8 +222,20 @@ const getConnectionProfile = () => {
 
 const sendFabricError = (res, error) => {
     const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({ error: error.message || String(error) });
+    res.status(statusCode).json({
+        success: false,
+        error: {
+            code: statusCode === 400 ? 'VALIDATION_ERROR' : statusCode === 403 ? 'FORBIDDEN' : 'BLOCKCHAIN_ERROR',
+            message: error.message || String(error)
+        }
+    });
 };
+
+const sendSuccess = (res, data, statusCode = 200, aliases = []) => res.status(statusCode).json({
+    success: true,
+    data,
+    ...(aliases.length ? { compatibleAliases: aliases } : {})
+});
 
 const fabricIdentityForRequest = (req) => {
     return fabricIdentityForUser(req.user);
@@ -268,6 +281,142 @@ const requireFields = (body, fields) => {
         throw error;
     }
 };
+
+const readPatientHandler = async (req, res) => {
+    try {
+        const patientID = req.params.id || req.params.patientID;
+        const result = await withContract(req, (contract) => contract.evaluateTransaction('ReadPatient', String(patientID)));
+        return sendSuccess(res, parseBufferJson(result), 200, ['/readPatient/:patientID']);
+    } catch (error) {
+        return sendFabricError(res, error);
+    }
+};
+
+const requestAccessHandler = async (req, res) => {
+    try {
+        requireFields(req.body, ['doctorID', 'patientID', 'dataOriginClinicID']);
+        const result = await withContract(req, (contract) => contract.submitTransaction(
+            'RequestDataAccess', String(req.body.doctorID), String(req.body.patientID), String(req.body.dataOriginClinicID)
+        ));
+        return sendSuccess(res, { requestID: result.toString() }, 201, ['/requestDataAccess']);
+    } catch (error) {
+        return sendFabricError(res, error);
+    }
+};
+
+const grantConsentHandler = async (req, res) => {
+    try {
+        requireFields(req.body, ['patientID', 'requestID']);
+        const result = await withContract(req, (contract) => contract.submitTransaction(
+            'ProvideConsent', String(req.body.patientID), String(req.body.requestID)
+        ));
+        return sendSuccess(res, parseBufferJson(result), 200, ['/provideConsent']);
+    } catch (error) {
+        return sendFabricError(res, error);
+    }
+};
+
+app.get('/getPatientByID/:id', authenticateToken, requireRoles('admin', 'doctor', 'patient', 'system'), requirePatientSelfParam('id'), readPatientHandler);
+
+app.post('/addMedicalRecord', authenticateToken, requireRoles('doctor'), requireDoctorSelfBody('doctorID'), async (req, res) => {
+    try {
+        requireFields(req.body, ['doctorID', 'patientID', 'medicalRecord']);
+        const record = typeof req.body.medicalRecord === 'string' ? req.body.medicalRecord : JSON.stringify(req.body.medicalRecord);
+        const result = await withContract(req, (contract) => contract.submitTransaction('AddMedicalRecord', String(req.body.patientID), record));
+        return sendSuccess(res, parseBufferJson(result), 201);
+    } catch (error) {
+        return sendFabricError(res, error);
+    }
+});
+
+app.get('/getDentalChartData/:id', authenticateToken, requireRoles('admin', 'doctor', 'patient', 'system'), requirePatientSelfParam('id'), async (req, res) => {
+    try {
+        const result = await withContract(req, (contract) => contract.evaluateTransaction('getAllDentalChartData', String(req.params.id)));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) {
+        return sendFabricError(res, error);
+    }
+});
+
+app.post('/requestAccess', authenticateToken, requireRoles('doctor'), requireDoctorSelfBody('doctorID'), requestAccessHandler);
+app.post('/grantConsent', authenticateToken, requireRoles('patient'), requirePatientSelfBody('patientID'), grantConsentHandler);
+
+app.get('/getPendingRequests', authenticateToken, requireRoles('patient'), async (req, res) => {
+    try {
+        if (!req.user.blockchainID) {
+            const error = new Error('Authenticated patient is missing a blockchain identity');
+            error.statusCode = 403;
+            throw error;
+        }
+        const result = await withContract(req, (contract) => contract.evaluateTransaction('GetPendingRequestsForPatient', String(req.user.blockchainID)));
+        return sendSuccess(res, parseBufferJson(result), 200, ['/getPendingRequestsForPatient/:patientID']);
+    } catch (error) {
+        return sendFabricError(res, error);
+    }
+});
+
+app.get('/doctor/:id', authenticateToken, requireRoles('admin', 'doctor', 'system'), requireDoctorSelfParam('id'), async (req, res) => {
+    try {
+        const result = await withContract(req, (contract) => contract.evaluateTransaction('ReadDoctor', String(req.params.id)));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) {
+        return sendFabricError(res, error);
+    }
+});
+
+app.put('/patient/:id', authenticateToken, requireRoles('admin'), requireAdminClinicBody('clinicID'), async (req, res) => {
+    try {
+        requireFields(req.body, ['firstName', 'lastName', 'dateOfBirth', 'gender', 'emiratesID', 'email', 'contactNumber', 'address', 'clinicID']);
+        const result = await withContract(req, (contract) => contract.submitTransaction(
+            'UpdatePatientInfo', String(req.params.id), String(req.body.firstName), String(req.body.lastName), String(req.body.dateOfBirth),
+            String(req.body.gender), String(req.body.emiratesID), String(req.body.email), String(req.body.contactNumber), String(req.body.address),
+            String(req.body.createdDate || new Date().toISOString()), JSON.stringify(req.body.doctors || []), String(req.body.clinicID), JSON.stringify(req.body.dentalChart || [])
+        ));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.delete('/patient/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
+    try {
+        await withContract(req, (contract) => contract.submitTransaction('DeletePatient', String(req.params.id)));
+        return sendSuccess(res, { id: req.params.id, deleted: true });
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.put('/doctor/:id', authenticateToken, requireRoles('admin'), requireAdminClinicBody('clinicID'), async (req, res) => {
+    try {
+        requireFields(req.body, ['firstName', 'lastName', 'speciality', 'worksAt', 'clinicID', 'email', 'contactNumber']);
+        const result = await withContract(req, (contract) => contract.submitTransaction(
+            'UpdateDoctorInfo', String(req.params.id), String(req.body.firstName), String(req.body.lastName), String(req.body.speciality),
+            String(req.body.worksAt), String(req.body.clinicID), String(req.body.email), String(req.body.contactNumber),
+            String(req.body.createdDate || new Date().toISOString()), JSON.stringify(req.body.patients || [])
+        ));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.delete('/doctor/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
+    try {
+        await withContract(req, (contract) => contract.submitTransaction('DeleteDoctor', String(req.params.id)));
+        return sendSuccess(res, { id: req.params.id, deleted: true });
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.post('/admin/rejectRequest', authenticateToken, requireRoles('admin'), requireAdminClinicBody('adminClinicID'), async (req, res) => {
+    try {
+        requireFields(req.body, ['adminID', 'adminClinicID', 'requestID', 'rejectionReason']);
+        const result = await withContract(req, (contract) => contract.submitTransaction('RejectRequest', String(req.body.adminID), String(req.body.requestID), String(req.body.rejectionReason)));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.post('/patient/rejectRequest', authenticateToken, requireRoles('patient'), requirePatientSelfBody('patientID'), async (req, res) => {
+    try {
+        requireFields(req.body, ['patientID', 'requestID', 'rejectionReason']);
+        const result = await withContract(req, (contract) => contract.submitTransaction('RejectRequest', String(req.body.patientID), String(req.body.requestID), String(req.body.rejectionReason)));
+        return sendSuccess(res, parseBufferJson(result), 200, ['/rejectRequest']);
+    } catch (error) { return sendFabricError(res, error); }
+});
 
 app.post('/addPatient', authenticateToken, requireRoles('admin'), requireAdminClinicBody('clinicID'), async (req, res) => {
     try {

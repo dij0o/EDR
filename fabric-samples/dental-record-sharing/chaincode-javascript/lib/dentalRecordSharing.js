@@ -768,6 +768,8 @@ class DentalRecordSharing extends Contract {
         if (!exists) {
             throw new Error(`The doctor ${id} does not exist`);
         }
+        const doctor = JSON.parse((await ctx.stub.getState(id)).toString());
+        this._requireAdminClinic(ctx, doctor.clinicID);
         return ctx.stub.deleteState(id);
     }
 
@@ -778,6 +780,8 @@ class DentalRecordSharing extends Contract {
         if (!exists) {
             throw new Error(`The patient ${id} does not exist`);
         }
+        const patient = JSON.parse((await ctx.stub.getState(id)).toString());
+        this._requireAdminClinic(ctx, patient.clinicID);
         return ctx.stub.deleteState(id);
     }
    

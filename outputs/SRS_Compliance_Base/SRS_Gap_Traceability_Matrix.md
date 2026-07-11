@@ -30,9 +30,9 @@ Scope: Static code-level review of `C:\Workbench\EDR_Source\Source_Code_Remediat
 
 | SRS ID | Requirement Summary | Status | Code-Level Evidence | Gap To Close |
 |---|---|---|---|---|
-| FR-01 | Authenticate all users via username/password against organizational records. | Partial | Database `/login` exists in `backend/server.js`. Web and mobile now call it. Business API routes now require JWT at the API layer. Patient login now joins `Patient.Blockchain_ID` for authenticated on-chain patient identity. Public `/register` now requires Admin/System JWT or `ADMIN_BOOTSTRAP_TOKEN`. | Apply the patient mapping DB migration in runtime environments and capture AWS smoke-test evidence. |
-| FR-02 | Issue JWT signed with user's MSP digital certificate. | Phase 2 Deviation | Phase 1 JWTs are API session tokens signed with `JWT_SECRET`; `Phase1_AWS_Deployment_Runbook.md` documents the decision because current Fabric gateway uses shared `appUser`. | Implement user-specific MSP/certificate binding during Phase 2 chaincode/gateway identity work. |
-| FR-03 | Enforce role-based UI rendering and permitted data/features. | Partial | Database and Blockchain APIs now enforce JWT roles on business routes. Web/mobile send JWTs on protected calls. Patient request/consent API routes now reject patient IDs that do not match the authenticated `blockchainID` claim. | Add chaincode-level MSP/RBAC checks and complete UI-level route/feature gating tests in later phases. |
+| FR-01 | Authenticate all users via username/password against organizational records. | Partial | Database `/login` exists in `backend/server.js`. Web and mobile call it, protected business APIs require JWTs, patient login returns the durable `Patient.Blockchain_ID`, and public `/register` requires Admin/System authorization. The AWS migration and smoke suite passed again after commit `4892875` was deployed. | Extend authenticated coverage to the remaining incomplete SRS endpoints and workflows. |
+| FR-02 | Issue JWT signed with user's MSP digital certificate. | Phase 2 Deviation | API JWTs remain signed with the shared deployment `JWT_SECRET`, but verified JWT organization/actor claims now select clinic-, doctor-, patient-, or system-bound X.509 Fabric wallet identities. The shared `appUser` is no longer used by active Phase 2 routes. | If strict FR-02 wording is mandatory, replace shared-secret JWT signing with an MSP-backed token signing/verification design. |
+| FR-03 | Enforce role-based UI rendering and permitted data/features. | Partial | Database and Blockchain APIs enforce JWT roles and owner/clinic scope. Deployed chaincode independently validates trusted MSP, certificate role, actorID, clinicID, assignment, ownership, and consent on covered operations. | Complete UI route/feature gating and the remaining SRS workflows. |
 | FR-04 | JWT tokens expire after configurable timeout. | Implemented | `/login` signs tokens using `JWT_EXPIRES_IN` with a `2h` default. Protected APIs verify token expiry through JWT validation. | Add expiry/session UX such as logout or re-login prompts in web/mobile. |
 | FR-05 | Admin add patient with complete demographics, medical, allergy, medication, insurance, clinic data. | Partial | Web add-patient posts only core identity/contact/clinic fields to blockchain API. DB schema has related tables. | Expand data model/API/UI to persist all required fields off-chain and relevant metadata on-chain. |
 | FR-06 | Invoke `addPatient` chaincode and generate unique patient ID. | Partial | `/addPatient` calls chaincode `addPatient`, but patient ID is user-supplied. | Add server-side unique patient ID generation or deterministic uniqueness policy. |
@@ -101,13 +101,16 @@ Scope: Static code-level review of `C:\Workbench\EDR_Source\Source_Code_Remediat
 | `POST /addPatient` | Partial | Present in blockchain API and now Admin-authenticated. Needs full SRS payload and off-chain storage split. |
 | `POST /assignPatientToDoctor` | Partial | Present and now Admin-authenticated. Needs complete UI workflow and chaincode identity checks. |
 | `GET /getAllPatients` | Partial | Present and now Admin/System-authenticated. Needs SRS endpoint compatibility and tests. |
-| `GET /getPatientByID/:id` | Missing/Mismatch | Actual route is `/readPatient/:patientID`. Add SRS alias. |
-| `POST /addMedicalRecord` | Missing | Add API route to chaincode. |
-| `GET /getDentalChartData/:id` | Missing | Add API route to chaincode. |
-| `POST /requestAccess` | Missing/Mismatch | Actual route is `/requestDataAccess`. Add SRS alias or update spec mapping. |
+| `GET /getPatientByID/:id` | Implemented at source | Canonical JWT-protected route calls `ReadPatient`; legacy `/readPatient/:patientID` remains compatible. Patient self-access and chaincode record-access rules apply. |
+| `POST /addMedicalRecord` | Implemented at source | Doctor-only route requires the JWT doctor ID to match `doctorID`; chaincode enforces assignment/consent record access. |
+| `GET /getDentalChartData/:id` | Implemented at source | JWT-protected Admin/Doctor/Patient/System route calls `getAllDentalChartData`; patient self and chaincode record-access rules apply. |
+| `POST /requestAccess` | Implemented at source | SRS alias uses the same doctor-only, actor-bound handler as `/requestDataAccess`. |
 | `POST /approveRequest` | Partial | Present and now Admin-authenticated with clinic claim matching. Needs rejection counterpart and notifications. |
-| `POST /grantConsent` | Missing/Mismatch | Actual route is `/provideConsent`. Add SRS alias. |
-| `GET /getPendingRequests` | Missing/Mismatch | Actual route requires `/:patientID`. Add authenticated patient route. |
+| `POST /grantConsent` | Implemented at source | SRS alias uses the same patient-only, owner-bound handler as `/provideConsent`. |
+| `GET /getPendingRequests` | Implemented at source | Patient-only route derives the patient ID from the verified JWT instead of accepting an impersonable path parameter. |
+| `PUT /patient/:id`; `DELETE /patient/:id` | Implemented at source | Admin-only routes expose chaincode update/delete. Update and chaincode delete enforce the admin clinic certificate binding. |
+| `GET /doctor/:id`; `PUT /doctor/:id`; `DELETE /doctor/:id` | Implemented at source | Read permits Admin/System or the same Doctor identity; mutations are Admin-only and clinic-bound. |
+| `POST /admin/rejectRequest`; `POST /patient/rejectRequest` | Implemented at source | Separate role-specific routes call the stage-aware `RejectRequest` transaction; admin clinic and patient actor binding are enforced. |
 
 ## Security Requirements
 
@@ -120,7 +123,7 @@ Scope: Static code-level review of `C:\Workbench\EDR_Source\Source_Code_Remediat
 | SEC-05 | Prevent replay with uniqueness/timestamps. | Evidence Needed | Fabric tx IDs exist; no app-level nonce strategy found. |
 | SEC-06 | Prevent impersonation through certificate identity. | Implemented for current AWS identities | Active Blockchain API routes no longer select shared `appUser`; JWT organization/blockchain claims map to clinic/actor-bound X.509 wallet identities carrying CA attributes. | Automate identity enrollment/revocation as user lifecycle management expands. |
 | SEC-07 | TLS encrypted communication between layers. | Partial | Fabric TLS config exists; REST APIs appear HTTP/local by default. |
-| SEC-08 | Patient data sharing only with authorized personnel and explicit consent. | Partial | Consent state exists; data retrieval APIs/UI incomplete and not consistently enforced. |
+| SEC-08 | Patient data sharing only with authorized personnel and explicit consent. | Partial | Covered deployed chaincode paths enforce doctor identity, assignment or granted sharing, patient ownership, and consent decisions. The 9 live identity checks and Phase 1 API regression suite passed after commit `4892875` was synchronized to AWS. | Complete the remaining retrieval APIs/UI, consent revocation, notifications, and automatic access logging. |
 
 ## Non-Functional And Usability Requirements
 
@@ -140,7 +143,7 @@ Scope: Static code-level review of `C:\Workbench\EDR_Source\Source_Code_Remediat
 ## Immediate Remediation Priorities
 
 1. Apply/verify the patient `Blockchain_ID` migration and run the Phase 1 AWS VM smoke tests. **Passed on 2026-07-11.**
-2. Implement chaincode MSP/RBAC checks.
+2. Implement chaincode MSP/RBAC checks. **Passed on AWS; `basic` 1.0.1 sequence 3 remains committed after Git-synchronized redeployment of `4892875`.**
 3. Add API endpoint parity with SRS section 5.
 4. Complete patient/doctor CRUD and assignment workflows.
 5. Complete medical/dental record APIs and UI with consent checks.

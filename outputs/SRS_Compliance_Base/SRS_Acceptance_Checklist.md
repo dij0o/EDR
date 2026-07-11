@@ -21,6 +21,23 @@ Use this checklist to decide when `Source_Code_Remediation` meets the SRS at a c
 
 Checkpoint note, 2026-07-11: Phase 1 passed on AWS. The patient mapping, aligned JWT secrets, service restarts, and role/ownership smoke tests were verified.
 
+Redeployment note, 2026-07-11: the AWS checkout was aligned to pushed commit `4892875`; both APIs and the Nginx frontend were rebuilt/restarted, and the complete Phase 1 smoke suite plus Phase 2 chaincode/gateway identity checks passed again. The only test-command caveat is the stale ESLint parser used by the chaincode `npm test` pre-hook; direct Mocha execution passes all 16 tests.
+
+Phase 3 source checkpoint, 2026-07-11: all Section 5 SRS route names and patient/doctor CRUD routes are implemented with JWT, role, actor/clinic binding, normalized canonical responses, and documented legacy aliases. API syntax and 7 route/identity tests pass. AWS deployment remains unchecked because the current session's SSH key was not accepted.
+
+## REST API Parity
+
+- [x] `GET /getPatientByID/:id` exists with compatible `/readPatient/:patientID` alias.
+- [x] `POST /addMedicalRecord` is Doctor-only and actor-bound.
+- [x] `GET /getDentalChartData/:id` enforces record access.
+- [x] `POST /requestAccess` exists with compatible `/requestDataAccess` alias.
+- [x] `POST /grantConsent` exists with compatible `/provideConsent` alias.
+- [x] `GET /getPendingRequests` derives the patient from the JWT.
+- [x] Patient update/delete and Doctor read/update/delete routes exist.
+- [x] Admin and Patient rejection routes are separate and role-bound.
+- [x] Canonical success and error envelopes are documented and tested.
+- [ ] Phase 3 Blockchain API and chaincode changes are deployed and smoke-tested on AWS.
+
 ## Chaincode Security
 
 - [x] Chaincode checks invoker MSP and certificate attributes through `ctx.clientIdentity`.
@@ -36,19 +53,19 @@ Checkpoint note, 2026-07-11: Phase 1 passed on AWS. The patient mapping, aligned
 - [ ] Detailed PII/clinical fields are stored off-chain.
 - [ ] On-chain record stores only allowed metadata/hashes/references.
 - [ ] Unique patient ID is generated or enforced.
-- [ ] Admin can update patient demographics.
+- [x] Admin can update patient demographics through the Phase 3 on-chain API; full SRS field completion remains Phase 4.
 - [ ] Admin can update insurance information.
 - [ ] Admin/Doctor can retrieve allowed patient records.
 - [ ] Admin can assign patient to one or more doctors.
-- [ ] Admin can delete patient record.
+- [x] Admin can delete an on-chain patient record within the authenticated clinic scope.
 
 ## Doctor Management
 
 - [ ] Admin can register doctor with name, specialty, clinic, contact, and license number.
 - [ ] Doctor creation is synchronized between database identity and chaincode metadata.
-- [ ] Admin can update doctor profile.
+- [x] Admin can update an on-chain doctor profile within the authenticated clinic scope.
 - [ ] Doctor can retrieve assigned patients only.
-- [ ] Admin can delete doctor record.
+- [x] Admin can delete an on-chain doctor record within the authenticated clinic scope.
 
 ## Clinical Records
 
@@ -76,10 +93,10 @@ Checkpoint note, 2026-07-11: Phase 1 passed on AWS. The patient mapping, aligned
 - [ ] Doctor can initiate cross-clinic request.
 - [ ] Request records include who, what, when, why, requesting clinic, holding clinic, and data type.
 - [ ] Holding clinic admin can approve request.
-- [ ] Holding clinic admin can reject request with reason.
+- [x] Holding clinic admin has a separate JWT/MSP-bound rejection endpoint with reason.
 - [ ] Patient receives request details in mobile app.
 - [ ] Patient can grant consent.
-- [ ] Patient can reject consent.
+- [x] Patient has a separate JWT/MSP owner-bound rejection endpoint with reason.
 - [ ] Consent decision is recorded on-chain with authenticated patient identity.
 - [ ] Access is granted only after admin approval and patient consent.
 - [ ] Consent revocation is implemented or formally documented as a deviation.

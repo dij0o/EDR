@@ -27,6 +27,8 @@ const normalizeRole = (role) => {
     return ROLE_ALIASES[normalized] || normalized;
 };
 
+const sendApiError = (res, status, code, message) => res.status(status).json({ success: false, error: { code, message } });
+
 const parseCorsOrigin = (value) => {
     if (!value || value === '*') {
         return '*';
@@ -337,14 +339,14 @@ const safeTokenEquals = (receivedToken, expectedToken) => {
 const authenticateToken = (req, res, next) => {
     const token = getBearerToken(req);
 
-    if (!token) return res.status(401).json({ error: 'Access denied' });
+    if (!token) return sendApiError(res, 401, 'AUTH_REQUIRED', 'Access denied');
 
     if (!SECRET_KEY) {
-        return res.status(500).json({ error: 'JWT secret is not configured' });
+        return sendApiError(res, 500, 'AUTH_CONFIGURATION_ERROR', 'JWT secret is not configured');
     }
 
     jwt.verify(token, SECRET_KEY, (err, user) => {
-        if (err) return res.status(403).json({ error: 'Invalid token' });
+        if (err) return sendApiError(res, 403, 'INVALID_TOKEN', 'Invalid token');
         req.user = user;
         next();
     });
@@ -357,7 +359,7 @@ const requireRoles = (...allowedRoles) => {
         const userRole = normalizeRole(req.user?.role);
 
         if (!userRole || !allowed.includes(userRole)) {
-            return res.status(403).json({ error: 'Forbidden: insufficient role permissions' });
+            return sendApiError(res, 403, 'FORBIDDEN', 'Forbidden: insufficient role permissions');
         }
 
         next();
