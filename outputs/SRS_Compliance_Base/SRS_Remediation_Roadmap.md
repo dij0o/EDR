@@ -128,6 +128,17 @@ Exit criteria:
 
 ## Phase 4: Patient Management Completion
 
+Status: **Source implementation complete 2026-07-11; AWS deployment/revalidation pending.**
+
+Implementation notes:
+
+- MySQL is authoritative for patient PII and detailed demographic, clinical, medication, allergy, insurance, contact, and address data.
+- Fabric stores patient ID, clinic/doctor identifiers, an opaque `mysql:Patient/<ID>` reference, SHA-256 data hash, timestamps, and `PII_OFF_CHAIN_MYSQL`.
+- Database API coordinates both stores: Fabric writes precede MySQL commit; failures roll back MySQL. Delete removes Fabric first, then commits the MySQL cascade.
+- IDs are server-generated as `Patient-<UUID>`.
+- Accepted naming deviation: metadata-safe `AddPatientMetadata` and `UpdatePatientMetadata` replace PII-bearing SRS transaction payloads. Historical ledger PII must be sanitized during deployment.
+- Deployment requires the Phase 4 migration, chaincode upgrade, API restarts, frontend rebuild/copy, and authenticated smoke tests.
+
 SRS coverage: FR-05 to FR-10
 
 Tasks:

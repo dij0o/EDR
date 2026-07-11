@@ -49,15 +49,15 @@ Phase 3 deployment checkpoint, 2026-07-11: all Section 5 SRS route names and pat
 
 ## Patient Management
 
-- [ ] Admin can add patient with all SRS fields.
-- [ ] Detailed PII/clinical fields are stored off-chain.
-- [ ] On-chain record stores only allowed metadata/hashes/references.
-- [ ] Unique patient ID is generated or enforced.
-- [x] Admin can update patient demographics through the Phase 3 on-chain API; full SRS field completion remains Phase 4.
-- [ ] Admin can update insurance information.
-- [ ] Admin/Doctor can retrieve allowed patient records.
-- [ ] Admin can assign patient to one or more doctors.
-- [x] Admin can delete an on-chain patient record within the authenticated clinic scope.
+- [x] Admin can add patient with all SRS fields at source level; AWS smoke test pending.
+- [x] Detailed patient PII/clinical fields are stored off-chain in MySQL.
+- [x] Phase 4 on-chain writes store only metadata/hash/reference; historical ledger PII cleanup is a deployment gate.
+- [x] Unique patient ID is server-generated as `Patient-<UUID>`.
+- [x] Admin can update patient demographics through the coordinated Phase 4 API/UI.
+- [x] Admin can update insurance information and refresh the on-chain hash.
+- [x] Admin and patient owner can retrieve allowed profiles; doctor clinical access remains assignment/consent-bound.
+- [x] Admin can assign patient to one or more doctors through the API/UI.
+- [x] Admin can delete Fabric metadata and the MySQL identity with confirmation and audit-friendly errors.
 
 ## Doctor Management
 

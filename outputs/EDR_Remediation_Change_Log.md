@@ -173,3 +173,12 @@ These were created or refreshed to run and verify the remediation copy. They are
 | Fabric ledger cleanliness | Verification created smoke-test ledger records. For a clean demo, reset the Fabric network and reinitialize the ledger. |
 | Chaincode lint pre-hook | The deployed chaincode and all direct tests pass, but the standard `npm test` command stops before Mocha because the inherited ESLint parser does not accept object spread syntax. |
 | Dependency audit findings | Clean AWS installs reported 28 vulnerabilities in `dental-backend` (3 critical), 33 in the frontend (1 critical), and 19 in chaincode (1 critical). Review dependency upgrades with compatibility tests; do not apply forced production upgrades. |
+# Phase 4 Patient Management Completion - 2026-07-11
+
+- Added MySQL-backed SRS patient fields and migration `database/migrations/2026-07-11-phase4-patient-management.sql`.
+- Added admin-coordinated patient create, list, owner/admin read, update, assignment, and delete routes in `backend/server.js`.
+- Added server-generated `Patient-<UUID>` identifiers and SHA-256 hashes of the authoritative off-chain patient payload.
+- Added `AddPatientMetadata` and `UpdatePatientMetadata` chaincode transactions plus JWT/MSP-bound Blockchain API routes. These store only identifiers, clinic/doctor metadata, opaque MySQL reference, hash, timestamps, and storage policy.
+- Replaced the add-patient UI with complete SRS fields and added admin update, assignment, and confirmed delete actions.
+- Added `dental-backend/test/phase4PatientManagement.test.js`; all 10 Phase 2-4 API/identity tests and Node syntax checks pass.
+- Deployment pending: MySQL backup/migration, chaincode lifecycle upgrade, historical patient-ledger PII sanitization, API restarts, frontend rebuild/copy, and authenticated smoke tests.

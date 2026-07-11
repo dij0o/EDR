@@ -1,287 +1,60 @@
+import { useState } from 'react';
+import { databaseUrl, jsonHeaders } from '../../config/api.js';
+import { getStoredUser } from '../../utils/auth.js';
 
-import NewPatientDialog1 from "./NewPatientDialog1";
-import NewPatientDialog2 from "./NewPatientDialog2";
-import { useState } from "react";
-import { blockchainUrl, jsonHeaders } from "../../config/api.js";
+const empty = {
+    firstName: '', lastName: '', dateOfBirth: '', gender: '', contactNumber: '', email: '', password: '',
+    emiratesID: '', nationality: '', address: '', bloodType: '', medicalHistory: '', allergies: '', medications: '',
+    insuranceProvider: '', policyNumber: '', coverageType: '', clinicID: '', doctors: ''
+};
 
-const NewPatientDialog = () => {
-    const storedUser = (() => {
+const NewPatientDialog = ({ onSaved }) => {
+    const user = getStoredUser();
+    const [form, setForm] = useState({ ...empty, clinicID: user?.organizationId || '' });
+    const [status, setStatus] = useState({ loading: false, error: '' });
+    const set = (name) => (event) => setForm((value) => ({ ...value, [name]: event.target.value }));
+
+    const submit = async (event) => {
+        event.preventDefault(); setStatus({ loading: true, error: '' });
+        const payload = {
+            ...form,
+            clinicID: Number(form.clinicID),
+            medicalHistory: form.medicalHistory.split('\n').filter(Boolean),
+            allergies: form.allergies.split('\n').filter(Boolean),
+            medications: form.medications.split('\n').filter(Boolean),
+            insuranceDetails: { provider: form.insuranceProvider, policyNumber: form.policyNumber, coverageType: form.coverageType },
+            doctors: form.doctors.split(',').map((item) => item.trim()).filter(Boolean)
+        };
         try {
-            return JSON.parse(localStorage.getItem('user') || '{}');
-        } catch {
-            return {};
-        }
-    })();
-    const [formData, setFormData] = useState({
-        patientID: '',
-        fullName: '',
-        emiratesID: '',
-        dateOfBirth: '',
-        gender: '',
-        address: '',
-        email: '',
-        contactNumber: '',
-        clinicID: storedUser.organizationId ? String(storedUser.organizationId) : '',
-    });
-
-    const handleFieldChange = (event) => {
-        const { name, value } = event.target;
-        setFormData((current) => ({ ...current, [name]: value }));
+            const response = await fetch(databaseUrl('/patients'), { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(payload) });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result?.error?.message || 'Unable to create patient');
+            setForm({ ...empty, clinicID: user?.organizationId || '' });
+            window.location.hash = '';
+            onSaved?.(result.data);
+        } catch (error) { setStatus({ loading: false, error: error.message }); return; }
+        setStatus({ loading: false, error: '' });
     };
 
-    const handleSubmitPatient = async () => {
-        const requiredFields = ['patientID', 'fullName', 'emiratesID', 'dateOfBirth', 'gender', 'address', 'email', 'contactNumber', 'clinicID'];
-        const missingField = requiredFields.find((field) => !formData[field]);
-
-        if (missingField) {
-            alert('Please complete all required patient fields before submitting.');
-            return;
-        }
-
-        const [firstName, ...lastNameParts] = formData.fullName.trim().split(/\s+/);
-        const lastName = lastNameParts.join(' ') || firstName;
-
-        try {
-            const response = await fetch(blockchainUrl('/addPatient'), {
-                method: 'POST',
-                headers: jsonHeaders(),
-                body: JSON.stringify({
-                    patientID: formData.patientID,
-                    firstName,
-                    lastName,
-                    dateOfBirth: formData.dateOfBirth,
-                    gender: formData.gender,
-                    emiratesID: formData.emiratesID,
-                    email: formData.email,
-                    contactNumber: formData.contactNumber,
-                    address: formData.address,
-                    clinicID: formData.clinicID,
-                    doctors: [],
-                }),
-            });
-            const data = await response.json();
-
-            if (!response.ok) {
-                alert(data.error || 'Failed to add patient.');
-                return;
-            }
-
-            alert(`Patient ${data.patientID} added successfully.`);
-            window.location.reload();
-        } catch (error) {
-            console.error('Failed to add patient:', error);
-            alert('Failed to add patient. Please try again later.');
-        }
-    };
-
-    const PersonalInfoObj = {
-        header: 'Personal Info',
-        inputs: [
-            {
-                header: 'Patient ID',
-                type: 'text',
-                name: 'patientID',
-                classes: { w60: true },
-                placeholder: 'e.g. Patient4'
-            },
-            {
-                header: 'Full Name',
-                type: 'text',
-                name: 'fullName',
-                classes:  ['grow'] ,
-                placeholder: 'Full name'
-            },
-            {
-                header: 'Emirates Id',
-                type: 'text',
-                name: 'emiratesID',
-                classes: { w60: true },
-                placeholder: 'XXX-XXXXXXXXXXX-X'
-            },
-            {
-                header: 'Date of Birth',
-                type: 'date',
-                name: 'dateOfBirth',
-                classes: {}
-            },
-            {
-                header: 'Gender',
-                type: 'select',
-                name: 'gender',
-                classes: {},
-                options: ['Female', 'Male']
-            },
-            {
-                header: 'Nationality',
-                type: 'select',
-                classes: {},
-                options: ['Female', 'Male']
-            },
-            {
-                header: 'City',
-                type: 'text',
-                classes: {},
-                placeholder: 'e.g. Ajman, Dubai'
-            },
-            {
-                header: 'Address',
-                type: 'text',
-                name: 'address',
-                classes:  ['grow'] ,
-                placeholder: 'e.g. Barsha, Jumairah'
-            },
-            {
-                header: 'Email',
-                type: 'text',
-                name: 'email',
-                classes: {},
-                placeholder: 'example@gmail.com'
-            },
-            {
-                header: 'Phone Number',
-                type: 'text',
-                name: 'contactNumber',
-                classes: {},
-                placeholder: '05XXXXXXXX'
-            },
-            {
-                header: 'Clinic ID',
-                type: 'text',
-                name: 'clinicID',
-                classes: {},
-                placeholder: 'e.g. 1'
-            }
-        ]
-    }
-    const MedicalInfoObj = {
-        header: 'Medical Info',
-        inputs: [
-            {
-                header: 'Blood Type',
-                type: 'select',
-                classes: ['w-10'],
-                options: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
-            },
-            {
-                header: 'Height',
-                type: 'number',
-                classes: ['w-36'],
-                placeholder: 'e.g. 170 cm'
-            },
-            {
-                header: 'Weight',
-                type: 'number',
-                classes: ['grow'],
-                placeholder: 'e.g. 70 kg'
-            },
-            {
-                header: 'Allergies',
-                type: 'textarea',
-                classes:  ['grow'] ,
-                placeholder: 'Known allergies, e.g., penicillin, nuts'
-            },
-            {
-                header: 'Current Medications',
-                type: 'textarea',
-                classes:  ['grow'] ,
-                placeholder: 'e.g., Paracetamol 500mg daily'
-            },
-            {
-                header: 'Immunizations',
-                type: 'textarea',
-                classes:  ['grow'] ,
-                placeholder: 'e.g., Flu shot, COVID-19 vaccine'
-            },
-            {
-                header: 'Ongoing Treatments',
-                type: 'textarea',
-                classes:  ['grow'] ,
-                placeholder: 'e.g., Physical therapy, chemotherapy'
-            },
-            {
-                header: 'Doctor Notes',
-                type: 'textarea',
-                classes:  ['grow'] ,
-                placeholder: 'Additional notes from the doctor'
-            }
-        ]
-        
-    }
-
-    const InusranceInfoObj = {
-        header: 'Insurance',
-        inputs: [
-            {
-                header: 'Insurance Provider',
-                type: 'text',
-                classes: ['grow'],
-                placeholder: 'e.g., Emirates Insurance, Daman'
-            },
-            {
-                header: 'Policy Number',
-                type: 'text',
-                classes: ['grow'],
-                placeholder: 'e.g., 1234567890'
-            },
-            {
-                header: 'Coverage Type',
-                type: 'select',
-                classes:['grow'],
-                options: ['Basic', 'Standard', 'Premium', 'Comprehensive']
-            },
-            {
-                header: 'Effective Date',
-                type: 'date',
-                classes: ['grow']
-            },
-            {
-                header: 'Expiration Date',
-                type: 'date',
-                classes: ['grow']
-            },
-            {
-                header: 'Primary Insured Name',
-                type: 'text',
-                classes: ['grow'],
-                placeholder: 'e.g., John Doe'
-            },
-            {
-                header: 'Relationship to Primary Insured',
-                type: 'select',
-                classes: { w60: true },
-                options: ['Self', 'Spouse', 'Child', 'Other']
-            },
-            {
-                header: 'Deductible Amount',
-                type: 'text',
-                classes: {},
-                placeholder: 'e.g., AED 500'
-            },
-            {
-                header: 'Co-pay Percentage',
-                type: 'text',
-                classes: {},
-                placeholder: 'e.g., 20%'
-            },
-        ]
-        
-    }
-
-
-
-
-    return (
-        <div id='AddNewPatientDialog' className='fixed bg-white drop-shadow-xl w-[68em] h-[36em] inset-1/2 -translate-x-1/2 translate-y-[30em] z-50 rounded-md opacity-0 grid grid-cols-12 gap-x-6 overflow-hidden' style={{gridTemplateColumns: '3fr 7fr'}}>
-            <NewPatientDialog1 />
-            <div className="h-[36em] overflow-y-scroll no-scrollbar">
-                <NewPatientDialog2 dialogStructure={PersonalInfoObj} values={formData} onFieldChange={handleFieldChange} buttonTextP={''} buttonTextN={'Next'} hashhN={'#sp2'} dialogSectionId={'addNewPatient'} />
-                <NewPatientDialog2 dialogStructure={MedicalInfoObj} buttonTextP={'Prev'}  buttonTextN={'Next'} hashhP={'#addNewPatient'} hashhN={'#sp3'} dialogSectionId={'sp2'} />
-                <NewPatientDialog2 dialogStructure={InusranceInfoObj} buttonTextP={'Prev'}  buttonTextN={'Submit'} hashhP={'#sp2'} hashhN={'#'} dialogSectionId={'sp3'} onSubmit={handleSubmitPatient} />
+    const fields = [
+        ['firstName','First name','text'], ['lastName','Last name','text'], ['dateOfBirth','Date of birth','date'],
+        ['gender','Gender','text'], ['contactNumber','Contact number','tel'], ['email','Email','email'],
+        ['password','Temporary password','password'], ['emiratesID','Emirates ID','text'], ['nationality','Nationality','text'],
+        ['address','Address','text'], ['bloodType','Blood type (A+, O-, etc.)','text'], ['insuranceProvider','Insurance provider','text'],
+        ['policyNumber','Policy number','text'], ['coverageType','Coverage type','text'], ['doctors','Doctor IDs (comma-separated)','text']
+    ];
+    return <div id="AddNewPatientDialog" className="fixed bg-white drop-shadow-xl w-[68em] max-w-[95vw] h-[36em] inset-1/2 -translate-x-1/2 translate-y-[30em] z-50 rounded-md opacity-0 overflow-y-auto p-8">
+        <form onSubmit={submit} aria-label="Add patient">
+            <div className="flex justify-between"><h1 className="text-3xl font-bold">Add patient</h1><a href="#" aria-label="Close">Close</a></div>
+            <p className="my-3 text-sm text-gray-600">PII and clinical details are stored in MySQL. Fabric stores only a reference and SHA-256 hash.</p>
+            <div className="grid grid-cols-3 gap-4">
+                {fields.map(([name,label,type]) => <label key={name} className="text-sm">{label}<input required className="block border rounded p-2 w-full" type={type} value={form[name]} onChange={set(name)} /></label>)}
+                {['medicalHistory','allergies','medications'].map((name) => <label key={name} className="text-sm capitalize">{name.replace(/([A-Z])/g,' $1')} (one per line)<textarea required className="block border rounded p-2 w-full" value={form[name]} onChange={set(name)} /></label>)}
             </div>
-
-        </div>
-    )
-}
-
+            {status.error && <p role="alert" className="text-red-700 mt-3">{status.error}</p>}
+            <button disabled={status.loading} className="bg-[#000834] text-white px-6 py-3 rounded mt-5">{status.loading ? 'Creating…' : 'Create patient'}</button>
+        </form>
+    </div>;
+};
 
 export default NewPatientDialog;

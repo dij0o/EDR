@@ -60,7 +60,7 @@ import PatientCard from "../../components/Patients/PatientCard";
 import NewPatientDialog from "../../components/Patients/NewPatientDialog";
 import RequestPatientCard from "../../components/Patients/RequestPatientCard";
 
-const PatientsCards = ({ patients }) => {
+const PatientsCards = ({ patients, onChanged }) => {
     // Current date for age calculation
     let d = new Date();
 
@@ -119,7 +119,9 @@ const PatientsCards = ({ patients }) => {
             createdDate={new Date(patient.createdDate).toLocaleDateString()}
             medicalRecord={medicalRecordObj}
             dentalRecord={dentalRecordObj}
-            insurance={"N/A"}
+            insurance={patient.insuranceDetails?.provider || "N/A"}
+            patient={patient}
+            onChanged={onChanged}
             />
         )
     })
@@ -135,7 +137,7 @@ const PatientsCards = ({ patients }) => {
 
 
 
-            <NewPatientDialog />
+            <NewPatientDialog onSaved={onChanged} />
         </div>
     )
 }

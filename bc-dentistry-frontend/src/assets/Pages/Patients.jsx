@@ -39,7 +39,7 @@ import PatientsFilters from "../Sections/Patients/PatientsFilters";
 import axios from "axios";
 import { useEffect, useState } from "react";
 import Lo from "../images/icons/calendar.svg";
-import { authHeaders, blockchainUrl } from "../config/api.js";
+import { authHeaders, blockchainUrl, databaseUrl } from "../config/api.js";
 import { getStoredUser } from "../utils/auth.js";
 
 const Patients = () => {
@@ -64,7 +64,7 @@ const Patients = () => {
 
                 if (role === "admin" && user.organizationId) {
                     console.log("🟢 Admin fetching patients for clinic:", user.organizationId);
-                    response = await axios.get(blockchainUrl(`/getPatientsByClinic/${user.organizationId}`), { headers: authHeaders() });
+                    response = await axios.get(databaseUrl('/patients'), { headers: authHeaders() });
                 } else if (role === "doctor" && user.blockchainID) {
                     console.log("🔵 Doctor fetching assigned patients:", user.blockchainID);
                     response = await axios.get(blockchainUrl(`/getPatientsAssignedToDoctor/${user.blockchainID}`), { headers: authHeaders() });
@@ -74,7 +74,7 @@ const Patients = () => {
                 }
 
                 console.log("✅ Patients fetched:", response.data);
-                setPatients(response.data);
+                setPatients(response.data.data || response.data);
             } catch (error) {
                 console.error("❌ Error fetching patients:", error.response?.data || error.message);
             }
@@ -105,7 +105,7 @@ const Patients = () => {
                         </div>
                     )}
                 </div>
-                <PatientsCards patients={patients} />
+                <PatientsCards patients={patients} onChanged={() => window.location.reload()} />
             </div>
         </div>
     );

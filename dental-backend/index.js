@@ -323,6 +323,35 @@ const grantConsentHandler = async (req, res) => {
 
 app.get('/getPatientByID/:id', authenticateToken, requireRoles('admin', 'doctor', 'patient', 'system'), requirePatientSelfParam('id'), readPatientHandler);
 
+app.post('/patient-metadata', authenticateToken, requireRoles('admin'), requireAdminClinicBody('clinicID'), async (req, res) => {
+    try {
+        requireFields(req.body, ['patientID', 'clinicID', 'offChainRef', 'dataHash']);
+        const result = await withContract(req, (contract) => contract.submitTransaction(
+            'AddPatientMetadata', String(req.body.patientID), String(req.body.clinicID), String(req.body.offChainRef),
+            String(req.body.dataHash), JSON.stringify(req.body.doctors || []), new Date().toISOString()
+        ));
+        return sendSuccess(res, parseBufferJson(result), 201);
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.put('/patient-metadata/:id', authenticateToken, requireRoles('admin'), requireAdminClinicBody('clinicID'), async (req, res) => {
+    try {
+        requireFields(req.body, ['clinicID', 'offChainRef', 'dataHash']);
+        const result = await withContract(req, (contract) => contract.submitTransaction(
+            'UpdatePatientMetadata', String(req.params.id), String(req.body.clinicID), String(req.body.offChainRef),
+            String(req.body.dataHash), JSON.stringify(req.body.doctors || []), new Date().toISOString()
+        ));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.delete('/patient-metadata/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
+    try {
+        await withContract(req, (contract) => contract.submitTransaction('DeletePatient', String(req.params.id)));
+        return sendSuccess(res, { patientID: req.params.id, deleted: true });
+    } catch (error) { return sendFabricError(res, error); }
+});
+
 app.post('/addMedicalRecord', authenticateToken, requireRoles('doctor'), requireDoctorSelfBody('doctorID'), async (req, res) => {
     try {
         requireFields(req.body, ['doctorID', 'patientID', 'medicalRecord']);

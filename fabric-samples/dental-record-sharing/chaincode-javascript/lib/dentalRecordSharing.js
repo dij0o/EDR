@@ -635,6 +635,43 @@ class DentalRecordSharing extends Contract {
         // }
     }
 
+    // Phase 4 SEC-03 path: Fabric stores no patient PII, only an opaque off-chain reference and integrity hash.
+    async AddPatientMetadata(ctx, patientID, clinicID, offChainRef, dataHash, doctors, createdDate) {
+        this._requireAdminClinic(ctx, clinicID);
+        if (await this._actorExists(ctx, patientID)) {
+            throw new Error(`The patient ${patientID} already exists`);
+        }
+        if (!/^[a-f0-9]{64}$/i.test(dataHash)) {
+            throw new Error('Patient dataHash must be a SHA-256 hex digest');
+        }
+        const patient = {
+            docType: 'patient', patientID, role: 'patient',
+            clinicID: parseInt(clinicID), clinicIDs: [parseInt(clinicID)],
+            offChainRef, dataHash: dataHash.toLowerCase(), doctors: parseArrayArgument(doctors),
+            sharedWith: [], createdDate, modifiedDate: createdDate,
+            storagePolicy: 'PII_OFF_CHAIN_MYSQL'
+        };
+        await ctx.stub.putState(patientID, Buffer.from(stringify(sortKeysRecursive(patient))));
+        return JSON.stringify(patient);
+    }
+
+    async UpdatePatientMetadata(ctx, patientID, clinicID, offChainRef, dataHash, doctors, modifiedDate) {
+        this._requireAdminClinic(ctx, clinicID);
+        const patientJSON = await ctx.stub.getState(patientID);
+        if (!patientJSON || patientJSON.length === 0) throw new Error(`The patient ${patientID} does not exist`);
+        const existing = JSON.parse(patientJSON.toString());
+        this._requireAdminClinic(ctx, existing.clinicID || (existing.clinicIDs || [])[0]);
+        if (!/^[a-f0-9]{64}$/i.test(dataHash)) throw new Error('Patient dataHash must be a SHA-256 hex digest');
+        const patient = {
+            docType: 'patient', patientID, role: 'patient', clinicID: parseInt(clinicID), clinicIDs: [parseInt(clinicID)],
+            offChainRef, dataHash: dataHash.toLowerCase(), doctors: parseArrayArgument(doctors),
+            sharedWith: existing.sharedWith || [], createdDate: existing.createdDate || modifiedDate, modifiedDate,
+            storagePolicy: 'PII_OFF_CHAIN_MYSQL'
+        };
+        await ctx.stub.putState(patientID, Buffer.from(stringify(sortKeysRecursive(patient))));
+        return JSON.stringify(patient);
+    }
+
 
     // actorExists returns true when doctor or patient with given ID exists in world state.
     async _actorExists(ctx, actorID) {
@@ -781,7 +818,7 @@ class DentalRecordSharing extends Contract {
             throw new Error(`The patient ${id} does not exist`);
         }
         const patient = JSON.parse((await ctx.stub.getState(id)).toString());
-        this._requireAdminClinic(ctx, patient.clinicID);
+        this._requireAdminClinic(ctx, patient.clinicID || (patient.clinicIDs || [])[0]);
         return ctx.stub.deleteState(id);
     }
    
