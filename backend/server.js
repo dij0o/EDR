@@ -871,6 +871,7 @@ app.delete('/patients/:id', authenticateToken, requireRoles('admin'), async (req
         if (!rows.length) { const error = new Error('Patient not found'); error.statusCode = 404; throw error; }
         requireAdminClinic(req, rows[0].Clinic_ID);
         await callBlockchain(req, `/patient-metadata/${encodeURIComponent(req.params.id)}`, 'DELETE');
+        await connection.query('DELETE FROM Patient WHERE ID=?', [rows[0].ID]);
         await connection.query('DELETE FROM User WHERE ID=?', [rows[0].ID]);
         await connection.commit();
         return res.json({ success: true, data: { patientID: req.params.id, deleted: true }, message: 'Patient deleted from Fabric and MySQL' });
