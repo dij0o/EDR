@@ -101,16 +101,16 @@ Scope: Static code-level review of `C:\Workbench\EDR_Source\Source_Code_Remediat
 | `POST /addPatient` | Partial | Present in blockchain API and now Admin-authenticated. Needs full SRS payload and off-chain storage split. |
 | `POST /assignPatientToDoctor` | Partial | Present and now Admin-authenticated. Needs complete UI workflow and chaincode identity checks. |
 | `GET /getAllPatients` | Partial | Present and now Admin/System-authenticated. Needs SRS endpoint compatibility and tests. |
-| `GET /getPatientByID/:id` | Implemented at source | Canonical JWT-protected route calls `ReadPatient`; legacy `/readPatient/:patientID` remains compatible. Patient self-access and chaincode record-access rules apply. |
-| `POST /addMedicalRecord` | Implemented at source | Doctor-only route requires the JWT doctor ID to match `doctorID`; chaincode enforces assignment/consent record access. |
-| `GET /getDentalChartData/:id` | Implemented at source | JWT-protected Admin/Doctor/Patient/System route calls `getAllDentalChartData`; patient self and chaincode record-access rules apply. |
-| `POST /requestAccess` | Implemented at source | SRS alias uses the same doctor-only, actor-bound handler as `/requestDataAccess`. |
+| `GET /getPatientByID/:id` | Deployed and verified | Canonical JWT-protected route calls `ReadPatient`; legacy `/readPatient/:patientID` remains compatible. Patient self-access and chaincode record-access rules apply. |
+| `POST /addMedicalRecord` | Deployed and verified | Doctor-only route requires the JWT doctor ID to match `doctorID`; chaincode enforces assignment/consent record access. |
+| `GET /getDentalChartData/:id` | Deployed and verified | JWT-protected Admin/Doctor/Patient/System route calls `getAllDentalChartData`; patient self and chaincode record-access rules apply. |
+| `POST /requestAccess` | Deployed and verified | SRS alias uses the same doctor-only, actor-bound handler as `/requestDataAccess`. |
 | `POST /approveRequest` | Partial | Present and now Admin-authenticated with clinic claim matching. Needs rejection counterpart and notifications. |
-| `POST /grantConsent` | Implemented at source | SRS alias uses the same patient-only, owner-bound handler as `/provideConsent`. |
-| `GET /getPendingRequests` | Implemented at source | Patient-only route derives the patient ID from the verified JWT instead of accepting an impersonable path parameter. |
-| `PUT /patient/:id`; `DELETE /patient/:id` | Implemented at source | Admin-only routes expose chaincode update/delete. Update and chaincode delete enforce the admin clinic certificate binding. |
-| `GET /doctor/:id`; `PUT /doctor/:id`; `DELETE /doctor/:id` | Implemented at source | Read permits Admin/System or the same Doctor identity; mutations are Admin-only and clinic-bound. |
-| `POST /admin/rejectRequest`; `POST /patient/rejectRequest` | Implemented at source | Separate role-specific routes call the stage-aware `RejectRequest` transaction; admin clinic and patient actor binding are enforced. |
+| `POST /grantConsent` | Deployed and verified | SRS alias uses the same patient-only, owner-bound handler as `/provideConsent`. |
+| `GET /getPendingRequests` | Deployed and verified | Patient-only route derives the patient ID from the verified JWT instead of accepting an impersonable path parameter. |
+| `PUT /patient/:id`; `DELETE /patient/:id` | Deployed and verified | Admin-only routes expose chaincode update/delete. Update and chaincode delete enforce the admin clinic certificate binding. |
+| `GET /doctor/:id`; `PUT /doctor/:id`; `DELETE /doctor/:id` | Deployed and verified | Read permits Admin/System or the same Doctor identity; mutations are Admin-only and clinic-bound. |
+| `POST /admin/rejectRequest`; `POST /patient/rejectRequest` | Deployed and verified | Separate role-specific routes call the stage-aware `RejectRequest` transaction; admin clinic and patient actor binding are enforced. |
 
 ## Security Requirements
 

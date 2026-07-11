@@ -23,7 +23,7 @@ Checkpoint note, 2026-07-11: Phase 1 passed on AWS. The patient mapping, aligned
 
 Redeployment note, 2026-07-11: the AWS checkout was aligned to pushed commit `4892875`; both APIs and the Nginx frontend were rebuilt/restarted, and the complete Phase 1 smoke suite plus Phase 2 chaincode/gateway identity checks passed again. The only test-command caveat is the stale ESLint parser used by the chaincode `npm test` pre-hook; direct Mocha execution passes all 16 tests.
 
-Phase 3 source checkpoint, 2026-07-11: all Section 5 SRS route names and patient/doctor CRUD routes are implemented with JWT, role, actor/clinic binding, normalized canonical responses, and documented legacy aliases. API syntax and 7 route/identity tests pass. AWS deployment remains unchecked because the current session's SSH key was not accepted.
+Phase 3 deployment checkpoint, 2026-07-11: all Section 5 SRS route names and patient/doctor CRUD routes are deployed from `b30cae6` with JWT, role, actor/clinic binding, normalized canonical responses, and documented legacy aliases. Chaincode `basic` 1.0.2 sequence 4 is committed with both MSP approvals; 7 route/identity tests and the 13-check authenticated AWS smoke suite pass.
 
 ## REST API Parity
 
@@ -36,7 +36,7 @@ Phase 3 source checkpoint, 2026-07-11: all Section 5 SRS route names and patient
 - [x] Patient update/delete and Doctor read/update/delete routes exist.
 - [x] Admin and Patient rejection routes are separate and role-bound.
 - [x] Canonical success and error envelopes are documented and tested.
-- [ ] Phase 3 Blockchain API and chaincode changes are deployed and smoke-tested on AWS.
+- [x] Phase 3 Blockchain API and chaincode changes are deployed and smoke-tested on AWS.
 
 ## Chaincode Security
 

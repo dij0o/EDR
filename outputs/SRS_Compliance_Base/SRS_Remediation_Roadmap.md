@@ -98,7 +98,7 @@ Exit criteria:
 
 SRS coverage: Section 5 API gateway specifications
 
-Status - 2026-07-11: **Implemented and source-verified; AWS deployment pending.** The Blockchain API now exposes all six SRS-named routes, patient update/delete, doctor read/update/delete, and separate admin/patient rejection routes. Canonical routes use `{ success, data }` or `{ success: false, error: { code, message } }`; legacy aliases remain available. All routes use JWT and role middleware, and actor/clinic-sensitive routes retain the Phase 2 JWT-to-wallet and MSP attribute binding. Source syntax checks and 7 Phase 2/3 API identity/route tests pass. AWS SSH was reachable but the current session had no accepted deployment key, so Phase 3 is not marked deployed.
+Status - 2026-07-11: **Completed and deployed to AWS.** The Blockchain API exposes all six SRS-named routes, patient update/delete, doctor read/update/delete, and separate admin/patient rejection routes. Canonical routes use `{ success, data }` or `{ success: false, error: { code, message } }`; legacy aliases remain available. Checkout `b30cae6` is live under PM2 and chaincode `basic` version `1.0.2`, sequence `4`, is committed with Org1MSP and Org2MSP approvals. Seven route/identity tests and 13 authenticated AWS smoke checks pass, including patient self reads, unassigned-doctor 403, validation 400s, role 403s, and actor-mismatch 403.
 
 Tasks:
 

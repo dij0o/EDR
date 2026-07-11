@@ -8,7 +8,7 @@
 - Preserved Phase 2 JWT-to-wallet identity selection for every new handler and strengthened chaincode delete operations with stored-record clinic checks.
 - Standardized canonical success/error envelopes and JWT/role error envelopes across both APIs.
 - Added `dental-backend/test/phase3RouteParity.test.js`; API syntax and 7 route/identity checks pass locally.
-- No database migration is required. AWS rollout requires Blockchain API restart plus chaincode package/approval/commit and canonical/legacy route smoke tests. The current SSH session did not have an accepted key, so deployment remains pending.
+- No database migration was required. AWS deployment passed on 2026-07-11: checkout `b30cae6`, PM2 Blockchain API online, and chaincode `basic` version `1.0.2` sequence `4` committed with Org1MSP/Org2MSP approvals. The 13-check authenticated smoke suite passed canonical reads, validation failures, role denials, actor mismatch, and Doctor-without-consent HTTP 403 handling. Predeployment backup: `/home/ubuntu/deployment-backups/20260711-phase3-predeploy`.
 
 Prepared by: Codex  
 Date: 2026-07-07  
