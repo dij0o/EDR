@@ -1,5 +1,13 @@
 -- Phase 4: store patient PII and detailed clinical/administrative fields off-chain.
 -- Apply before deploying the Phase 4 Database API. Back up MySQL first.
+-- Existing admin records use organization IDs 1 and 2; preserve those clinic associations
+-- when upgrading legacy databases whose Organization reference table is empty.
+INSERT INTO Organization (Organization_ID, Name, Type, Created_Date)
+VALUES
+  (1, 'Clinic 1', 'Dental Clinic', CURRENT_DATE),
+  (2, 'Clinic 2', 'Dental Clinic', CURRENT_DATE)
+ON DUPLICATE KEY UPDATE Organization_ID = VALUES(Organization_ID);
+
 ALTER TABLE Patient
   ADD COLUMN Nationality VARCHAR(100) DEFAULT NULL,
   ADD COLUMN Address TEXT DEFAULT NULL,
