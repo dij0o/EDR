@@ -42,4 +42,6 @@ test('identity-bound Phase 3 routes retain self and clinic checks', () => {
 test('canonical API responses use the normalized success/error envelopes', () => {
     assert.match(source, /success: true,[\s\S]*data/);
     assert.match(source, /success: false,[\s\S]*error: \{[\s\S]*code,[\s\S]*message/);
+    assert.match(source, /access denied\|not authorized\|forbidden/,
+        'Fabric authorization failures must map to HTTP 403');
 });

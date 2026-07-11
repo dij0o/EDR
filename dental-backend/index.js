@@ -221,12 +221,17 @@ const getConnectionProfile = () => {
 };
 
 const sendFabricError = (res, error) => {
-    const statusCode = error.statusCode || 500;
+    const message = error.message || String(error);
+    const statusCode = error.statusCode
+        || (/access denied|not authorized|forbidden|requires .* role|does not match/i.test(message) ? 403 : null)
+        || (/does not exist|not found/i.test(message) ? 404 : null)
+        || (/missing required|cannot be rejected at this stage/i.test(message) ? 400 : null)
+        || 500;
     res.status(statusCode).json({
         success: false,
         error: {
             code: statusCode === 400 ? 'VALIDATION_ERROR' : statusCode === 403 ? 'FORBIDDEN' : 'BLOCKCHAIN_ERROR',
-            message: error.message || String(error)
+            message
         }
     });
 };
