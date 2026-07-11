@@ -114,11 +114,11 @@ Scope: Static code-level review of `C:\Workbench\EDR_Source\Source_Code_Remediat
 | SEC ID | Requirement Summary | Status | Gap To Close |
 |---|---|---|---|
 | SEC-01 | All API endpoints require JWT with role validation. | Partial | Database API and Blockchain API business routes now use JWT/role middleware. Public routes remain root, `/login`, and bootstrap `/register`. | Decide whether bootstrap registration remains an accepted setup exception; add automated unauthorized/role tests. |
-| SEC-02 | Chaincode verifies MSP identity before executing. | Missing/Partial | Role/MSP checks are commented out or absent; implement `ctx.clientIdentity` checks. |
+| SEC-02 | Chaincode verifies MSP identity before executing. | Implemented | Deployed chaincode validates trusted Org1MSP/Org2MSP plus certificate role, actorID, and admin clinicID attributes. JWT claims select matching role-bound wallet identities. Chaincode `basic` 1.0.1 sequence 3 is committed on AWS; 16 unit and 9 live identity checks pass. | Extend the same identity-provisioning procedure when onboarding new clinics, doctors, or patients. |
 | SEC-03 | No PII stored directly on-chain. | Partial | Patient/doctor chaincode stores names, Emirates ID, email, contact, address. | Move PII off-chain or explicitly revise SRS architecture. |
 | SEC-04 | Off-chain record integrity via SHA-256 hashes on-chain. | Missing/Partial | No SHA-256 DICOM/record hash workflow found. |
 | SEC-05 | Prevent replay with uniqueness/timestamps. | Evidence Needed | Fabric tx IDs exist; no app-level nonce strategy found. |
-| SEC-06 | Prevent impersonation through certificate identity. | Partial | Fabric wallet identity exists, but API uses a shared `appUser` identity. |
+| SEC-06 | Prevent impersonation through certificate identity. | Implemented for current AWS identities | Active Blockchain API routes no longer select shared `appUser`; JWT organization/blockchain claims map to clinic/actor-bound X.509 wallet identities carrying CA attributes. | Automate identity enrollment/revocation as user lifecycle management expands. |
 | SEC-07 | TLS encrypted communication between layers. | Partial | Fabric TLS config exists; REST APIs appear HTTP/local by default. |
 | SEC-08 | Patient data sharing only with authorized personnel and explicit consent. | Partial | Consent state exists; data retrieval APIs/UI incomplete and not consistently enforced. |
 
@@ -139,7 +139,7 @@ Scope: Static code-level review of `C:\Workbench\EDR_Source\Source_Code_Remediat
 
 ## Immediate Remediation Priorities
 
-1. Apply the patient `Blockchain_ID` migration and run the Phase 1 AWS VM smoke tests.
+1. Apply/verify the patient `Blockchain_ID` migration and run the Phase 1 AWS VM smoke tests. **Passed on 2026-07-11.**
 2. Implement chaincode MSP/RBAC checks.
 3. Add API endpoint parity with SRS section 5.
 4. Complete patient/doctor CRUD and assignment workflows.

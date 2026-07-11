@@ -62,6 +62,7 @@ Progress checkpoint - 2026-07-10:
 - Done: Phase 1 AWS deployment runbook documents the required DB migration, environment values, smoke tests, and the MSP/certificate identity decision.
 - Deployment gate: Apply `database/migrations/2026-07-10-add-patient-blockchain-id.sql`, set `ADMIN_BOOTSTRAP_TOKEN` if bootstrap registration is needed, restart services, and complete the AWS VM smoke tests before starting Phase 2.
 - Phase 2 carry-forward: User-specific MSP/certificate binding and chaincode-level MSP/RBAC enforcement remain Phase 2 work.
+- AWS gate status - 2026-07-11: **Passed.** The existing AWS database already contained `Patient.Blockchain_ID` with `Patient1`-`Patient3` mappings; JWT secret digests matched; Database API was rebuilt, Blockchain API restarted under PM2, and the frontend was rebuilt and recopied to Nginx. Smoke tests passed for 401 unauthenticated access, admin 200 access, doctor cross-user 403, patient cross-user 403, frontend 200, and anonymous registration 401. `ADMIN_BOOTSTRAP_TOKEN` is absent; no bootstrap exception is enabled.
 
 ## Phase 2: Chaincode RBAC And Identity Enforcement
 
@@ -75,6 +76,15 @@ Tasks:
 - Enforce Patient on consent decisions and patient request retrieval.
 - Enforce System or service identity for `LogAccess` if used directly.
 - Update chaincode tests to match current signatures and role behavior.
+
+Progress checkpoint - 2026-07-11:
+
+- **Completed and deployed to AWS.**
+- Chaincode validates trusted `Org1MSP`/`Org2MSP`, certificate `role`, `actorID`, and admin `clinicID` attributes across restricted functions.
+- Blockchain API maps verified JWT claims to `admin-<organizationId>`, `doctor-<blockchainID>`, `patient-<blockchainID>`, or `role-system` wallet identities and rejects missing identities before gateway connection.
+- AWS CA/wallet now contains clinic-bound admin, actor-bound doctor/patient, and system identities; the legacy shared `appUser` is no longer selected by active Phase 2 routes.
+- Chaincode `basic` version `1.0.1`, sequence `3`, is committed with Org1MSP and Org2MSP approval.
+- Verification passed: 16 chaincode unit tests, 4 gateway identity-mapping tests, 9 live Fabric identity checks, and the Phase 1 API smoke regression suite.
 
 Exit criteria:
 

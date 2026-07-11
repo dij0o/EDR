@@ -265,7 +265,7 @@ peer chaincode query -C mychannel -n basic -c '{"Args":["getAllPatients"]}'
 cd dental-backend
 
 # Clear stale identities and profile
-rm -f connection/connection-org1.json wallet/admin.id wallet/appUser.id
+rm -f connection/connection-org1.json wallet/*.id
 
 # Copy the freshly generated connection profile from the running network.
 # Adjust the path prefix to wherever fabric-samples lives on your machine.
@@ -274,7 +274,7 @@ cp ../fabric-samples/test-network/organizations/peerOrganizations/org1.example.c
 
 # Enroll admin + register app user into the local wallet
 node enrollAdmin.js
-node registerUser.js
+npm run fabric:register-identities
 
 # First run only
 npm install

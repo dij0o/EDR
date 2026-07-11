@@ -30,7 +30,81 @@ const parseArrayArgument = (value) => {
 
 class DentalRecordSharing extends Contract {
 
+    _requireMsp(ctx, ...allowedMsps) {
+        const clientIdentity = ctx.clientIdentity;
+        const mspID = clientIdentity && clientIdentity.getMSPID && clientIdentity.getMSPID();
+        const accepted = allowedMsps.length > 0 ? allowedMsps : ['Org1MSP', 'Org2MSP'];
+
+        if (!mspID) {
+            throw new Error('The invoking certificate is not associated with an MSP.');
+        }
+
+        if (!accepted.includes(mspID)) {
+            throw new Error(`Access denied: MSP ${mspID} is not authorized for this contract.`);
+        }
+
+        return mspID;
+    }
+
+    _requireRole(ctx, ...allowedRoles) {
+        const clientIdentity = ctx.clientIdentity;
+        const mspID = this._requireMsp(ctx);
+        const role = clientIdentity && clientIdentity.getAttributeValue && clientIdentity.getAttributeValue('role');
+
+        if (!role || !allowedRoles.map((value) => value.toLowerCase()).includes(role.toLowerCase())) {
+            throw new Error(`Access denied: requires ${allowedRoles.join(' or ')} role.`);
+        }
+
+        return { mspID, role: role.toLowerCase() };
+    }
+
+    _requireActor(ctx, expectedActorID, ...allowedRoles) {
+        const identity = this._requireRole(ctx, ...allowedRoles);
+        const actorID = ctx.clientIdentity.getAttributeValue('actorID');
+
+        if (!actorID || actorID !== expectedActorID) {
+            throw new Error(`Access denied: certificate actorID does not match ${expectedActorID}.`);
+        }
+
+        return { ...identity, actorID };
+    }
+
+    _requireAdminClinic(ctx, expectedClinicID) {
+        const identity = this._requireRole(ctx, 'admin');
+        const clinicID = ctx.clientIdentity.getAttributeValue('clinicID');
+
+        if (!clinicID || String(clinicID) !== String(expectedClinicID)) {
+            throw new Error(`Access denied: admin certificate is not authorized for clinic ${expectedClinicID}.`);
+        }
+
+        return { ...identity, clinicID };
+    }
+
+    _requirePatientRecordAccess(ctx, patientID, patient, ...allowedRoles) {
+        const identity = this._requireRole(ctx, ...allowedRoles);
+        if (identity.role === 'admin' || identity.role === 'system') {
+            return identity;
+        }
+
+        const actorID = ctx.clientIdentity.getAttributeValue('actorID');
+        if (!actorID) {
+            throw new Error('Access denied: invoking certificate is missing actorID.');
+        }
+        if (identity.role === 'patient' && actorID !== patientID) {
+            throw new Error(`Access denied: patient certificate does not own ${patientID}.`);
+        }
+        if (identity.role === 'doctor') {
+            const assignedDoctors = Array.isArray(patient.doctors) ? patient.doctors : [];
+            const sharedDoctors = Array.isArray(patient.sharedWith) ? patient.sharedWith : [];
+            if (!assignedDoctors.includes(actorID) && !sharedDoctors.includes(actorID)) {
+                throw new Error(`Access denied: Doctor ${actorID} is not assigned or consented for patient ${patientID}.`);
+            }
+        }
+        return { ...identity, actorID };
+    }
+
     async InitLedger(ctx) {
+        this._requireRole(ctx, 'system');
         
         await this.InitDoctors(ctx);
         
@@ -39,6 +113,7 @@ class DentalRecordSharing extends Contract {
 
 
     async InitDoctors(ctx) {
+        this._requireRole(ctx, 'system');
         // Sample doctors to initialize in the ledger
         const doctors = [
             {
@@ -84,6 +159,7 @@ class DentalRecordSharing extends Contract {
     }
 
     async InitPatients(ctx) {
+        this._requireRole(ctx, 'system');
         // Store each patient in the ledger
         const patients = [
             {
@@ -469,6 +545,7 @@ class DentalRecordSharing extends Contract {
  
 
     async addDoctor(ctx, doctorID, firstName, lastName, emiratesID, speciality, worksAt, clinicID, email, contactNumber, createdDate, patients) {
+            this._requireAdminClinic(ctx, clinicID);
         // try {
             // // Get the creator's identity
             // const creator = ctx.clientIdentity.getIDBytes().toString();
@@ -480,7 +557,7 @@ class DentalRecordSharing extends Contract {
             //     throw new Error('Only admins can add doctors.');
             // }
   
-            const exists = await this.actorExists(ctx, emiratesID);
+            const exists = await this._actorExists(ctx, emiratesID);
             if (exists) {
                 throw new Error(`The doctor with eID ${emiratesID} already exists`);
             }
@@ -513,6 +590,7 @@ class DentalRecordSharing extends Contract {
 
     // AddPatient issues a new patient to the world state with given details.
     async addPatient(ctx, patientID, firstName, lastName, dateOfBirth, gender, emiratesID,  email, contactNumber, address, createdDate, clinicID,  doctors) {
+            this._requireAdminClinic(ctx, clinicID);
         // try {
         //     //only admin can add patients 
         //     const isAdmin = ctx.clientIdentity.assertAttributeValue('role', 'admin');
@@ -520,7 +598,7 @@ class DentalRecordSharing extends Contract {
         //         throw new Error('Only admins can add patients.');
         //     }
             // Check if patient already exists
-            const exists = await this.actorExists(ctx, emiratesID);
+            const exists = await this._actorExists(ctx, emiratesID);
             if (exists) {
                 throw new Error(`The patient with eID ${emiratesID} already exists`);
             }
@@ -559,14 +637,23 @@ class DentalRecordSharing extends Contract {
 
 
     // actorExists returns true when doctor or patient with given ID exists in world state.
-    async actorExists(ctx, actorID) {
+    async _actorExists(ctx, actorID) {
         const actorJSON = await ctx.stub.getState(actorID);
         return actorJSON && actorJSON.length > 0;
+    }
+
+    async actorExists(ctx, actorID) {
+        this._requireRole(ctx, 'admin', 'system');
+        return this._actorExists(ctx, actorID);
     }
  
 
     // ReadDoctor returns the doctor stored in the world state with given id.
     async ReadDoctor(ctx, id) {
+        const identity = this._requireRole(ctx, 'admin', 'doctor', 'system');
+        if (identity.role === 'doctor') {
+            this._requireActor(ctx, id, 'doctor');
+        }
         const doctorJSON = await ctx.stub.getState(id); // get the asset from chaincode state
         if (!doctorJSON || doctorJSON.length === 0) {
             throw new Error(`The doctor ${id} does not exist`);
@@ -580,11 +667,17 @@ class DentalRecordSharing extends Contract {
         if (!patientJSON || patientJSON.length === 0) {
             throw new Error(`The patient ${id} does not exist`);
         }
+        const patient = JSON.parse(patientJSON.toString());
+        this._requirePatientRecordAccess(ctx, id, patient, 'admin', 'doctor', 'patient', 'system');
         return patientJSON.toString();
     }
 
 
     async GetPatientsByClinic(ctx, clinicID) {
+        const identity = this._requireRole(ctx, 'admin', 'system');
+        if (identity.role === 'admin') {
+            this._requireAdminClinic(ctx, clinicID);
+        }
         clinicID = parseInt(clinicID); // Ensure the clinicID is a number
         const allResults = [];
         const iterator = await ctx.stub.getStateByRange('', '');
@@ -611,7 +704,8 @@ class DentalRecordSharing extends Contract {
     
     // UpdateDoctor updates an existing doctor in the world state with provided parameters.
     async UpdateDoctorInfo(ctx, doctorID, firstName, lastName, speciality, worksAt, clinicID, email, contactNumber, createdDate, patients) {
-        const exists = await this.actorExists(ctx, doctorID);
+        this._requireAdminClinic(ctx, clinicID);
+        const exists = await this._actorExists(ctx, doctorID);
         if (!exists) {
             throw new Error(`The doctor ${doctorID} does not exist`);
         }
@@ -637,7 +731,8 @@ class DentalRecordSharing extends Contract {
     // UpdatePatient updates an existing patient in the world state with provided parameters.
     async UpdatePatientInfo(ctx, patientID, firstName, lastName, dateOfBirth, gender, emiratesID, email, contactNumber, address, createdDate, doctors, clinicID,
         dentalChart) {
-        const exists = await this.actorExists(ctx, patientID);
+        this._requireAdminClinic(ctx, clinicID);
+        const exists = await this._actorExists(ctx, patientID);
         if (!exists) {
             throw new Error(`The patient ${patientID} does not exist`);
         }
@@ -668,7 +763,8 @@ class DentalRecordSharing extends Contract {
 
     // DeleteDoctor deletes an given doctor from the world state.
     async DeleteDoctor(ctx, id) {
-        const exists = await this.actorExists(ctx, id);
+        this._requireRole(ctx, 'admin');
+        const exists = await this._actorExists(ctx, id);
         if (!exists) {
             throw new Error(`The doctor ${id} does not exist`);
         }
@@ -677,7 +773,8 @@ class DentalRecordSharing extends Contract {
 
     // DeletePatient deletes an given patient from the world state.
     async DeletePatient(ctx, id) {
-        const exists = await this.actorExists(ctx, id);
+        this._requireRole(ctx, 'admin');
+        const exists = await this._actorExists(ctx, id);
         if (!exists) {
             throw new Error(`The patient ${id} does not exist`);
         }
@@ -687,6 +784,7 @@ class DentalRecordSharing extends Contract {
 
     // GetAllDoctors returns all doctors found in the world state.
     async GetAllDoctors(ctx) {
+        this._requireRole(ctx, 'admin', 'system');
         const allResults = [];
         const iterator = await ctx.stub.getStateByRange('', '');
         let result = await iterator.next();
@@ -715,6 +813,7 @@ class DentalRecordSharing extends Contract {
 
     // GetAllPatients returns all patients found in the world state.
     async GetAllPatients(ctx) {
+        this._requireRole(ctx, 'admin', 'system');
         const allResults = [];
         const iterator = await ctx.stub.getStateByRange('', '');
         let result = await iterator.next();
@@ -745,7 +844,8 @@ class DentalRecordSharing extends Contract {
 // Doctor: AddDentalChart adds a dental chart to an existing patient
     // Add or update a dental chart entry for a specific patient
     async addDentalChartEntry(ctx, patientID, site, surface, category, subCategory, code, status, preAuth, phase, discipline, diagnoses, notes, estimate, doctorID, auditDate, createdDate) {
-        const exists = await this.actorExists(ctx, patientID);
+        this._requireActor(ctx, doctorID, 'doctor');
+        const exists = await this._actorExists(ctx, patientID);
         if (!exists) {
             throw new Error(`The patient ${patientID} does not exist`);
         }
@@ -806,6 +906,7 @@ class DentalRecordSharing extends Contract {
         }
 
         const patient = JSON.parse(patientJSON.toString());
+        this._requirePatientRecordAccess(ctx, patientID, patient, 'admin', 'doctor', 'patient', 'system');
         const dentalChartEntry = patient.dentalChart.find(entry => entry.Site === site && entry.Suf === surface);
 
         if (!dentalChartEntry) {
@@ -823,6 +924,7 @@ class DentalRecordSharing extends Contract {
         }
 
         const patient = JSON.parse(patientJSON.toString());
+        this._requirePatientRecordAccess(ctx, patientID, patient, 'admin', 'doctor', 'patient', 'system');
 
         return JSON.stringify(patient.dentalChart);
     }
@@ -830,8 +932,9 @@ class DentalRecordSharing extends Contract {
 
     // Add a medical record for a patient
     async AddMedicalRecord(ctx, patientID, medicalRecord) {
+        this._requireRole(ctx, 'doctor');
         // Check if the patient existsaddDentalChartEntry
-        const exists = await this.actorExists(ctx, patientID);
+        const exists = await this._actorExists(ctx, patientID);
         if (!exists) {
             throw new Error(`The patient ${patientID} does not exist`);
         }
@@ -839,6 +942,7 @@ class DentalRecordSharing extends Contract {
         // Retrieve the patient's current data
         const patientAsBytes = await ctx.stub.getState(patientID);
         const patient = JSON.parse(patientAsBytes.toString());
+        this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor');
 
         // If medicalRecords does not exist, initialize it as an empty array
         if (!patient.medicalRecords) {
@@ -858,7 +962,7 @@ class DentalRecordSharing extends Contract {
     // Get all medical records for a patient
     async GetMedicalRecords(ctx, patientID) {
         // Check if the patient exists
-        const exists = await this.actorExists(ctx, patientID);
+        const exists = await this._actorExists(ctx, patientID);
         if (!exists) {
             throw new Error(`Patient ${patientID} does not exist`);
         }
@@ -870,11 +974,13 @@ class DentalRecordSharing extends Contract {
         }
 
         const patient = JSON.parse(patientAsBytes.toString());
+        this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor', 'patient');
         return patient.medicalRecords || []; // Return the medical records or an empty array
     }
 
     // register patient in clinic 
     async registerPatientInClinic(ctx, patientID, clinicID) {
+        this._requireAdminClinic(ctx, clinicID);
         const patientJSON = await ctx.stub.getState(patientID);
         if (!patientJSON || patientJSON.length === 0) {
             throw new Error(`Patient ${patientID} does not exist`);
@@ -904,6 +1010,7 @@ class DentalRecordSharing extends Contract {
 
     // Admin: Assign a Patient to a Doctor
     async assignPatientToDoctor(ctx, patientID, doctorID) {
+        this._requireRole(ctx, 'admin');
         const patientJSON = await ctx.stub.getState(patientID);
         if (!patientJSON || patientJSON.length === 0) {
             throw new Error(`Patient ${patientID} does not exist`);
@@ -940,6 +1047,10 @@ class DentalRecordSharing extends Contract {
     
     // Doctor: Get all Patients assigned to the doctor
     async getPatientsAssignedToDoctor(ctx, doctorID) {
+        const role = this._requireRole(ctx, 'admin', 'doctor').role;
+        if (role === 'doctor') {
+            this._requireActor(ctx, doctorID, 'doctor');
+        }
         const doctorJSON = await ctx.stub.getState(doctorID);
         if (!doctorJSON || doctorJSON.length === 0) {
             throw new Error(`The doctor ${doctorID} does not exist`);
@@ -983,6 +1094,7 @@ class DentalRecordSharing extends Contract {
     //     return request.requestID;
     // }
     async RequestDataAccess(ctx, doctorID, patientID, dataOriginClinicID) {
+        this._requireActor(ctx, doctorID, 'doctor');
         const doctorAsBytes = await ctx.stub.getState(doctorID);
         if (!doctorAsBytes || doctorAsBytes.length === 0) {
             throw new Error(`Doctor ${doctorID} not found`);
@@ -1022,6 +1134,7 @@ class DentalRecordSharing extends Contract {
     // Admin of Hospital will review the data access request and approve or deny it.
 
     async ApproveRequest(ctx, adminID, requestID, adminClinicID) {
+        this._requireAdminClinic(ctx, adminClinicID);
         adminClinicID = parseInt(adminClinicID);
     
         const requestAsBytes = await ctx.stub.getState(requestID);
@@ -1049,6 +1162,7 @@ class DentalRecordSharing extends Contract {
 
     //Admin gets all request related to clinic
     async GetRequestsForAdmin(ctx, adminClinicID) {
+        this._requireAdminClinic(ctx, adminClinicID);
         adminClinicID = parseInt(adminClinicID);
     
         const allRequests = [];
@@ -1078,6 +1192,7 @@ class DentalRecordSharing extends Contract {
 
     // Patient provides consent for the doctor to access their data
        async ProvideConsent(ctx, patientID, requestID) {
+        this._requireActor(ctx, patientID, 'patient');
         const requestAsBytes = await ctx.stub.getState(requestID);
         if (!requestAsBytes || requestAsBytes.length === 0) {
             throw new Error(`Request ${requestID} not found`);
@@ -1141,6 +1256,7 @@ class DentalRecordSharing extends Contract {
     //     });
     // }
     async GetPendingRequestsForPatient(ctx, patientID) {
+        this._requireActor(ctx, patientID, 'patient');
         const allRequests = [];
         const iterator = await ctx.stub.getStateByRange('', '');
         let result = await iterator.next();
@@ -1166,6 +1282,7 @@ class DentalRecordSharing extends Contract {
     }
     // The function retrieves all requests fro the patientID from the ledger.
     async GetProcessedRequestsForPatient(ctx, patientID) {
+        this._requireActor(ctx, patientID, 'patient');
         const allRequests = [];
         const iterator = await ctx.stub.getStateByRange('', '');
         let result = await iterator.next();
@@ -1190,6 +1307,7 @@ class DentalRecordSharing extends Contract {
         return JSON.stringify(allRequests);
     }
     async GetAllRequestsForPatient(ctx, patientID) {
+        this._requireActor(ctx, patientID, 'patient');
         const allRequests = [];
         const iterator = await ctx.stub.getStateByRange('', '');
         let result = await iterator.next();
@@ -1216,6 +1334,7 @@ class DentalRecordSharing extends Contract {
     
     
     async GetPatientData(ctx, doctorID, patientID) {
+        this._requireActor(ctx, doctorID, 'doctor');
         const patientAsBytes = await ctx.stub.getState(patientID);
         if (!patientAsBytes || patientAsBytes.length === 0) {
             throw new Error(`Patient ${patientID} not found`);
@@ -1241,6 +1360,15 @@ class DentalRecordSharing extends Contract {
         }
     
         const request = JSON.parse(requestAsBytes.toString());
+
+        if (request.status === 'PENDING_ADMIN_APPROVAL') {
+            this._requireAdminClinic(ctx, request.dataOriginClinicID);
+        } else if (request.status === 'PENDING_PATIENT_CONSENT') {
+            this._requireActor(ctx, actorID, 'patient');
+            if (actorID !== request.patientID) {
+                throw new Error(`Patient ${actorID} is not authorized to reject this request.`);
+            }
+        }
     
         if (request.status === 'PENDING_ADMIN_APPROVAL' || request.status === 'PENDING_PATIENT_CONSENT') {
             request.status = 'REJECTED';
@@ -1254,6 +1382,7 @@ class DentalRecordSharing extends Contract {
     }
     
     async LogAccess(ctx, doctorID, patientID) {
+        this._requireRole(ctx, 'system');
         const logEntry = {
             logID: ctx.stub.getTxID(),
             doctorID: doctorID,
@@ -1268,13 +1397,15 @@ class DentalRecordSharing extends Contract {
 
     // Add a dental file entry to a patient's record (IPFS-based)
     async addDentalFile(ctx, patientID, cid, fileName, fileType, uploaderID, uploadDate) {
-        const exists = await this.actorExists(ctx, patientID);
+        this._requireActor(ctx, uploaderID, 'doctor');
+        const exists = await this._actorExists(ctx, patientID);
         if (!exists) {
             throw new Error(`The patient ${patientID} does not exist`);
         }
 
         const patientAsBytes = await ctx.stub.getState(patientID);
         const patient = JSON.parse(patientAsBytes.toString());
+        this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor');
 
         if (!patient.dentalFiles) {
             patient.dentalFiles = [];
@@ -1303,6 +1434,7 @@ class DentalRecordSharing extends Contract {
         }
 
         const patient = JSON.parse(patientJSON.toString());
+        this._requirePatientRecordAccess(ctx, patientID, patient, 'admin', 'doctor', 'patient', 'system');
         return JSON.stringify(patient.dentalFiles || []);
     }
 

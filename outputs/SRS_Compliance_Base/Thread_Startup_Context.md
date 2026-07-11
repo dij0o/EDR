@@ -49,11 +49,12 @@ Latest checkpoint, 2026-07-10:
 - Patient identity mapping is now implemented at source level: `Patient.Blockchain_ID` is in the schema/dump/migration, Database API login returns it, patient sync backfills it, mobile uses only the login `blockchainID`, and Blockchain API patient request/consent routes reject mismatched patient IDs.
 - Public admin registration is closed at source level: `POST /register` requires an Admin/System JWT or `ADMIN_BOOTSTRAP_TOKEN` through `x-bootstrap-token`.
 - Phase 1 AWS rollout gate: apply the patient mapping migration, set required env vars, restart services, and run the smoke tests in `Phase1_AWS_Deployment_Runbook.md`.
-- MSP/certificate binding decision: Phase 1 keeps JWT as an API-session token signed by `JWT_SECRET`; user-specific MSP/certificate binding moves to Phase 2 chaincode/gateway identity work.
+- AWS gate result - 2026-07-11: passed using the authorized deployment key against the AWS VM. The patient mapping already existed and matched Patient1-Patient3; JWT secret digests matched; Database API, Blockchain API, and Nginx frontend were restarted/deployed; smoke tests passed. `ADMIN_BOOTSTRAP_TOKEN` is absent and bootstrap registration is disabled.
+- Phase 2 result - 2026-07-11: chaincode MSP/RBAC and JWT-to-wallet identity binding are deployed on AWS. `basic` 1.0.1 sequence 3 is committed; 16 unit tests, 4 identity-mapping tests, 9 live Fabric identity checks, and API regression smoke tests passed.
 
 The main SRS compliance gaps are:
 
-- Chaincode RBAC/MSP checks are missing or commented out.
+- Phase 2 identity lifecycle automation remains: new clinics/users must be enrolled or revoked as their database lifecycle changes.
 - API endpoint names and coverage do not fully match the SRS.
 - Patient and doctor management are partial.
 - Clinical records are partial and not exposed as complete workflows.
@@ -67,9 +68,9 @@ The main SRS compliance gaps are:
 
 ## Recommended Work Order
 
-1. Apply the patient `Blockchain_ID` migration and run the Phase 1 AWS VM smoke tests.
-2. Chaincode MSP/RBAC enforcement.
-3. SRS API endpoint parity.
+1. SRS API endpoint parity.
+2. Patient and doctor CRUD completion.
+3. Clinical record workflows.
 4. Patient and doctor CRUD completion.
 5. Clinical record workflows.
 6. DICOM/file hash integrity.

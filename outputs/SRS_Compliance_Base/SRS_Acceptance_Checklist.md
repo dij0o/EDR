@@ -19,15 +19,16 @@ Use this checklist to decide when `Source_Code_Remediation` meets the SRS at a c
 - [x] Public admin registration is blocked unless the caller has an Admin/System JWT or the AWS deployment bootstrap token.
 - [x] MSP/certificate identity strategy is formally documented as a Phase 2 chaincode/gateway identity item.
 
-Checkpoint note, 2026-07-10: Phase 1 is implemented at source level. Patient owner-only request and consent calls now have an off-chain `Patient.Blockchain_ID` source and API boundary checks. Runtime deployment must apply `database/migrations/2026-07-10-add-patient-blockchain-id.sql`, set the required AWS environment values, and complete the smoke tests in `Phase1_AWS_Deployment_Runbook.md`.
+Checkpoint note, 2026-07-11: Phase 1 passed on AWS. The patient mapping, aligned JWT secrets, service restarts, and role/ownership smoke tests were verified.
 
 ## Chaincode Security
 
-- [ ] Chaincode checks invoker identity through `ctx.clientIdentity`.
-- [ ] Admin-only functions reject doctor/patient identities.
-- [ ] Doctor-only functions reject admin/patient identities unless explicitly allowed.
-- [ ] Patient consent functions reject non-owner patients.
-- [ ] Role violation tests exist and pass.
+- [x] Chaincode checks invoker MSP and certificate attributes through `ctx.clientIdentity`.
+- [x] Admin-only functions reject doctor/patient identities and enforce clinic-bound admin certificates where applicable.
+- [x] Doctor-only functions reject admin/patient identities unless explicitly allowed and enforce actor/assignment/consent checks.
+- [x] Patient consent and record functions reject non-owner patients.
+- [x] System-only initialization and access logging reject non-system identities.
+- [x] Role violation tests exist and pass locally and against the deployed AWS Fabric gateway.
 
 ## Patient Management
 

@@ -7,6 +7,7 @@ const { Gateway, Wallets } = require('fabric-network');
 const path = require('path');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
+const { fabricIdentityForUser } = require('./fabricIdentity');
 
 require('dotenv').config();
 
@@ -28,7 +29,6 @@ app.use(cors({
 
 const ccpPath = path.resolve(__dirname, process.env.FABRIC_CONNECTION_PROFILE || './connection/connection-org1.json');
 const walletPath = path.resolve(__dirname, process.env.FABRIC_WALLET_PATH || './wallet');
-const fabricIdentity = process.env.FABRIC_IDENTITY || 'appUser';
 const fabricChannel = process.env.FABRIC_CHANNEL || 'mychannel';
 const fabricChaincode = process.env.FABRIC_CHAINCODE || 'basic';
 const discoveryEnabled = process.env.FABRIC_DISCOVERY_ENABLED !== 'false';
@@ -224,14 +224,25 @@ const sendFabricError = (res, error) => {
     res.status(statusCode).json({ error: error.message || String(error) });
 };
 
-const withContract = async (callback) => {
+const fabricIdentityForRequest = (req) => {
+    return fabricIdentityForUser(req.user);
+};
+
+const withContract = async (req, callback) => {
     const wallet = await Wallets.newFileSystemWallet(walletPath);
     const gateway = new Gateway();
+    const identity = fabricIdentityForRequest(req);
+
+    if (!await wallet.get(identity)) {
+        const error = new Error(`Fabric identity ${identity} is not enrolled in the configured wallet.`);
+        error.statusCode = 503;
+        throw error;
+    }
 
     try {
         await gateway.connect(getConnectionProfile(), {
             wallet,
-            identity: fabricIdentity,
+            identity,
             discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
         });
 
@@ -288,7 +299,7 @@ app.post('/addPatient', authenticateToken, requireRoles('admin'), requireAdminCl
         } = req.body;
         const createdDate = req.body.createdDate || new Date().toISOString();
 
-        const result = await withContract((contract) => contract.submitTransaction(
+        const result = await withContract(req, (contract) => contract.submitTransaction(
             'addPatient',
             String(patientID),
             String(firstName),
@@ -339,7 +350,7 @@ app.post('/addDoctor', authenticateToken, requireRoles('admin'), requireAdminCli
         } = req.body;
         const createdDate = req.body.createdDate || new Date().toISOString();
 
-        const result = await withContract((contract) => contract.submitTransaction(
+        const result = await withContract(req, (contract) => contract.submitTransaction(
             'addDoctor',
             String(doctorID),
             String(firstName),
@@ -364,7 +375,7 @@ app.post('/addDoctor', authenticateToken, requireRoles('admin'), requireAdminCli
 app.post('/registerPatientInClinic', authenticateToken, requireRoles('admin'), requireAdminClinicBody('clinicID'), async (req, res) => {
     try {
         requireFields(req.body, ['patientID', 'clinicID']);
-        const result = await withContract((contract) => contract.submitTransaction(
+        const result = await withContract(req, (contract) => contract.submitTransaction(
             'registerPatientInClinic',
             String(req.body.patientID),
             String(req.body.clinicID)
@@ -380,7 +391,7 @@ app.post('/registerPatientInClinic', authenticateToken, requireRoles('admin'), r
 app.post('/assignPatientToDoctor', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
         requireFields(req.body, ['patientID', 'doctorID']);
-        const result = await withContract((contract) => contract.submitTransaction(
+        const result = await withContract(req, (contract) => contract.submitTransaction(
             'assignPatientToDoctor',
             String(req.body.patientID),
             String(req.body.doctorID)
@@ -400,7 +411,7 @@ app.get('/getAllPatients', authenticateToken, requireRoles('admin', 'system'), a
         const gateway = new Gateway();
         await gateway.connect(getConnectionProfile(), {
             wallet,
-            identity: fabricIdentity,
+            identity: fabricIdentityForRequest(req),
             discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
         });
 
@@ -423,7 +434,7 @@ app.get('/readPatient/:patientID', authenticateToken, requireRoles('admin', 'doc
         const gateway = new Gateway();
         await gateway.connect(getConnectionProfile(), {
             wallet,
-            identity: fabricIdentity,
+            identity: fabricIdentityForRequest(req),
             discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
         });
 
@@ -448,7 +459,7 @@ app.get('/getPatientsAssignedToDoctor/:doctorID', authenticateToken, requireRole
         const gateway = new Gateway();
         await gateway.connect(getConnectionProfile(), {
             wallet,
-            identity: fabricIdentity,
+            identity: fabricIdentityForRequest(req),
             discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
         });
 
@@ -473,7 +484,7 @@ app.get('/getPatientsByClinic/:clinicID', authenticateToken, requireRoles('admin
         const gateway = new Gateway();
         await gateway.connect(getConnectionProfile(), {
             wallet,
-            identity: fabricIdentity,
+            identity: fabricIdentityForRequest(req),
             discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
         });
 
@@ -508,7 +519,7 @@ app.post('/requestDataAccess', authenticateToken, requireRoles('doctor'), requir
         const gateway = new Gateway();
         await gateway.connect(getConnectionProfile(), {
             wallet,
-            identity: fabricIdentity,
+            identity: fabricIdentityForRequest(req),
             discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
         });
 
@@ -546,7 +557,7 @@ app.get('/getRequestsForAdmin/:clinicID', authenticateToken, requireRoles('admin
         const gateway = new Gateway();
         await gateway.connect(getConnectionProfile(), {
             wallet,
-            identity: fabricIdentity,
+            identity: fabricIdentityForRequest(req),
             discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
         });
 
@@ -581,7 +592,7 @@ app.post('/approveRequest', authenticateToken, requireRoles('admin'), requireAdm
         const gateway = new Gateway();
         await gateway.connect(getConnectionProfile(), {
             wallet,
-            identity: fabricIdentity,
+            identity: fabricIdentityForRequest(req),
             discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
         });
 
@@ -613,7 +624,7 @@ app.get('/getPendingRequestsForPatient/:patientID', authenticateToken, requireRo
         const gateway = new Gateway();
         await gateway.connect(getConnectionProfile(), {
             wallet,
-            identity: fabricIdentity,
+            identity: fabricIdentityForRequest(req),
             discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
         });
 
@@ -638,7 +649,7 @@ app.get('/getProcessedRequestsForPatient/:patientID', authenticateToken, require
         const gateway = new Gateway();
         await gateway.connect(getConnectionProfile(), {
             wallet,
-            identity: fabricIdentity,
+            identity: fabricIdentityForRequest(req),
             discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
         });
 
@@ -663,7 +674,7 @@ app.get('/getAllRequestsForPatient/:patientID', authenticateToken, requireRoles(
         const gateway = new Gateway();
         await gateway.connect(getConnectionProfile(), {
             wallet,
-            identity: fabricIdentity,
+            identity: fabricIdentityForRequest(req),
             discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
         });
 
@@ -695,7 +706,7 @@ app.post('/provideConsent', authenticateToken, requireRoles('patient'), requireP
         const gateway = new Gateway();
         await gateway.connect(getConnectionProfile(), {
             wallet,
-            identity: fabricIdentity,
+            identity: fabricIdentityForRequest(req),
             discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
         });
 
@@ -725,7 +736,7 @@ app.post('/rejectRequest', authenticateToken, requireRoles('patient'), requirePa
         const gateway = new Gateway();
         await gateway.connect(getConnectionProfile(), {
             wallet,
-            identity: fabricIdentity,
+            identity: fabricIdentityForRequest(req),
             discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
         });
 
