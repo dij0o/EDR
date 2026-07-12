@@ -68,7 +68,8 @@ Phase 3 deployment checkpoint, 2026-07-11: all Section 5 SRS route names and pat
 - [x] Doctor assigned-patient retrieval uses a parameter-free JWT-derived self endpoint and chaincode certificate actor binding.
 - [x] Admin can delete an on-chain doctor record within the authenticated clinic scope.
 - [x] Coordinated delete removes Fabric and MySQL records and refuses deletion while patients remain assigned.
-- [ ] Phase 5 migration, chaincode/API/frontend rollout, doctor Fabric identity enrollment/revocation, and AWS smoke tests are complete.
+- [x] Phase 5 migration, chaincode/API/frontend rollout, and authenticated AWS CRUD/self/spoof smoke tests are complete.
+- [ ] Automate Fabric CA enrollment/revocation for newly created/deleted doctors; current lifecycle remains an explicit operational step.
 
 ## Clinical Records
 

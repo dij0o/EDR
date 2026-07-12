@@ -170,7 +170,7 @@ Exit criteria:
 
 ## Phase 5: Doctor Management Completion
 
-Status: **Source implementation complete 2026-07-12; AWS deployment/revalidation pending.**
+Status: **Completed and deployed 2026-07-12.** Commit `4da2e8e` is live; the database migration is applied, chaincode `basic` 1.0.4 sequence 6 is committed with both MSP approvals, both APIs and the frontend are deployed, and the disposable authenticated Phase 5 workflow passed.
 
 Implementation notes:
 
@@ -180,7 +180,7 @@ Implementation notes:
 - The admin web UI provides list/search/create/update/delete with confirmation, loading, empty, success, and actionable error states.
 - `GET /doctor/me/assigned-patients` derives the doctor exclusively from the verified JWT; chaincode independently enforces the doctor certificate `actorID`.
 - Deployment must apply `2026-07-12-phase5-doctor-management.sql`, upgrade chaincode/API signatures, rebuild the frontend, and enroll/revoke `doctor-<doctorID>` Fabric identities as lifecycle operations.
-- AWS readiness was confirmed 2026-07-12, but deployment is blocked on authoritative license number and Emirates ID values for the two live legacy doctors (`Doctor1`, `Doctor2`). These regulated identifiers must not be fabricated.
+- Legacy `Doctor1` and `Doctor2` retain null license/Emirates values until authoritative records are supplied; all newly created/updated Phase 5 doctors require these fields. This is a legacy data-quality carry-forward, not a fabricated backfill.
 
 SRS coverage: FR-11 to FR-14
 
