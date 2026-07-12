@@ -419,11 +419,11 @@ app.delete('/patient/:id', authenticateToken, requireRoles('admin'), async (req,
 
 app.put('/doctor/:id', authenticateToken, requireRoles('admin'), requireAdminClinicBody('clinicID'), async (req, res) => {
     try {
-        requireFields(req.body, ['firstName', 'lastName', 'speciality', 'worksAt', 'clinicID', 'email', 'contactNumber']);
+        requireFields(req.body, ['firstName', 'lastName', 'emiratesID', 'speciality', 'worksAt', 'clinicID', 'email', 'contactNumber', 'licenseNumber']);
         const result = await withContract(req, (contract) => contract.submitTransaction(
-            'UpdateDoctorInfo', String(req.params.id), String(req.body.firstName), String(req.body.lastName), String(req.body.speciality),
+            'UpdateDoctorInfo', String(req.params.id), String(req.body.firstName), String(req.body.lastName), String(req.body.emiratesID), String(req.body.speciality),
             String(req.body.worksAt), String(req.body.clinicID), String(req.body.email), String(req.body.contactNumber),
-            String(req.body.createdDate || new Date().toISOString()), JSON.stringify(req.body.patients || [])
+            String(req.body.licenseNumber), String(req.body.createdDate || new Date().toISOString()), JSON.stringify(req.body.patients || [])
         ));
         return sendSuccess(res, parseBufferJson(result));
     } catch (error) { return sendFabricError(res, error); }
@@ -517,6 +517,7 @@ app.post('/addDoctor', authenticateToken, requireRoles('admin'), requireAdminCli
             'clinicID',
             'email',
             'contactNumber'
+            ,'licenseNumber'
         ]);
 
         const {
@@ -529,6 +530,7 @@ app.post('/addDoctor', authenticateToken, requireRoles('admin'), requireAdminCli
             clinicID,
             email,
             contactNumber,
+            licenseNumber,
             patients = [],
         } = req.body;
         const createdDate = req.body.createdDate || new Date().toISOString();
@@ -544,6 +546,7 @@ app.post('/addDoctor', authenticateToken, requireRoles('admin'), requireAdminCli
             String(clinicID),
             String(email),
             String(contactNumber),
+            String(licenseNumber),
             String(createdDate),
             JSON.stringify(patients)
         ));
@@ -658,6 +661,14 @@ app.get('/getPatientsAssignedToDoctor/:doctorID', authenticateToken, requireRole
         console.error(`Failed to evaluate transaction: ${error}`);
         sendFabricError(res, error);
     }
+});
+
+app.get('/doctor/me/assigned-patients', authenticateToken, requireRoles('doctor'), async (req, res) => {
+    try {
+        if (!req.user.blockchainID) return sendError(res, 403, 'DOCTOR_IDENTITY_MISSING', 'Authenticated doctor has no blockchain identity');
+        const result = await withContract(req, (contract) => contract.evaluateTransaction('getPatientsAssignedToDoctor', String(req.user.blockchainID)));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
 });
 
 app.get('/getPatientsByClinic/:clinicID', authenticateToken, requireRoles('admin'), requireAdminClinicParam('clinicID'), async (req, res) => {

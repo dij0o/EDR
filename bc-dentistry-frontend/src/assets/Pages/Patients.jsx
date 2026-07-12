@@ -67,7 +67,7 @@ const Patients = () => {
                     response = await axios.get(databaseUrl('/patients'), { headers: authHeaders() });
                 } else if (role === "doctor" && user.blockchainID) {
                     console.log("🔵 Doctor fetching assigned patients:", user.blockchainID);
-                    response = await axios.get(blockchainUrl(`/getPatientsAssignedToDoctor/${user.blockchainID}`), { headers: authHeaders() });
+                    response = await axios.get(blockchainUrl('/doctor/me/assigned-patients'), { headers: authHeaders() });
                 } else {
                     console.error("🚨 Invalid role or missing organization/blockchain ID.");
                     return;

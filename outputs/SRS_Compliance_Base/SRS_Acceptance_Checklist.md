@@ -61,11 +61,14 @@ Phase 3 deployment checkpoint, 2026-07-11: all Section 5 SRS route names and pat
 
 ## Doctor Management
 
-- [ ] Admin can register doctor with name, specialty, clinic, contact, and license number.
-- [ ] Doctor creation is synchronized between database identity and chaincode metadata.
+- [x] Admin can register doctor with name, specialty, clinic, contact, Emirates ID, and license number at source level; AWS smoke test pending.
+- [x] Doctor creation is coordinated between MySQL identity/profile rows and Fabric registration; MySQL rolls back if Fabric registration fails.
 - [x] Admin can update an on-chain doctor profile within the authenticated clinic scope.
-- [ ] Doctor can retrieve assigned patients only.
+- [x] Admin can list/search/read/update doctors in the authenticated clinic through the Database API and web UI.
+- [x] Doctor assigned-patient retrieval uses a parameter-free JWT-derived self endpoint and chaincode certificate actor binding.
 - [x] Admin can delete an on-chain doctor record within the authenticated clinic scope.
+- [x] Coordinated delete removes Fabric and MySQL records and refuses deletion while patients remain assigned.
+- [ ] Phase 5 migration, chaincode/API/frontend rollout, doctor Fabric identity enrollment/revocation, and AWS smoke tests are complete.
 
 ## Clinical Records
 

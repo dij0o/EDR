@@ -1,5 +1,5 @@
 import { Routes, Route, useLocation } from "react-router-dom";
-import { Home, Patients, Appointments, DataRequests, LabResults, Settings, Info, Patient, Login, Signup } from "./assets/Pages"
+import { Home, Patients, Doctors, Appointments, DataRequests, LabResults, Settings, Info, Patient, Login, Signup } from "./assets/Pages"
 import Navbar from "./assets/Sections/Navbar.jsx"
 import Topbar from "./assets/Sections/Topbar.jsx"
 import PagesCover from "./assets/Pages/PagesCover.jsx";
@@ -26,6 +26,7 @@ function App() {
           <Route path="/Appointments" element={<Appointments/>} />
           <Route path="/Patients" element={<Patients/>} />
           <Route path="/Patients/:id" element={<Patient/>} />
+          {role === 'admin' && <Route path="/Doctors" element={<Doctors/>} />}
           {role === 'admin' && 
           <Route path="/DataRequests" element={<DataRequests/>} />
            } 

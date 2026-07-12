@@ -544,7 +544,7 @@ class DentalRecordSharing extends Contract {
     }
  
 
-    async addDoctor(ctx, doctorID, firstName, lastName, emiratesID, speciality, worksAt, clinicID, email, contactNumber, createdDate, patients) {
+    async addDoctor(ctx, doctorID, firstName, lastName, emiratesID, speciality, worksAt, clinicID, email, contactNumber, licenseNumber, createdDate, patients) {
             this._requireAdminClinic(ctx, clinicID);
         // try {
             // // Get the creator's identity
@@ -572,6 +572,7 @@ class DentalRecordSharing extends Contract {
                 clinicID: parseInt(clinicID),
                 email: email,
                 contactNumber: contactNumber,
+                licenseNumber: licenseNumber,
                 role: 'doctor',
                 createdDate: createdDate,
                 patients: parseArrayArgument(patients)
@@ -740,7 +741,7 @@ class DentalRecordSharing extends Contract {
     }
     
     // UpdateDoctor updates an existing doctor in the world state with provided parameters.
-    async UpdateDoctorInfo(ctx, doctorID, firstName, lastName, speciality, worksAt, clinicID, email, contactNumber, createdDate, patients) {
+    async UpdateDoctorInfo(ctx, doctorID, firstName, lastName, emiratesID, speciality, worksAt, clinicID, email, contactNumber, licenseNumber, createdDate, patients) {
         this._requireAdminClinic(ctx, clinicID);
         const exists = await this._actorExists(ctx, doctorID);
         if (!exists) {
@@ -752,14 +753,17 @@ class DentalRecordSharing extends Contract {
             doctorID: doctorID,
             firstName: firstName,
             lastName: lastName,
+            emiratesID: emiratesID,
             speciality: speciality,
             clinicID:clinicID,
             worksAt: worksAt,
             email: email,
             contactNumber: contactNumber,
+            licenseNumber: licenseNumber,
             role: 'doctor',
             createdDate: createdDate,
-            patients: patients
+            patients: parseArrayArgument(patients),
+            docType: 'doctor'
         };
         // we insert data in alphabetic order using 'json-stringify-deterministic' and 'sort-keys-recursive'
         return ctx.stub.putState(doctorID, Buffer.from(stringify(sortKeysRecursive(updatedDoctor))));
@@ -1088,6 +1092,8 @@ class DentalRecordSharing extends Contract {
     
     // Doctor: Get all Patients assigned to the doctor
     async getPatientsAssignedToDoctor(ctx, doctorID) {
+        const identity = this._requireRole(ctx, 'admin', 'doctor');
+        if (identity.role === 'doctor') this._requireActor(ctx, doctorID, 'doctor');
         const role = this._requireRole(ctx, 'admin', 'doctor').role;
         if (role === 'doctor') {
             this._requireActor(ctx, doctorID, 'doctor');

@@ -24,6 +24,7 @@ const Navbar = () => {
         { title: "Dashboard", link:'Dashboard', icon: Icon1 },
         { title: "Appointments", link:'Appointments', icon: Icon2 },
         { title: "Patients", link:'Patients', icon: Icon3 },
+        ...(userRole?.toLowerCase() === 'admin' ? [{ title: "Doctors", link:'Doctors', icon: Icon3 }] : []),
         { title: "Lab Results", link:'LabResults', icon: Icon4 },
         ...(userRole?.toLowerCase() !== 'doctor' ? [{ title: "Data Requests", link:'DataRequests', icon: Icon5 }] : []),
     ];

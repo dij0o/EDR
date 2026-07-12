@@ -365,8 +365,15 @@ CREATE TABLE `Doctor` (
   `Works_At` varchar(255) DEFAULT NULL,
   `Specialty` varchar(255) DEFAULT NULL,
   `Blockchain_ID` varchar(50) DEFAULT NULL,
+  `License_Number` varchar(100) DEFAULT NULL,
+  `Emirates_ID` varchar(100) DEFAULT NULL,
+  `Clinic_ID` int DEFAULT NULL,
+  `Modified_Date` datetime DEFAULT NULL,
   PRIMARY KEY (`ID`),
-  UNIQUE KEY `Blockchain_ID` (`Blockchain_ID`)
+  UNIQUE KEY `Blockchain_ID` (`Blockchain_ID`),
+  UNIQUE KEY `License_Number` (`License_Number`),
+  UNIQUE KEY `Emirates_ID` (`Emirates_ID`),
+  KEY `Clinic_ID` (`Clinic_ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -376,7 +383,7 @@ CREATE TABLE `Doctor` (
 
 LOCK TABLES `Doctor` WRITE;
 /*!40000 ALTER TABLE `Doctor` DISABLE KEYS */;
-INSERT INTO `Doctor` VALUES (1,'Smile Dental Clinic','Orthodontics',NULL),(2,'Bright Smiles Clinic','Periodontics',NULL),(3,'Healthy Teeth Dental','Endodontics',NULL),(4,'Advanced Dental Care','Oral Surgery',NULL),(5,'Family Dentistry Center','Pediatric Dentistry',NULL),(15,'Dental Clinic A','Orthodontist','Doctor1'),(16,'Dental Clinic B','Orthodontist','Doctor2');
+INSERT INTO `Doctor` (`ID`,`Works_At`,`Specialty`,`Blockchain_ID`) VALUES (1,'Smile Dental Clinic','Orthodontics',NULL),(2,'Bright Smiles Clinic','Periodontics',NULL),(3,'Healthy Teeth Dental','Endodontics',NULL),(4,'Advanced Dental Care','Oral Surgery',NULL),(5,'Family Dentistry Center','Pediatric Dentistry',NULL),(15,'Dental Clinic A','Orthodontist','Doctor1'),(16,'Dental Clinic B','Orthodontist','Doctor2');
 /*!40000 ALTER TABLE `Doctor` ENABLE KEYS */;
 UNLOCK TABLES;
 

@@ -128,7 +128,7 @@ Exit criteria:
 
 ## Phase 4: Patient Management Completion
 
-Status: **Source implementation complete 2026-07-11; AWS deployment/revalidation pending.**
+Status: **Completed and deployed 2026-07-11.** Chaincode `basic` 1.0.3 sequence 5, the Phase 4 database migration, both APIs, and the frontend were deployed; the authenticated create/update/read/assign/owner/delete smoke flow passed.
 
 Implementation notes:
 
@@ -169,6 +169,18 @@ Exit criteria:
 - PII storage aligns with SEC-03.
 
 ## Phase 5: Doctor Management Completion
+
+Status: **Source implementation complete 2026-07-12; AWS deployment/revalidation pending.**
+
+Implementation notes:
+
+- Doctor creation is coordinated by the Database API: it generates `Doctor-<UUID>`, writes the User/Doctor rows in a MySQL transaction, invokes Fabric registration, and commits MySQL only after Fabric succeeds.
+- Doctor list/read/update/delete are clinic-scoped for admins; doctor self-read is owner-bound. Delete is blocked while patients remain assigned.
+- Doctor license number, Emirates ID, clinic ID, and modification timestamp are included in the schema/migration and API/UI contracts.
+- The admin web UI provides list/search/create/update/delete with confirmation, loading, empty, success, and actionable error states.
+- `GET /doctor/me/assigned-patients` derives the doctor exclusively from the verified JWT; chaincode independently enforces the doctor certificate `actorID`.
+- Deployment must apply `2026-07-12-phase5-doctor-management.sql`, upgrade chaincode/API signatures, rebuild the frontend, and enroll/revoke `doctor-<doctorID>` Fabric identities as lifecycle operations.
+- AWS readiness was confirmed 2026-07-12, but deployment is blocked on authoritative license number and Emirates ID values for the two live legacy doctors (`Doctor1`, `Doctor2`). These regulated identifiers must not be fabricated.
 
 SRS coverage: FR-11 to FR-14
 

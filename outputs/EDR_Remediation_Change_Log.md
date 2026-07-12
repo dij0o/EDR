@@ -181,4 +181,15 @@ These were created or refreshed to run and verify the remediation copy. They are
 - Added `AddPatientMetadata` and `UpdatePatientMetadata` chaincode transactions plus JWT/MSP-bound Blockchain API routes. These store only identifiers, clinic/doctor metadata, opaque MySQL reference, hash, timestamps, and storage policy.
 - Replaced the add-patient UI with complete SRS fields and added admin update, assignment, and confirmed delete actions.
 - Added `dental-backend/test/phase4PatientManagement.test.js`; all 10 Phase 2-4 API/identity tests and Node syntax checks pass.
-- Deployment pending: MySQL backup/migration, chaincode lifecycle upgrade, historical patient-ledger PII sanitization, API restarts, frontend rebuild/copy, and authenticated smoke tests.
+- Deployed 2026-07-11: migration applied, chaincode `basic` 1.0.3 sequence 5 committed, mapped patient state sanitized, APIs/frontend deployed, and authenticated CRUD/assignment smoke flow passed.
+
+# Phase 5 Doctor Management Completion - 2026-07-12
+
+- Added doctor license number, Emirates ID, clinic ID, and modification metadata to `database/dump.sql` plus migration `database/migrations/2026-07-12-phase5-doctor-management.sql`.
+- Replaced split registration with coordinated `POST /doctors` and compatible `/registerDoctor`: server-generated `Doctor-<UUID>`, clinic from authenticated admin, MySQL transaction, and Fabric registration before commit.
+- Added clinic-scoped doctor list/read/update/delete APIs. Coordinated delete refuses doctors with assigned patients and removes Fabric state before MySQL commit.
+- Extended Blockchain API and chaincode doctor create/update contracts with license and Emirates ID while retaining Phase 2 admin clinic and actor certificate enforcement.
+- Added parameter-free `GET /doctor/me/assigned-patients`; the API derives doctor identity solely from the JWT and chaincode revalidates the certificate actor ID.
+- Added admin Doctor Management UI with list/search, create/update/delete, confirmation, loading/empty/success/error states, and role-gated navigation.
+- Added Phase 5 source tests and corrected a Phase 4 test assertion to scope its delete-order check to the patient route. Node syntax and all 14 Phase 2-5 source tests pass.
+- AWS access and service readiness were confirmed 2026-07-12. Deployment is blocked until authoritative license number and Emirates ID values are supplied for legacy `Doctor1` and `Doctor2`; after that, back up/apply/backfill the migration, upgrade chaincode/API, rebuild frontend, enroll/revoke identities, and run smoke tests.

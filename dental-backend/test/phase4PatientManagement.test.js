@@ -33,7 +33,9 @@ test('patient owner and admin clinic controls remain present', () => {
 });
 
 test('delete removes both Patient subtype and User identity rows', () => {
-    assert.match(dbApi, /DELETE FROM Patient WHERE ID=\?/);
-    assert.match(dbApi, /DELETE FROM User WHERE ID=\?/);
-    assert.ok(dbApi.indexOf('DELETE FROM Patient WHERE ID=?') < dbApi.indexOf('DELETE FROM User WHERE ID=?'));
+    const route = dbApi.match(/app\.delete\('\/patients\/:id'[\s\S]*?\n\}\);/);
+    assert.ok(route);
+    assert.match(route[0], /DELETE FROM Patient WHERE ID=\?/);
+    assert.match(route[0], /DELETE FROM User WHERE ID=\?/);
+    assert.ok(route[0].indexOf('DELETE FROM Patient WHERE ID=?') < route[0].indexOf('DELETE FROM User WHERE ID=?'));
 });
