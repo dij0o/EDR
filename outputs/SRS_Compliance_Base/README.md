@@ -35,15 +35,17 @@ The remediation codebase has a credible prototype foundation, but it does not ye
 
 Primary gaps:
 
-- Phase 1 API-layer JWT/role enforcement is implemented at source level; AWS deployment still needs the patient mapping migration and smoke-test evidence.
-- MSP/certificate binding is documented as a Phase 2 chaincode/gateway identity item.
-- Chaincode RBAC/MSP checks are missing or commented out.
+- Phase 1 API-layer JWT/role enforcement is deployed on AWS; the patient mapping, matching JWT secrets, protected registration, service restarts, and public smoke suite passed again after pushed commit `4892875` was synchronized.
+- Phase 2 MSP/certificate binding and chaincode RBAC are deployed for the current AWS admin, doctor, patient, and system identities; automated enrollment/revocation remains incomplete.
+- Chaincode `basic` 1.0.1 sequence 3 validates trusted MSP, role, actor, clinic, assignment, ownership, and consent context on covered paths.
 - REST endpoints do not fully match the SRS endpoint registry.
 - Patient, doctor, clinical record, appointment, notification, DICOM/hash, and audit flows are partial.
 - Mobile now uses `/login`, JWT headers, and the authenticated user's off-chain `Patient.Blockchain_ID` for patient request/consent calls.
 - Web and mobile screens include placeholder/static workflows.
 - Fabric default topology is closer to a development test network than the SRS target topology.
+- Before Phase 12 evidence capture, every non-Fabric service must be containerized and the Fabric/Hyperledger exception boundary must be documented.
 - Test and verification evidence is incomplete.
+- Chaincode test tooling needs an ESLint parser/`ecmaVersion` update so the standard `npm test` command reaches the 16 passing Mocha tests.
 
 ## Recommended Future Thread Start
 

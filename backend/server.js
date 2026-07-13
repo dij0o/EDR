@@ -77,6 +77,16 @@ const patientHash = (patient) => crypto.createHash('sha256').update(JSON.stringi
     doctors: patient.doctors || []
 })).digest('hex');
 
+const clinicalHash = (payload) => crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+const validateClinicalPayload = (recordType, payload) => {
+    if (!['medical', 'dental'].includes(recordType)) { const error = new Error('recordType must be medical or dental'); error.statusCode = 400; throw error; }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) { const error = new Error('payload must be an object'); error.statusCode = 400; throw error; }
+    const required = recordType === 'medical' ? ['medicalHistory', 'allergies', 'labResults', 'medications']
+        : ['treatmentPhase', 'procedureCode', 'tooth', 'ceramicType', 'prescriptions', 'diagnostics'];
+    const missing = required.filter((field) => payload[field] === undefined || payload[field] === null || payload[field] === '');
+    if (missing.length) { const error = new Error(`Missing required clinical fields: ${missing.join(', ')}`); error.statusCode = 400; throw error; }
+};
+
 const callBlockchain = async (req, path, method, body) => {
     if (!BLOCKCHAIN_API_URL) {
         const error = new Error('Blockchain API URL is not configured');
@@ -959,6 +969,42 @@ app.delete('/patients/:id', authenticateToken, requireRoles('admin'), async (req
         if (connection) await connection.rollback().catch(() => {});
         return sendApiError(res, error.statusCode || 500, 'PATIENT_DELETE_FAILED', `${error.message}; no MySQL deletion was committed`);
     } finally { if (connection) connection.release(); }
+});
+
+app.post(['/clinical-records', '/addMedicalRecord', '/addDentalChartEntry'], authenticateToken, requireRoles('doctor'), async (req, res) => {
+    let connection;
+    try {
+        const recordType = req.path === '/addDentalChartEntry' ? 'dental' : (req.body.recordType || 'medical');
+        validateClinicalPayload(recordType, req.body.payload);
+        if (!req.body.patientID) return sendApiError(res, 400, 'VALIDATION_ERROR', 'patientID is required');
+        if (!req.user.blockchainID) return sendApiError(res, 403, 'DOCTOR_IDENTITY_REQUIRED', 'Authenticated doctor is missing a blockchain identity');
+        const recordID = `Clinical-${crypto.randomUUID()}`;
+        const dataHash = clinicalHash(req.body.payload);
+        const createdAt = new Date().toISOString();
+        connection = await db.promise().getConnection(); await connection.beginTransaction();
+        await connection.query('INSERT INTO Clinical_Record (Record_ID, Patient_Blockchain_ID, Record_Type, Payload, Data_Hash, Created_By_Doctor_ID, Created_Date) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [recordID, req.body.patientID, recordType, JSON.stringify(req.body.payload), dataHash, req.user.blockchainID, createdAt.slice(0, 19).replace('T', ' ')]);
+        await callBlockchain(req, '/clinical-record-metadata', 'POST', { recordID, recordType, patientID: req.body.patientID, offChainRef: `mysql:Clinical_Record/${recordID}`, dataHash, doctorID: req.user.blockchainID, createdAt });
+        await connection.commit();
+        return res.status(201).json({ success: true, data: { recordID, recordType, patientID: req.body.patientID, payload: req.body.payload, dataHash, createdAt } });
+    } catch (error) {
+        if (connection) await connection.rollback().catch(() => {});
+        return sendApiError(res, error.statusCode || 500, 'CLINICAL_RECORD_CREATE_FAILED', error.message);
+    } finally { if (connection) connection.release(); }
+});
+
+app.get(['/patients/:id/clinical-records/:recordType', '/getMedicalRecords/:id', '/getDentalChartData/:id'], authenticateToken, requireRoles('doctor', 'patient'), async (req, res) => {
+    try {
+        const recordType = req.path.startsWith('/getDentalChartData') ? 'dental' : (req.params.recordType || 'medical');
+        const metadata = await callBlockchain(req, `/clinical-records/${encodeURIComponent(req.params.id)}/${recordType}?purpose=${encodeURIComponent(req.query.purpose || 'clinical care')}`, 'GET');
+        if (!metadata.length) return res.json({ success: true, data: [] });
+        const ids = metadata.map((item) => item.recordID);
+        const placeholders = ids.map(() => '?').join(',');
+        const rows = await query(`SELECT * FROM Clinical_Record WHERE Record_ID IN (${placeholders}) ORDER BY Created_Date DESC`, ids);
+        const byID = new Map(metadata.map((item) => [item.recordID, item]));
+        const records = rows.map((row) => ({ ...byID.get(row.Record_ID), payload: typeof row.Payload === 'string' ? JSON.parse(row.Payload) : row.Payload, dataHash: row.Data_Hash, createdAt: row.Created_Date }));
+        return res.json({ success: true, data: records });
+    } catch (error) { return sendApiError(res, error.statusCode || 500, 'CLINICAL_RECORD_READ_FAILED', error.message); }
 });
 
 // Legacy list retained for existing clients, now clinic-scoped and PII sourced only from MySQL.

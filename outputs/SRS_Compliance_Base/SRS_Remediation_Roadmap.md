@@ -216,6 +216,13 @@ Exit criteria:
 - Patient can view own records.
 - External doctor can view only after admin approval and patient consent.
 
+Completion checkpoint - 2026-07-12:
+
+- MySQL `Clinical_Record` stores medical/dental payloads; Fabric stores opaque references and SHA-256 metadata only.
+- Doctor create and doctor/patient retrieval APIs support all FR-15/FR-17 fields, SRS aliases, assignment/consent/ownership enforcement, and automatic immutable read logging.
+- Patient detail UI supports medical/dental history display and doctor creation forms.
+- AWS migration, APIs, frontend, and chaincode `basic` 1.0.7 sequence 9 are deployed. Twenty API/source tests, 18 chaincode tests, and authenticated create/read/denial/patient/audit smoke checks passed.
+
 ## Phase 7: DICOM And Integrity Verification
 
 SRS coverage: FR-19, FR-20, SEC-04
@@ -234,6 +241,14 @@ Exit criteria:
 - Upload creates off-chain file plus on-chain SHA-256 metadata.
 - Verification detects hash mismatch.
 - Patient/doctor UI can display integrity status.
+
+Source checkpoint - 2026-07-12:
+
+- Implemented configurable private filesystem storage with opaque on-chain references; no MySQL metadata migration is required.
+- Implemented raw binary doctor upload, streaming SHA-256, rollback on Fabric failure, metadata-only Fabric transactions, access-controlled list/read, and four-state integrity verification.
+- Added patient/doctor/admin metadata and integrity UI; doctor upload is subject to the Phase 6 chaincode assignment/consent rule.
+- Added Phase 7 helper/API source tests and chaincode metadata/access tests. All 17 dependency-free Blockchain API source tests pass; chaincode/frontend dependency-based execution is pending in this workstation checkout because their `node_modules` directories are absent.
+- AWS deployment completed 2026-07-12: `basic` 1.0.5 sequence 7, persistent private storage, API/frontend rollout, 17 API tests, 18 chaincode tests, and full doctor/patient/admin upload/verify/tamper/missing/unauthorized smoke workflow passed. No MySQL migration was required.
 
 ## Phase 8: Consent, Data Sharing, Notifications, And Audit
 
@@ -299,6 +314,8 @@ SRS coverage: Architecture, reliability, availability, scalability
 
 Tasks:
 
+- Containerize all non-Fabric services required by the SRS, including the Database API, Blockchain API gateway, web frontend delivery layer, mobile/backend support services where applicable, MySQL, and supporting runtime services.
+- Document the accepted exception that Fabric/Hyperledger network components may remain on the Fabric test/production network tooling path, provided the boundary and startup commands are explicit.
 - Decide if SRS target is production topology or test topology.
 - Add/document two peers per organization if required.
 - Add/document Raft orderer topology. Production Raft needs at least three orderers.
@@ -307,6 +324,8 @@ Tasks:
 
 Exit criteria:
 
+- Every SRS application service outside Fabric/Hyperledger runs from documented Docker/Compose containers in the target environment.
+- The deployment docs clearly separate containerized application services from the Fabric/Hyperledger network exception.
 - Setup docs clearly match either SRS target topology or an accepted development exception.
 - Fabric network starts from documented commands in the target environment.
 

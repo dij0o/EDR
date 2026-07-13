@@ -7,7 +7,9 @@ const { Gateway, Wallets } = require('fabric-network');
 const path = require('path');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { fabricIdentityForUser } = require('./fabricIdentity');
+const { sha256File, verifyFileIntegrity } = require('./radiographicIntegrity');
 
 require('dotenv').config();
 
@@ -34,6 +36,8 @@ const fabricChaincode = process.env.FABRIC_CHAINCODE || 'basic';
 const discoveryEnabled = process.env.FABRIC_DISCOVERY_ENABLED !== 'false';
 const discoveryAsLocalhost = process.env.FABRIC_DISCOVERY_AS_LOCALHOST !== 'false';
 const SECRET_KEY = process.env.JWT_SECRET;
+const radiographicStorageRoot = path.resolve(__dirname, process.env.RADIOGRAPHIC_STORAGE_ROOT || './data/radiographic-files');
+const radiographicMaxFileBytes = Number(process.env.RADIOGRAPHIC_MAX_FILE_BYTES || 536870912);
 
 const ROLE_ALIASES = {
     admin: 'admin',
@@ -354,13 +358,92 @@ app.delete('/patient-metadata/:id', authenticateToken, requireRoles('admin'), as
 
 app.post('/addMedicalRecord', authenticateToken, requireRoles('doctor'), requireDoctorSelfBody('doctorID'), async (req, res) => {
     try {
-        requireFields(req.body, ['doctorID', 'patientID', 'medicalRecord']);
-        const record = typeof req.body.medicalRecord === 'string' ? req.body.medicalRecord : JSON.stringify(req.body.medicalRecord);
-        const result = await withContract(req, (contract) => contract.submitTransaction('AddMedicalRecord', String(req.body.patientID), record));
+        requireFields(req.body, ['recordID', 'patientID', 'offChainRef', 'dataHash', 'doctorID', 'createdAt']);
+        const result = await withContract(req, (contract) => contract.submitTransaction('AddMedicalRecord', String(req.body.recordID), String(req.body.patientID), String(req.body.offChainRef), String(req.body.dataHash), String(req.body.doctorID), String(req.body.createdAt)));
         return sendSuccess(res, parseBufferJson(result), 201);
     } catch (error) {
         return sendFabricError(res, error);
     }
+});
+
+app.post('/clinical-record-metadata', authenticateToken, requireRoles('doctor'), requireDoctorSelfBody('doctorID'), async (req, res) => {
+    try {
+        requireFields(req.body, ['recordID', 'recordType', 'patientID', 'offChainRef', 'dataHash', 'doctorID', 'createdAt']);
+        if (!['medical', 'dental'].includes(req.body.recordType)) return sendApiError(res, 400, 'VALIDATION_ERROR', 'recordType must be medical or dental');
+        const transaction = req.body.recordType === 'medical' ? 'AddMedicalRecord' : 'AddDentalChartEntry';
+        const result = await withContract(req, (contract) => contract.submitTransaction(transaction,
+            String(req.body.recordID), String(req.body.patientID), String(req.body.offChainRef), String(req.body.dataHash), String(req.body.doctorID), String(req.body.createdAt)));
+        return sendSuccess(res, parseBufferJson(result), 201);
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.get('/clinical-records/:patientID/:recordType', authenticateToken, requireRoles('doctor', 'patient'), requirePatientSelfParam('patientID'), async (req, res) => {
+    try {
+        if (!['medical', 'dental'].includes(req.params.recordType)) return sendApiError(res, 400, 'VALIDATION_ERROR', 'recordType must be medical or dental');
+        const transaction = req.params.recordType === 'medical' ? 'GetMedicalRecords' : 'GetAllDentalChartData';
+        const result = await withContract(req, (contract) => contract.evaluateTransaction(transaction, String(req.params.patientID)));
+        await withContract(req, (contract) => contract.submitTransaction('LogClinicalAccess', String(req.params.patientID), String(req.params.recordType), String(req.query.purpose || 'clinical care')));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.get('/clinical-access-logs/:patientID', authenticateToken, requireRoles('patient', 'system'), requirePatientSelfParam('patientID'), async (req, res) => {
+    try { const result = await withContract(req, (contract) => contract.evaluateTransaction('GetClinicalAccessLogs', String(req.params.patientID))); return sendSuccess(res, parseBufferJson(result)); }
+    catch (error) { return sendFabricError(res, error); }
+});
+
+app.post('/radiographic-files', authenticateToken, requireRoles('doctor'), express.raw({ type: 'application/octet-stream', limit: radiographicMaxFileBytes }), async (req, res) => {
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) return sendApiError(res, 400, 'FILE_REQUIRED', 'A DICOM or radiographic file is required');
+    const fileID = crypto.randomUUID();
+    fs.mkdirSync(radiographicStorageRoot, { recursive: true });
+    const filePath = path.join(radiographicStorageRoot, fileID);
+    try {
+        const patientID = req.headers['x-patient-id'];
+        const fileName = req.headers['x-file-name'];
+        if (!patientID || !fileName) { const error = new Error('Missing required headers: x-patient-id, x-file-name'); error.statusCode = 400; throw error; }
+        const uploaderID = req.user.blockchainID;
+        if (!uploaderID) { const error = new Error('Authenticated doctor is missing a blockchain identity'); error.statusCode = 403; throw error; }
+        await fs.promises.writeFile(filePath, req.body, { flag: 'wx' });
+        const sha256 = await sha256File(filePath);
+        const metadata = {
+            fileID, patientID: String(patientID), storageReference: `filesystem:${fileID}`,
+            fileName: String(fileName), mediaType: String(req.headers['x-file-media-type'] || 'application/octet-stream'), fileSize: req.body.length,
+            sha256, uploaderID: String(uploaderID), uploadedAt: new Date().toISOString()
+        };
+        const result = await withContract(req, (contract) => contract.submitTransaction(
+            'AddDentalFileMetadata', metadata.fileID, metadata.patientID, metadata.storageReference,
+            metadata.fileName, metadata.mediaType, String(metadata.fileSize), metadata.sha256,
+            metadata.uploaderID, metadata.uploadedAt
+        ));
+        return sendSuccess(res, parseBufferJson(result), 201);
+    } catch (error) {
+        await fs.promises.unlink(filePath).catch(() => {});
+        return sendFabricError(res, error);
+    }
+});
+
+app.get('/patients/:patientID/radiographic-files', authenticateToken, requireRoles('admin', 'doctor', 'patient', 'system'), requirePatientSelfParam('patientID'), async (req, res) => {
+    try {
+        const result = await withContract(req, (contract) => contract.evaluateTransaction('getDentalFiles', String(req.params.patientID)));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.get('/radiographic-files/:fileID/verify-integrity', authenticateToken, requireRoles('admin', 'doctor', 'patient', 'system'), async (req, res) => {
+    try {
+        const result = await withContract(req, (contract) => contract.evaluateTransaction('GetDentalFile', String(req.params.fileID)));
+        const metadata = parseBufferJson(result);
+        if (!metadata.sha256 || !metadata.storageReference?.startsWith('filesystem:')) {
+            return sendSuccess(res, { fileID: req.params.fileID, status: 'unknown', expectedSha256: metadata.sha256 || null, actualSha256: null });
+        }
+        const storedID = metadata.storageReference.slice('filesystem:'.length);
+        if (storedID !== req.params.fileID || !/^[0-9a-f-]{36}$/i.test(storedID)) {
+            return sendSuccess(res, { fileID: req.params.fileID, status: 'unknown', expectedSha256: metadata.sha256, actualSha256: null });
+        }
+        const filePath = path.join(radiographicStorageRoot, storedID);
+        const verification = await verifyFileIntegrity(filePath, metadata.sha256);
+        return sendSuccess(res, { fileID: req.params.fileID, ...verification, expectedSha256: metadata.sha256 });
+    } catch (error) { return sendFabricError(res, error); }
 });
 
 app.get('/getDentalChartData/:id', authenticateToken, requireRoles('admin', 'doctor', 'patient', 'system'), requirePatientSelfParam('id'), async (req, res) => {

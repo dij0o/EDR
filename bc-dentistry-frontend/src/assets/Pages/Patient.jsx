@@ -47,6 +47,8 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { authHeaders, blockchainUrl } from "../config/api.js";
 import { getStoredUser } from "../utils/auth.js";
+import RadiographicFiles from "../components/Patient/RadiographicFiles.jsx";
+import ClinicalRecords from "../components/Patient/ClinicalRecords.jsx";
 
 const Patient = () => {
     const path = useLocation().pathname;
@@ -68,7 +70,7 @@ const Patient = () => {
             try {
                 const response = await axios.get(blockchainUrl(`/readPatient/${patientId}`), { headers: authHeaders() });
                 console.error('Fetched patients:', response.data);
-                setPatientDetails(response.data); // Store the fetched patient data
+                setPatientDetails(response.data.data || response.data); // Canonical API envelope with legacy fallback
                 
                 setLoading(false);
             } catch (error) {
@@ -101,6 +103,8 @@ const Patient = () => {
             <div className="col-span-12 flex flex-col gap-y-4">
                 <PatientMainBar id={patientDetails.patientID}  fullName={`${patientDetails.firstName} ${patientDetails.lastName}`} gender={patientDetails.gender} dob={patientDetails.dateOfBirth} />
                 <PatientPersonalInfo patientDetail={patientDetails}/>
+                <RadiographicFiles patientID={patientDetails.patientID || patientId} canUpload={userRole === 'doctor'} />
+                <ClinicalRecords patientID={patientDetails.patientID || patientId} role={userRole} />
                 
                  {/* Show medical records only for doctors */}
                  {userRole === 'doctor' && isSharedWithDoctor1 ? (

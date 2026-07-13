@@ -56,6 +56,8 @@ Latest checkpoint, 2026-07-10:
 - Phase 4 deployment result - 2026-07-11: migration, chaincode `basic` 1.0.3 sequence 5, APIs, and frontend were deployed; mapped patient ledger state was sanitized and the authenticated CRUD/assignment smoke workflow passed.
 - Phase 5 source result - 2026-07-12: doctor license/schema support, server-generated IDs, coordinated MySQL/Fabric create-update-read-delete, clinic-scoped admin APIs, admin list/search/form UI, and parameter-free authenticated doctor assigned-patient retrieval are implemented. Node syntax and 14 Phase 2-5 route/identity tests pass. AWS deployment remains: apply/backfill the Phase 5 migration, upgrade chaincode/APIs, rebuild frontend, enroll/revoke doctor Fabric identities, and smoke-test positive/negative workflows.
 - Phase 5 deployment result - 2026-07-12: commit `4da2e8e` deployed after backup `/home/ubuntu/deployment-backups/20260712-101141-phase5-predeploy`; migration applied; `basic` 1.0.4 sequence 6 committed with Org1MSP/Org2MSP approval; APIs/frontend restarted; 14 source tests, 16 chaincode tests, and disposable create/list/license/update/read/self/spoof-denial/delete smoke checks passed. Legacy Doctor1/Doctor2 license and Emirates values remain null pending authoritative data.
+- Phase 6 deployment result - 2026-07-12: MySQL clinical payload storage, metadata-only Fabric hashing, canonical medical/dental APIs, UI, assignment/consent/owner enforcement, and automatic immutable read logs deployed. Migration applied; `basic` 1.0.7 sequence 9 committed with both MSP approvals; 20 API/source tests, 18 chaincode tests, and medical/dental create, doctor read, unauthorized denial, patient read, and audit-log smoke passed. Backup: `/home/ubuntu/deployment-backups/20260712-171801-phase6-completion-predeploy`.
+- Phase 7 deployment result - 2026-07-12: private `/var/lib/edr/radiographic-files` storage, streaming SHA-256, metadata-only Fabric anchoring, four-state verification, Phase 6 access enforcement, and UI were deployed. `basic` 1.0.5 sequence 7 is committed with both MSP approvals; 17 API tests, 18 chaincode tests, frontend build, and doctor/patient/admin upload/verify/tamper/missing/unauthorized smoke workflow passed. Backups: `/home/ubuntu/deployment-backups/20260712-111048-phase7-source-precopy` and `/home/ubuntu/deployment-backups/20260712-111209-phase7-predeploy`. No MySQL migration was required.
 - Git-synchronized redeployment - 2026-07-11: the VM checkout now points to pushed commit `4892875`. A pre-sync backup is at `/home/ubuntu/deployment-backups/20260711-094718`; Database API, Blockchain API, and the Nginx frontend were rebuilt/restarted; patient mappings and service health were reverified; the Phase 1 public smoke suite and Phase 2 role/MSP tests passed again.
 - Known deployment/test item: direct chaincode Mocha tests pass 16/16, but `npm test` stops in the inherited ESLint pre-hook because its parser configuration does not accept object spread syntax used by the Node 18+ chaincode.
 - Dependency audit item from the clean AWS installs: `dental-backend` reports 28 vulnerabilities (3 critical), the frontend 33 (1 critical), and chaincode 19 (1 critical). Use reviewed dependency upgrades and compatibility testing rather than `npm audit fix --force` in production.
@@ -72,6 +74,7 @@ The main SRS compliance gaps are:
 - Mobile app still has placeholder/static areas and needs full usability polish beyond the now-mapped patient request/consent flow.
 - Web/mobile contain placeholder workflows.
 - Fabric default topology is a development network, not full SRS target topology.
+- Before Phase 12, all non-Fabric SRS services must be containerized; only Fabric/Hyperledger components may remain on the documented Fabric network/tooling exception path.
 - Tests and verification evidence are incomplete.
 
 ## Recommended Work Order
@@ -85,7 +88,7 @@ The main SRS compliance gaps are:
 7. Consent, notifications, audit logging.
 8. Appointment management.
 9. Mobile/web usability cleanup.
-10. Fabric topology/deployment alignment.
+10. Non-Fabric service containerization plus Fabric topology/deployment alignment.
 11. Tests, evidence, and final documentation.
 
 ## Rule For Future Updates

@@ -16,6 +16,7 @@ const context = (role, actorID, mspID = 'Org1MSP', clinicID = null) => ({
         putState: sinon.stub().resolves(),
         deleteState: sinon.stub().resolves(),
         getTxID: sinon.stub().returns('tx-1'),
+        getTxTimestamp: sinon.stub().returns({ seconds: { toString: () => '1783872000' }, nanos: 0 }),
     },
 });
 
@@ -116,7 +117,7 @@ describe('Phase 2 chaincode identity enforcement', () => {
             patientID: 'Patient2', doctors: ['Doctor2'], sharedWith: [], medicalRecords: [],
         })));
         await expectReject(
-            contract.AddMedicalRecord(ctx, 'Patient2', '{"diagnosis":"test"}'),
+            contract.AddMedicalRecord(ctx, 'Record2', 'Patient2', 'mysql:Clinical_Record/Record2', 'a'.repeat(64), 'Doctor1', '2026-07-12T00:00:00Z'),
             'Doctor Doctor1 is not assigned or consented for patient Patient2'
         );
     });
@@ -126,18 +127,19 @@ describe('Phase 2 chaincode identity enforcement', () => {
         ctx.stub.getState.resolves(Buffer.from(JSON.stringify({
             patientID: 'Patient1', doctors: ['Doctor1'], sharedWith: [], medicalRecords: [],
         })));
-        const result = await contract.AddMedicalRecord(ctx, 'Patient1', '{"diagnosis":"test"}');
-        expect(JSON.parse(result).medicalRecords).to.deep.equal(['{"diagnosis":"test"}']);
-        expect(ctx.stub.putState.calledOnce).to.equal(true);
+        const result = JSON.parse(await contract.AddMedicalRecord(ctx, 'Record1', 'Patient1', 'mysql:Clinical_Record/Record1', 'a'.repeat(64), 'Doctor1', '2026-07-12T00:00:00Z'));
+        expect(result.recordType).to.equal('medical');
+        expect(result).not.to.have.property('payload');
+        expect(ctx.stub.putState.calledWith('CLINICAL:Record1')).to.equal(true);
     });
 
     it('allows a patient certificate to read its own medical records', async () => {
         const ctx = context('patient', 'Patient1');
-        ctx.stub.getState.resolves(Buffer.from(JSON.stringify({
-            patientID: 'Patient1', medicalRecords: [{ diagnosis: 'test' }],
-        })));
-        const records = await contract.GetMedicalRecords(ctx, 'Patient1');
-        expect(records).to.deep.equal([{ diagnosis: 'test' }]);
+        const patient = { patientID: 'Patient1', clinicalRecordIDs: ['Record1'] };
+        const metadata = { recordID: 'Record1', recordType: 'medical', patientID: 'Patient1', offChainRef: 'mysql:Clinical_Record/Record1', dataHash: 'a'.repeat(64) };
+        ctx.stub.getState.callsFake(async key => Buffer.from(JSON.stringify(key === 'Patient1' ? patient : metadata)));
+        const records = JSON.parse(await contract.GetMedicalRecords(ctx, 'Patient1'));
+        expect(records).to.deep.equal([metadata]);
     });
 
     it('rejects a patient certificate reading another patient medical records', async () => {
@@ -149,6 +151,25 @@ describe('Phase 2 chaincode identity enforcement', () => {
             contract.GetMedicalRecords(ctx, 'Patient2'),
             'patient certificate does not own Patient2'
         );
+    });
+
+    it('stores only radiographic metadata and SHA-256 for an assigned doctor', async () => {
+        const ctx = context('doctor', 'Doctor1');
+        ctx.stub.getState.resolves(Buffer.from(JSON.stringify({ patientID: 'Patient1', doctors: ['Doctor1'], sharedWith: [] })));
+        const result = JSON.parse(await contract.AddDentalFileMetadata(
+            ctx, 'file-1', 'Patient1', 'filesystem:file-1', 'scan.dcm', 'application/dicom', '12', 'a'.repeat(64), 'Doctor1', '2026-07-12T00:00:00Z'
+        ));
+        expect(result.sha256).to.equal('a'.repeat(64));
+        expect(result).not.to.have.property('content');
+        expect(ctx.stub.putState.calledWith('RADFILE:file-1')).to.equal(true);
+    });
+
+    it('rejects radiographic metadata upload by an unauthorized doctor', async () => {
+        const ctx = context('doctor', 'Doctor2');
+        ctx.stub.getState.resolves(Buffer.from(JSON.stringify({ patientID: 'Patient1', doctors: ['Doctor1'], sharedWith: [] })));
+        await expectReject(contract.AddDentalFileMetadata(
+            ctx, 'file-2', 'Patient1', 'filesystem:file-2', 'scan.dcm', 'application/dicom', '12', 'b'.repeat(64), 'Doctor2', '2026-07-12T00:00:00Z'
+        ), 'Doctor Doctor2 is not assigned or consented for patient Patient1');
     });
 
     it('rejects an identity that is not associated with an MSP', async () => {

@@ -1442,8 +1442,73 @@ class DentalRecordSharing extends Contract {
         return { success: true, message: `Access logged for Doctor ${doctorID} and Patient ${patientID}` };
     }
 
-    // Add a dental file entry to a patient's record (IPFS-based)
-    async addDentalFile(ctx, patientID, cid, fileName, fileType, uploaderID, uploadDate) {
+    async _addClinicalMetadata(ctx, recordType, recordID, patientID, offChainRef, dataHash, doctorID, createdAt) {
+        this._requireActor(ctx, doctorID, 'doctor');
+        const patientBytes = await ctx.stub.getState(patientID);
+        if (!patientBytes || patientBytes.length === 0) throw new Error(`Patient ${patientID} does not exist`);
+        const patient = JSON.parse(patientBytes.toString());
+        this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor');
+        if (!/^[a-f0-9]{64}$/i.test(dataHash)) throw new Error('Clinical record SHA-256 hash must contain 64 hexadecimal characters');
+        const metadata = { docType: 'clinicalRecordMetadata', recordType, recordID, patientID, offChainRef, dataHash: dataHash.toLowerCase(), doctorID, createdAt };
+        await ctx.stub.putState(`CLINICAL:${recordID}`, Buffer.from(JSON.stringify(metadata)));
+        patient.clinicalRecordIDs = Array.isArray(patient.clinicalRecordIDs) ? patient.clinicalRecordIDs : [];
+        patient.clinicalRecordIDs.push(recordID);
+        await ctx.stub.putState(patientID, Buffer.from(JSON.stringify(patient)));
+        return JSON.stringify(metadata);
+    }
+
+    async AddMedicalRecord(ctx, recordID, patientID, offChainRef, dataHash, doctorID, createdAt) {
+        return this._addClinicalMetadata(ctx, 'medical', recordID, patientID, offChainRef, dataHash, doctorID, createdAt);
+    }
+
+    async AddDentalChartEntry(ctx, recordID, patientID, offChainRef, dataHash, doctorID, createdAt) {
+        return this._addClinicalMetadata(ctx, 'dental', recordID, patientID, offChainRef, dataHash, doctorID, createdAt);
+    }
+
+    async addDentalChartEntry(ctx, ...args) { return this.AddDentalChartEntry(ctx, ...args); }
+
+    async _getClinicalMetadata(ctx, patientID, recordType) {
+        const patientBytes = await ctx.stub.getState(patientID);
+        if (!patientBytes || patientBytes.length === 0) throw new Error(`Patient ${patientID} does not exist`);
+        const patient = JSON.parse(patientBytes.toString());
+        this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor', 'patient');
+        const records = [];
+        for (const id of patient.clinicalRecordIDs || []) {
+            const bytes = await ctx.stub.getState(`CLINICAL:${id}`);
+            if (bytes && bytes.length) { const item = JSON.parse(bytes.toString()); if (!recordType || item.recordType === recordType) records.push(item); }
+        }
+        return JSON.stringify(records);
+    }
+
+    async GetMedicalRecords(ctx, patientID) { return this._getClinicalMetadata(ctx, patientID, 'medical'); }
+    async GetAllDentalChartData(ctx, patientID) { return this._getClinicalMetadata(ctx, patientID, 'dental'); }
+    async getAllDentalChartData(ctx, patientID) { return this.GetAllDentalChartData(ctx, patientID); }
+
+    async LogClinicalAccess(ctx, patientID, recordType, purpose) {
+        const patientBytes = await ctx.stub.getState(patientID);
+        if (!patientBytes || patientBytes.length === 0) throw new Error(`Patient ${patientID} does not exist`);
+        const patient = JSON.parse(patientBytes.toString());
+        const identity = this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor', 'patient');
+        const actorID = identity.actorID;
+        const txTimestamp = ctx.stub.getTxTimestamp();
+        const timestamp = new Date((Number(txTimestamp.seconds.toString()) * 1000) + Math.floor(txTimestamp.nanos / 1000000)).toISOString();
+        const logEntry = { docType: 'clinicalAccessLog', logID: `ACCESS:${ctx.stub.getTxID()}`, actorID, actorRole: identity.role, patientID, recordType, purpose, timestamp };
+        await ctx.stub.putState(logEntry.logID, Buffer.from(JSON.stringify(logEntry)));
+        return JSON.stringify(logEntry);
+    }
+
+    async GetClinicalAccessLogs(ctx, patientID) {
+        const identity = this._requireRole(ctx, 'patient', 'system');
+        if (identity.role === 'patient') this._requireActor(ctx, patientID, 'patient');
+        const iterator = await ctx.stub.getStateByRange('ACCESS:', 'ACCESS;');
+        const logs = [];
+        for (;;) { const item = await iterator.next(); if (item.value?.value) { const log = JSON.parse(item.value.value.toString()); if (log.patientID === patientID) logs.push(log); } if (item.done) break; }
+        await iterator.close();
+        return JSON.stringify(logs);
+    }
+
+    // Store only immutable radiographic file metadata on-chain. File bytes remain off-chain.
+    async AddDentalFileMetadata(ctx, fileID, patientID, storageReference, fileName, mediaType, fileSize, sha256, uploaderID, uploadedAt) {
         this._requireActor(ctx, uploaderID, 'doctor');
         const exists = await this._actorExists(ctx, patientID);
         if (!exists) {
@@ -1454,23 +1519,30 @@ class DentalRecordSharing extends Contract {
         const patient = JSON.parse(patientAsBytes.toString());
         this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor');
 
-        if (!patient.dentalFiles) {
-            patient.dentalFiles = [];
+        if (!/^[a-f0-9]{64}$/i.test(sha256)) {
+            throw new Error('SHA-256 hash must contain exactly 64 hexadecimal characters');
         }
-
         const fileEntry = {
-            cid,
+            docType: 'radiographicFileMetadata',
+            fileID,
+            patientID,
+            storageReference,
             fileName,
-            fileType,
+            mediaType,
+            fileSize: Number(fileSize),
+            sha256: sha256.toLowerCase(),
             uploaderID,
-            uploadDate
+            uploadedAt
         };
-
-        patient.dentalFiles.push(fileEntry);
-
+        await ctx.stub.putState(`RADFILE:${fileID}`, Buffer.from(JSON.stringify(fileEntry)));
+        patient.dentalFileIDs = Array.isArray(patient.dentalFileIDs) ? patient.dentalFileIDs : [];
+        patient.dentalFileIDs.push(fileID);
         await ctx.stub.putState(patientID, Buffer.from(JSON.stringify(patient)));
-
         return JSON.stringify(fileEntry);
+    }
+
+    async addDentalFile(ctx, patientID, cid, fileName, fileType, uploaderID, uploadDate) {
+        throw new Error('Legacy CID upload is disabled; use AddDentalFileMetadata with an off-chain reference and SHA-256 hash');
     }
 
     // Get all dental files stored for a patient
@@ -1482,7 +1554,23 @@ class DentalRecordSharing extends Contract {
 
         const patient = JSON.parse(patientJSON.toString());
         this._requirePatientRecordAccess(ctx, patientID, patient, 'admin', 'doctor', 'patient', 'system');
-        return JSON.stringify(patient.dentalFiles || []);
+        const files = [];
+        for (const fileID of patient.dentalFileIDs || []) {
+            const bytes = await ctx.stub.getState(`RADFILE:${fileID}`);
+            if (bytes && bytes.length) files.push(JSON.parse(bytes.toString()));
+        }
+        return JSON.stringify(files);
+    }
+
+    async GetDentalFile(ctx, fileID) {
+        const bytes = await ctx.stub.getState(`RADFILE:${fileID}`);
+        if (!bytes || bytes.length === 0) throw new Error(`Dental file ${fileID} does not exist`);
+        const file = JSON.parse(bytes.toString());
+        const patientBytes = await ctx.stub.getState(file.patientID);
+        if (!patientBytes || patientBytes.length === 0) throw new Error(`The patient ${file.patientID} does not exist`);
+        const patient = JSON.parse(patientBytes.toString());
+        this._requirePatientRecordAccess(ctx, file.patientID, patient, 'admin', 'doctor', 'patient', 'system');
+        return JSON.stringify(file);
     }
 
 

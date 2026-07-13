@@ -193,3 +193,22 @@ These were created or refreshed to run and verify the remediation copy. They are
 - Added admin Doctor Management UI with list/search, create/update/delete, confirmation, loading/empty/success/error states, and role-gated navigation.
 - Added Phase 5 source tests and corrected a Phase 4 test assertion to scope its delete-order check to the patient route. Node syntax and all 14 Phase 2-5 source tests pass.
 - Deployed 2026-07-12 from `4da2e8e` after backup `/home/ubuntu/deployment-backups/20260712-101141-phase5-predeploy`. Migration applied; chaincode `basic` 1.0.4 sequence 6 committed with both MSP approvals; Database API, Blockchain API, frontend, and Nginx deployed. Disposable create/list/license/update/read/self/spoof-denial/delete smoke checks passed and cleanup was verified. Legacy Doctor1/Doctor2 regulated fields remain null until authoritative values are supplied; Fabric CA lifecycle automation remains open.
+
+# Phase 7 DICOM And Integrity Source Completion - 2026-07-12
+
+- Selected private configurable filesystem storage for large DICOM/radiographic bytes; Fabric stores only opaque reference, metadata, and SHA-256. No MySQL migration is required.
+- Added doctor-only raw binary upload with 512 MiB configurable limit, UUID storage keys, streaming SHA-256, and file rollback if Fabric anchoring fails.
+- Added `AddDentalFileMetadata`, access-controlled `GetDentalFile`/`getDentalFiles`, and disabled the legacy unhashed CID write path.
+- Added JWT/MSP-protected integrity verification returning `verified`, `mismatch`, `missing file`, or `unknown`.
+- Added patient detail UI for metadata, integrity status, and assigned/consented doctor upload.
+- Added upload/hash/success/mismatch/missing/unknown/metadata-only/unauthorized source tests. Blockchain API syntax and all 17 source tests pass.
+- Deployed to AWS 2026-07-12 after backups `/home/ubuntu/deployment-backups/20260712-111048-phase7-source-precopy` and `/home/ubuntu/deployment-backups/20260712-111209-phase7-predeploy`. Configured `/var/lib/edr/radiographic-files` mode `0700`; committed chaincode `basic` 1.0.5 sequence 7 with both MSP approvals; 17 API tests, 18 chaincode tests, frontend build, PM2/Nginx rollout, and full doctor/patient/admin upload/verified/mismatch/missing/unauthorized smoke checks passed. No MySQL migration was required.
+
+# Phase 6 Clinical Record Completion - 2026-07-12
+
+- Added `Clinical_Record` migration/schema for authoritative off-chain medical and dental JSON payloads with SHA-256 hashes.
+- Replaced legacy full-payload chaincode writes with metadata-only `AddMedicalRecord` and `AddDentalChartEntry`; canonical/legacy retrieval aliases enforce assignment, consent, and patient ownership.
+- Added coordinated Database API create/read routes, Blockchain API metadata/access routes, required medical/dental field validation, and immutable automatic `LogClinicalAccess` records.
+- Added patient detail clinical record UI for doctor creation and doctor/patient history display.
+- Added Phase 6 tests; 20 API/source tests and 18 chaincode tests pass.
+- Deployed migration, APIs, frontend, and `basic` 1.0.7 sequence 9 on AWS. Authenticated medical/dental create, assigned-doctor read, unauthorized-doctor denial, patient-owner read, and automatic audit-log smoke checks passed. Backup: `/home/ubuntu/deployment-backups/20260712-171801-phase6-completion-predeploy`.

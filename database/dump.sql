@@ -559,6 +559,21 @@ UNLOCK TABLES;
 -- Table structure for table `Medical_History`
 --
 
+DROP TABLE IF EXISTS `Clinical_Record`;
+CREATE TABLE `Clinical_Record` (
+  `Record_ID` varchar(64) NOT NULL,
+  `Patient_Blockchain_ID` varchar(64) NOT NULL,
+  `Record_Type` enum('medical','dental') NOT NULL,
+  `Payload` json NOT NULL,
+  `Data_Hash` char(64) NOT NULL,
+  `Created_By_Doctor_ID` varchar(64) NOT NULL,
+  `Created_Date` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `Modified_Date` datetime DEFAULT NULL,
+  PRIMARY KEY (`Record_ID`),
+  KEY `idx_clinical_patient_type` (`Patient_Blockchain_ID`,`Record_Type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+
 DROP TABLE IF EXISTS `Medical_History`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;

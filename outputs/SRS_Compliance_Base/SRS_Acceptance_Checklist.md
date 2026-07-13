@@ -73,24 +73,24 @@ Phase 3 deployment checkpoint, 2026-07-11: all Section 5 SRS route names and pat
 
 ## Clinical Records
 
-- [ ] Doctor can add medical history.
-- [ ] Doctor can add allergies.
-- [ ] Doctor can add medications.
-- [ ] Doctor can add lab results.
-- [ ] Doctor can add dental chart entries.
-- [ ] Dental chart entries include treatment phase, procedure code, tooth, ceramic type, prescriptions, diagnostics.
-- [ ] Doctor can retrieve medical records only when assigned or consented.
-- [ ] Patient can retrieve own medical/dental records.
-- [ ] Access attempts without consent or assignment are rejected.
+- [x] Doctor can add medical history.
+- [x] Doctor can add allergies.
+- [x] Doctor can add medications.
+- [x] Doctor can add lab results.
+- [x] Doctor can add dental chart entries.
+- [x] Dental chart entries include treatment phase, procedure code, tooth, ceramic type, prescriptions, diagnostics.
+- [x] Doctor can retrieve medical records only when assigned or consented.
+- [x] Patient can retrieve own medical/dental records.
+- [x] Access attempts without consent or assignment are rejected.
 
 ## DICOM And Integrity
 
-- [ ] DICOM/radiographic files are stored off-chain.
-- [ ] SHA-256 hash is computed when file is stored.
-- [ ] Hash and metadata are stored on-chain.
-- [ ] Integrity verification endpoint exists.
-- [ ] UI shows verification result.
-- [ ] Hash mismatch test exists.
+- [x] DICOM/radiographic files are stored off-chain in the deployed private persistent path.
+- [x] SHA-256 hash is computed when file is stored.
+- [x] Hash and metadata only are stored on-chain.
+- [x] Integrity verification endpoint exists with verified, mismatch, missing file, and unknown states.
+- [x] Patient/doctor/admin patient UI shows metadata and verification result.
+- [x] Hash mismatch, missing, unknown, upload/hash, metadata-only, and unauthorized source tests exist.
 
 ## Consent And Cross-Institution Sharing
 
@@ -144,6 +144,8 @@ Phase 3 deployment checkpoint, 2026-07-11: all Section 5 SRS route names and pat
 - [ ] MySQL 9.0.1 or accepted compatible version documented.
 - [ ] Node/Express versions documented.
 - [ ] React/React Native versions documented.
+- [ ] All non-Fabric SRS services are containerized and started from documented Docker/Compose commands before Phase 12 evidence capture.
+- [ ] Fabric/Hyperledger components are either containerized through the selected Fabric topology or explicitly documented as the accepted exception boundary.
 - [ ] Fabric network topology matches SRS or deviation is accepted.
 - [ ] Two clinic organizations are supported.
 - [ ] Two peers per organization are configured or documented as production-only work.
