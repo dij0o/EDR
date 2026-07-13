@@ -31,3 +31,10 @@ test('production build strips console statements and demo lab results are not re
   assert.match(lab, /Lab results unavailable/);
   assert.doesNotMatch(lab, /LabResultsSection/);
 });
+
+test('appointments page consumes the scoped API response envelope without mapping the response object', () => {
+  const source = read('src/assets/Sections/Appointments/AppointmentsSection.jsx');
+  assert.match(source, /Array\.isArray\(data\?\.data\) \? data\.data : \[\]/);
+  assert.doesNotMatch(source, /setAppointmentsTickets\(data\)/);
+  assert.match(source, /No appointments found\./);
+});
