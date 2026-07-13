@@ -39,44 +39,39 @@ import PatientsFilters from "../Sections/Patients/PatientsFilters";
 import axios from "axios";
 import { useEffect, useState } from "react";
 import Lo from "../images/icons/calendar.svg";
-import { authHeaders, blockchainUrl, databaseUrl } from "../config/api.js";
+import { authHeaders, databaseUrl } from "../config/api.js";
 import { getStoredUser } from "../utils/auth.js";
 
 const Patients = () => {
     const [patients, setPatients] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
     const user = getStoredUser(); // Retrieve user details
     const role = user?.role?.toLowerCase();
 
     useEffect(() => {
-        console.log("✅ User Details:", user); // Debugging
-
         if (!user || !user.id || !user.role) {
-            console.error("🚨 Missing user details. Cannot fetch patients.");
+            setError('Your session is missing required identity details. Please log in again.');
+            setLoading(false);
             return;
         }
 
         const fetchPatients = async () => {
             try {
                 let response;
-                console.log("role:", role);
-                console.log("user.organizationId:", user.organizationId);
-                console.log("user.blockchainID:", user.blockchainID);
-
                 if (role === "admin" && user.organizationId) {
-                    console.log("🟢 Admin fetching patients for clinic:", user.organizationId);
                     response = await axios.get(databaseUrl('/patients'), { headers: authHeaders() });
                 } else if (role === "doctor" && user.blockchainID) {
-                    console.log("🔵 Doctor fetching assigned patients:", user.blockchainID);
-                    response = await axios.get(blockchainUrl('/doctor/me/assigned-patients'), { headers: authHeaders() });
+                    response = await axios.get(databaseUrl('/doctor/me/assigned-patients'), { headers: authHeaders() });
                 } else {
-                    console.error("🚨 Invalid role or missing organization/blockchain ID.");
+                    setError('Your account does not have a usable clinic or doctor identity.');
                     return;
                 }
-
-                console.log("✅ Patients fetched:", response.data);
                 setPatients(response.data.data || response.data);
             } catch (error) {
-                console.error("❌ Error fetching patients:", error.response?.data || error.message);
+                setError(error.response?.data?.error?.message || 'Unable to load patients.');
+            } finally {
+                setLoading(false);
             }
         };
 
@@ -86,6 +81,9 @@ const Patients = () => {
     if (!user) {
         return <div className="w-full border rounded-xl p-4 text-center">Please log in to view patients.</div>;
     }
+
+    if (loading) return <div role="status" className="w-full border rounded-xl p-4 text-center">Loading patients…</div>;
+    if (error) return <div role="alert" className="w-full border border-red-300 bg-red-50 rounded-xl p-4 text-red-800">{error}</div>;
 
     return (
         <div id="Patients" className="grid grid-cols-12 gap-x-8" style={{ gridTemplateColumns: "2fr 8fr" }}>

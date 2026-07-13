@@ -58,6 +58,21 @@ services:
     ports:
       - "8080:8080"
 
+  web-frontend:
+    build:
+      context: ./bc-dentistry-frontend
+      args:
+        VITE_DATABASE_API_URL: /api/database
+        VITE_BLOCKCHAIN_API_URL: /api/blockchain
+    container_name: edr-web-frontend
+    restart: unless-stopped
+    depends_on:
+      - database-api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "5173:80"
+
   # ---------------------------------------------------------------------------
   # Blockchain API. Talks to the Fabric network via the Fabric SDK.
   # NOTE: This service needs the Fabric network running on the host and a valid

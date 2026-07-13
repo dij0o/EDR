@@ -1,71 +1,62 @@
 @font-face {
     font-family: 'Inter';
-    src: url('fonts/Inter-Thin.ttf') format('ttf'),
-         url('fonts/Inter-Thin.woff') format('woff');
+    src: url('./assets/fonts/Inter-Thin.ttf') format('truetype');
     font-weight: 100;
     font-style: normal;
 }
 
 @font-face {
     font-family: 'Inter';
-    src: url('fonts/Inter-ExtraLight.ttf') format('ttf'),
-         url('fonts/Inter-ExtraLight.woff') format('woff');
+    src: url('./assets/fonts/Inter-ExtraLight.ttf') format('truetype');
     font-weight: 200;
     font-style: normal;
 }
 
 @font-face {
     font-family: 'Inter';
-    src: url('fonts/Inter-Light.ttf') format('ttf'),
-         url('fonts/Inter-Light.woff') format('woff');
+    src: url('./assets/fonts/Inter-Light.ttf') format('truetype');
     font-weight: 300;
     font-style: normal;
 }
 
 @font-face {
     font-family: 'Inter';
-    src: url('fonts/Inter-Regular.ttf') format('ttf'),
-         url('fonts/Inter-Regular.woff') format('woff');
+    src: url('./assets/fonts/Inter-Regular.ttf') format('truetype');
     font-weight: 400;
     font-style: normal;
 }
 
 @font-face {
     font-family: 'Inter';
-    src: url('./assets/fonts/Inter-Medium.ttf') format('ttf'),
-         url('fonts/Inter-Medium.woff') format('woff');
+    src: url('./assets/fonts/Inter-Medium.ttf') format('truetype');
     font-weight: 500;
     font-style: normal;
 }
 
 @font-face {
     font-family: 'Inter';
-    src: url('./assets/fonts/Inter-SemiBold.ttf') format('ttf'),
-         url('./assets/fonts/Inter-SemiBold.woff') format('woff');
+    src: url('./assets/fonts/Inter-SemiBold.ttf') format('truetype');
     font-weight: 600;
     font-style: normal;
 }
 
 @font-face {
     font-family: 'Inter';
-    src: url('./assets/fonts/Inter-Bold.ttf') format('ttf'),
-         url('./assets/fonts/Inter-Bold.woff') format('woff');
+    src: url('./assets/fonts/Inter-Bold.ttf') format('truetype');
     font-weight: 700;
     font-style: normal;
 }
 
 @font-face {
     font-family: 'Inter';
-    src: url('./assets/fonts/Inter-ExtraBold.ttf') format('ttf'),
-         url('./assets/fonts/Inter-ExtraBold.woff') format('woff');
+    src: url('./assets/fonts/Inter-ExtraBold.ttf') format('truetype');
     font-weight: 800;
     font-style: normal;
 }
 
 @font-face {
     font-family: 'Inter';
-    src: url('./assets/fonts/Inter-Black.ttf') format('ttf'),
-         url('./assets/fonts/Inter-Black.woff') format('woff');
+    src: url('./assets/fonts/Inter-Black.ttf') format('truetype');
     font-weight: 900;
     font-style: normal;
 }
@@ -73,9 +64,7 @@
 *{
     font-family: Inter !important;
     font-weight: 400;
-    transition: height .3s ease-in-out;
     scroll-behavior: smooth;
-    transition: all ease-in-out .3s;
 }
 
 #AddNewPatientDialog{
@@ -120,9 +109,7 @@ body{
   
 
   .loginTh, .signupTh{
-    background: url('https://www.sharjah.ac.ae/_next/image?url=https%3A%2F%2Fapi.sharjah.ac.ae%2F-%2Fjssmedia%2Fproject%2Fuos%2Fsites%2Fuos%2Fhero-banner%2Fdental%2Fdental-hospital-n.jpg&w=3840&q=75') no-repeat;
-    background-size: auto 100%;
-    background-position: center;
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 45%, #f8fafc 100%);
   }
 
 

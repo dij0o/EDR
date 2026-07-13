@@ -23,7 +23,17 @@ const buildUrl = (baseUrl, path) => {
 export const databaseUrl = (path) => buildUrl(DATABASE_API_URL, path);
 export const blockchainUrl = (path) => buildUrl(BLOCKCHAIN_API_URL, path);
 
-export const getAuthToken = () => localStorage.getItem("token");
+import { clearSession, hasValidSession } from '../utils/auth.js';
+
+export const getAuthToken = () => hasValidSession() ? localStorage.getItem("token") : null;
+
+export const handleUnauthorizedResponse = (response) => {
+    if (response?.status === 401) {
+        clearSession();
+        window.dispatchEvent(new Event('edr-session-expired'));
+    }
+    return response;
+};
 
 export const authHeaders = (headers = {}) => {
     const token = getAuthToken();

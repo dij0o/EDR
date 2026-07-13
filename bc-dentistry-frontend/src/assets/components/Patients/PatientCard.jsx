@@ -33,7 +33,7 @@ const PatientCard = ({ patientId, fullName, age, gender, insurance, medicalRecor
         <Link to={`/patients/${patientId}`}><h2 className="text-xl font-bold">{fullName}</h2></Link>
         <div><span className="font-semibold">Age: </span>{age} · {gender}</div>
         <div><span className="font-semibold">Insurance: </span>{insurance}</div>
-        <div className="flex justify-between text-sm underline"><a href={medicalRecord.link}>Medical record</a><a href={dentalRecord.link}>Dental record</a></div>
+        <Link className="text-sm font-semibold text-blue-700 underline" to={`/patients/${patientId}`}>View authorized patient record</Link>
         {isAdmin && <div className="flex gap-2 text-sm"><button onClick={edit} className="border p-2 rounded">Update</button><button onClick={assign} className="border p-2 rounded">Assign</button><button onClick={remove} className="border border-red-600 text-red-700 p-2 rounded">Delete</button></div>}
     </div>;
 };

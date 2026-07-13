@@ -14,7 +14,6 @@ const Navbar = () => {
     const location = useLocation();
     const [currentPath, setCurrentPath] = useState(location.pathname.split("/").pop());
     const { userRole } = useRole();
-    console.log("Current role:", userRole);
 
     useEffect(() => {
         setCurrentPath(location.pathname.split("/").pop());
@@ -47,8 +46,8 @@ const Navbar = () => {
                     {renderNavLinks()}
                 </div>
                 <div className="personal flex flex-col gap-y-6 items-center">
-                    <NavLink icon={Icon6} title={"setting"} link={"setting"} />
-                    <NavLink icon={Icon7} title={"info"} link={"info"} />
+                    <Link className="w-full" to="/settings"><NavLink icon={Icon6} title={"Settings"} link={"settings"} /></Link>
+                    <Link className="w-full" to="/info"><NavLink icon={Icon7} title={"Info"} link={"info"} /></Link>
                 </div>
             </div>
         </div>

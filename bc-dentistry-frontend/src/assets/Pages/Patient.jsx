@@ -45,7 +45,7 @@ import DentalRecord from "../components/Patient/DentalRecord";
 import { useRole } from '../Context/RoleContext.jsx';
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { authHeaders, blockchainUrl } from "../config/api.js";
+import { authHeaders, databaseUrl } from "../config/api.js";
 import { getStoredUser } from "../utils/auth.js";
 import RadiographicFiles from "../components/Patient/RadiographicFiles.jsx";
 import ClinicalRecords from "../components/Patient/ClinicalRecords.jsx";
@@ -59,22 +59,21 @@ const Patient = () => {
     //     return patient.id == path.split('/').pop();
     // })
     const patientId = path.split('/').pop(); // Extract patient ID from URL
-    console.log('Fetched Patient id:', patientId);
 
     const [patientDetails, setPatientDetails] = useState(null); // State to hold the patient data
     const [loading, setLoading] = useState(true); // Loading state
+    const [error, setError] = useState('');
 
     // Fetch patient details when the component mounts
     useEffect(() => {
         const fetchPatientDetails = async () => {
             try {
-                const response = await axios.get(blockchainUrl(`/readPatient/${patientId}`), { headers: authHeaders() });
-                console.error('Fetched patients:', response.data);
+                const response = await axios.get(databaseUrl(`/patients/${encodeURIComponent(patientId)}`), { headers: authHeaders() });
                 setPatientDetails(response.data.data || response.data); // Canonical API envelope with legacy fallback
                 
                 setLoading(false);
             } catch (error) {
-                console.error('Error fetching patient details:', error);
+                setError(error.response?.data?.error?.message || 'Unable to load patient details.');
                 setLoading(false);
             }
         };
@@ -87,16 +86,14 @@ const Patient = () => {
     }
 
     if (!patientDetails) {
-        return <div>Patient not found</div>;
+        return <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-red-800">{error || 'Patient not found.'}</div>;
     }
 
     if (!user) {
         return <div>Please log in to view patient details.</div>;
     }
 
-    // Check if the patient has shared data with Doctor1
-    const isSharedWithDoctor1 = Array.isArray(patientDetails.sharedWith) && patientDetails.sharedWith.includes(user.blockchainID);
-    console.log('Result of checking deoctor shared with details:', isSharedWithDoctor1);
+    const canViewClinicalRecords = userRole === 'doctor';
     
     return (
         <MainContainer classes={'w-full my-6'}>
@@ -107,25 +104,25 @@ const Patient = () => {
                 <ClinicalRecords patientID={patientDetails.patientID || patientId} role={userRole} />
                 
                  {/* Show medical records only for doctors */}
-                 {userRole === 'doctor' && isSharedWithDoctor1 ? (
+                 {canViewClinicalRecords ? (
                     patientDetails.medicalRecords?.length > 0 ? (
                         <MedicalRecord medicalDetails={patientDetails.medicalRecords} />
                     ) : (
                         <p>No medical records available.</p>
                     )
                 ) : (
-                    userRole === 'doctor' && <p>No medical records available or not shared with Doctor.</p>
+                    userRole === 'doctor' && <p>Medical records are unavailable for this patient.</p>
                 )}
 
                 {/* Show dental records only for doctors */}
-                {userRole === 'doctor' && isSharedWithDoctor1 ? (
+                {canViewClinicalRecords ? (
                     patientDetails.dentalChart?.length > 0 ? (
                         <DentalRecord dentalDetails={patientDetails.dentalChart} />
                     ) : (
                         <p>No dental records available.</p>
                     )
                 ) : (
-                    userRole === 'doctor' && <p>No dental records available or not shared with Doctor.</p>
+                    userRole === 'doctor' && <p>Dental records are unavailable for this patient.</p>
                 )}
                 {/* <DentalRecord dentalDetails={patientDetails[0]['dental-details']} />
                 {userRole === 'doctor' && (

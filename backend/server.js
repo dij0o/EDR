@@ -888,7 +888,18 @@ app.get('/patients', authenticateToken, requireRoles('admin'), async (req, res) 
     } catch (error) { return sendApiError(res, 500, 'PATIENT_LIST_FAILED', 'Unable to retrieve patients'); }
 });
 
-app.get('/patients/:id', authenticateToken, requireRoles('admin', 'patient'), async (req, res) => {
+app.get('/doctor/me/assigned-patients', authenticateToken, requireRoles('doctor'), async (req, res) => {
+    try {
+        if (!req.user.blockchainID) return sendApiError(res, 403, 'DOCTOR_IDENTITY_REQUIRED', 'Authenticated doctor has no blockchain identity');
+        // Revalidate the JWT-to-certificate actor binding before returning authoritative MySQL PII.
+        await callBlockchain(req, '/doctor/me/assigned-patients', 'GET');
+        const rows = await query(`${PATIENT_SELECT} WHERE JSON_CONTAINS(Patient.Doctors, JSON_QUOTE(?))
+            ORDER BY User.Last_Name, User.First_Name`, [String(req.user.blockchainID)]);
+        return res.json({ success: true, data: rows.map(normalizePatient) });
+    } catch (error) { return sendApiError(res, error.statusCode || 500, 'ASSIGNED_PATIENT_LIST_FAILED', error.message); }
+});
+
+app.get('/patients/:id', authenticateToken, requireRoles('admin', 'doctor', 'patient'), async (req, res) => {
     try {
         const rows = await query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID = ? LIMIT 1`, [req.params.id]);
         if (!rows.length) return sendApiError(res, 404, 'PATIENT_NOT_FOUND', 'Patient not found');
@@ -897,6 +908,11 @@ app.get('/patients/:id', authenticateToken, requireRoles('admin', 'patient'), as
             return sendApiError(res, 403, 'PATIENT_OWNER_MISMATCH', 'Patients may retrieve only their own profile');
         }
         if (normalizeRole(req.user.role) === 'admin') requireAdminClinic(req, patient.clinicID);
+        if (normalizeRole(req.user.role) === 'doctor') {
+            if (!req.user.blockchainID || !patient.doctors.includes(String(req.user.blockchainID))) {
+                return sendApiError(res, 403, 'PATIENT_ASSIGNMENT_REQUIRED', 'Doctors may retrieve only patients assigned to them');
+            }
+        }
         return res.json({ success: true, data: patient });
     } catch (error) { return sendApiError(res, error.statusCode || 500, 'PATIENT_READ_FAILED', error.message); }
 });
@@ -1015,33 +1031,49 @@ app.get('/Patient', authenticateToken, requireRoles('admin'), async (req, res) =
     } catch (error) { return sendApiError(res, 500, 'PATIENT_LIST_FAILED', 'Unable to retrieve patients'); }
 });
 
-// Route to fetch Appointments
-app.get('/Appointment', authenticateToken, requireRoles('admin', 'doctor', 'patient'), (req, res) => {
-    const sql = "SELECT * FROM Appointment";
-    db.query(sql, (err, data) => {
-        if (err) {
-            console.error('Error executing query:', err);
-            return res.status(500).json({ error: 'Database query failed' });
+// Legacy appointment alias retained for the web client, now scoped entirely from verified JWT claims.
+app.get('/Appointment', authenticateToken, requireRoles('admin', 'doctor', 'patient'), async (req, res) => {
+    try {
+        const role = normalizeRole(req.user.role);
+        let whereClause;
+        let params;
+        if (role === 'admin') {
+            whereClause = 'Patient.Clinic_ID = ?';
+            params = [req.user.organizationId];
+        } else if (role === 'doctor') {
+            if (!req.user.blockchainID) return sendApiError(res, 403, 'DOCTOR_IDENTITY_REQUIRED', 'Authenticated doctor has no blockchain identity');
+            whereClause = 'Doctor.Blockchain_ID = ?';
+            params = [req.user.blockchainID];
+        } else {
+            if (!req.user.blockchainID) return sendApiError(res, 403, 'PATIENT_IDENTITY_REQUIRED', 'Authenticated patient has no blockchain identity');
+            whereClause = 'Patient.Blockchain_ID = ?';
+            params = [req.user.blockchainID];
         }
-        return res.json(data);
-    });
+        const rows = await query(`SELECT Appointment.Appointment_ID, Appointment.Meeting_For, Appointment.Date, Appointment.Notes,
+            Doctor.Blockchain_ID AS Doctor_ID, Patient.Blockchain_ID AS Patient_ID
+            FROM Appointment
+            INNER JOIN Doctor ON Appointment.Doctor_ID = Doctor.ID
+            INNER JOIN Patient ON Appointment.Patient_ID = Patient.ID
+            WHERE ${whereClause} ORDER BY Appointment.Date`, params);
+        return res.json({ success: true, data: rows });
+    } catch (error) { return sendApiError(res, 500, 'APPOINTMENT_LIST_FAILED', 'Unable to retrieve appointments'); }
 });
 
-// Route to fetch Doctors
-app.get('/Doctor', authenticateToken, requireRoles('admin', 'doctor'), (req, res) => {
-    const sql = "SELECT * FROM Doctor";
-    db.query(sql, (err, data) => {
-        if (err) {
-            console.error('Error executing query:', err);
-            return res.status(500).json({ error: 'Database query failed' });
-        }
-        return res.json(data);
-    });
+// Legacy doctor alias retained for compatibility, but no longer returns global raw rows.
+app.get('/Doctor', authenticateToken, requireRoles('admin', 'doctor'), async (req, res) => {
+    try {
+        const role = normalizeRole(req.user.role);
+        const rows = role === 'admin'
+            ? await query(`${DOCTOR_SELECT} WHERE Doctor.Clinic_ID=? ORDER BY User.Last_Name,User.First_Name`, [req.user.organizationId])
+            : await query(`${DOCTOR_SELECT} WHERE Doctor.Blockchain_ID=? LIMIT 1`, [req.user.blockchainID]);
+        return res.json({ success: true, data: rows.map(normalizeDoctor) });
+    } catch (error) { return sendApiError(res, 500, 'DOCTOR_LIST_FAILED', 'Unable to retrieve doctors'); }
 });
 
 // Route to fetch Lab Results
 app.get('/Lab_Results', authenticateToken, requireRoles('admin', 'doctor'), (req, res) => {
-    // Sample test data
+    return sendApiError(res, 501, 'LAB_RESULTS_NOT_IMPLEMENTED', 'Lab results are unavailable until a scoped clinical data source is configured');
+    /* Historical sample data intentionally disabled so demo records cannot be presented as clinical truth.
     const testData = [
         {
             ID: 1,
@@ -1109,7 +1141,7 @@ app.get('/Lab_Results', authenticateToken, requireRoles('admin', 'doctor'), (req
     console.log('Lab Results fetched (test data):', testData);
     
     // Send the test data as a response
-    res.json(testData);
+    res.json(testData); */
 });
 
 // Route to fetch all users
