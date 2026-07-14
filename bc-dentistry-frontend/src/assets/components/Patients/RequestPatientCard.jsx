@@ -86,11 +86,14 @@ const RequestPatientCard = () => {
     const [patientName, setPatientName] = useState('');
     const [patientID, setPatientID] = useState('');
     const [clinicID, setClinicID] = useState('');
+    const [dataType, setDataType] = useState('Medical and Dental Records');
+    const [purpose, setPurpose] = useState('');
+    const [notes, setNotes] = useState('');
     const user = getStoredUser(); 
     const doctorID = user?.blockchainID; 
 
     const expandRequestForm = () => {
-        requestDataForm.current.classList.replace("h-0", "h-80");
+        requestDataForm.current.classList.replace("h-0", "h-[34rem]");
     };
 
     useEffect(() => {
@@ -100,7 +103,7 @@ const RequestPatientCard = () => {
                 !requestDataForm.current.contains(e.target) &&
                 !e.target.classList.contains("patient-card-btn")
             ) {
-                requestDataForm.current.classList.replace("h-80", "h-0");
+                requestDataForm.current.classList.replace("h-[34rem]", "h-0");
             }
         };
 
@@ -114,8 +117,8 @@ const RequestPatientCard = () => {
     const handleSubmit = async () => {
         console.log("Submitting Request with:", { doctorID, patientID, clinicID });
 
-        if (!doctorID || !patientID || !clinicID) {
-            alert("Please enter Doctor, Patient, and Clinic details before submitting.");
+        if (!doctorID || !patientID || !clinicID || !dataType || !purpose) {
+            alert("Please enter patient, clinic, data type, and request purpose before submitting.");
             return;
         }
 
@@ -127,6 +130,10 @@ const RequestPatientCard = () => {
                     doctorID,
                     patientID,
                     dataOriginClinicID: clinicID,
+                    dataType,
+                    purpose,
+                    reason: purpose,
+                    notes,
                 }),
             });
 
@@ -179,6 +186,24 @@ const RequestPatientCard = () => {
                             setClinicID(e.target.value);
                             // console.log("Updated Clinic ID:", e.target.value);
                         }}
+                    />
+                    <PatientRequestInput
+                        header={'Data type:'}
+                        placeHolder={"Medical, dental, DICOM, or complete record"}
+                        value={dataType}
+                        onChange={(e) => setDataType(e.target.value)}
+                    />
+                    <PatientRequestInput
+                        header={'Purpose:'}
+                        placeHolder={"Clinical reason for access"}
+                        value={purpose}
+                        onChange={(e) => setPurpose(e.target.value)}
+                    />
+                    <PatientRequestInput
+                        header={'Notes:'}
+                        placeHolder={"Optional supporting details"}
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
                     />
                     <RequestPatientCardSubmit onClick={handleSubmit} />
                 </div>

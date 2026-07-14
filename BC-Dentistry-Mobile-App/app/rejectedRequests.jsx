@@ -24,7 +24,7 @@ const rejectedRequests = () => {
       headers: authHeaders(token),
     })
     .then((response)=> {
-      setRequests(response.data)
+      setRequests(response.data?.data || response.data || [])
       setIsLoading(true)
     })
     .finally(() => {
@@ -61,9 +61,9 @@ const rejectedRequests = () => {
                         to={request.patientID}
                         status={request.status}
                         id={request.requestID}
-                        about={request.about || "N/A"}
-                        date={request.date || "N/A"}
-                        time={request.time || "N/A"}
+                        about={request.rejectionReason || request.purpose || request.reason || "N/A"}
+                        date={request.rejectedAt ? request.rejectedAt.slice(0, 10) : "N/A"}
+                        time={request.rejectedAt ? request.rejectedAt.slice(11, 16) : "N/A"}
                         optionsVisible={false}
                     />
                   )

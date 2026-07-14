@@ -291,6 +291,25 @@ const requireFields = (body, fields) => {
     }
 };
 
+const accessRequestDetails = (body) => ({
+    reason: body.reason || body.purpose,
+    urgency: body.urgency || 'routine',
+    notes: body.notes || '',
+    requestedRecordTypes: Array.isArray(body.requestedRecordTypes) && body.requestedRecordTypes.length
+        ? body.requestedRecordTypes
+        : [body.dataType || 'Dental and Medical Records'],
+});
+
+const notificationTargetFromUser = (user) => {
+    if (isRole({ user }, 'admin')) {
+        return { role: 'admin', id: user.organizationId };
+    }
+    if (isRole({ user }, 'patient') || isRole({ user }, 'doctor')) {
+        return { role: normalizeRole(user.role), id: user.blockchainID };
+    }
+    return { role: normalizeRole(user.role), id: user.blockchainID || user.organizationId || user.id };
+};
+
 const readPatientHandler = async (req, res) => {
     try {
         const patientID = req.params.id || req.params.patientID;
@@ -303,9 +322,15 @@ const readPatientHandler = async (req, res) => {
 
 const requestAccessHandler = async (req, res) => {
     try {
-        requireFields(req.body, ['doctorID', 'patientID', 'dataOriginClinicID']);
+        requireFields(req.body, ['doctorID', 'patientID', 'dataOriginClinicID', 'dataType', 'purpose']);
         const result = await withContract(req, (contract) => contract.submitTransaction(
-            'RequestDataAccess', String(req.body.doctorID), String(req.body.patientID), String(req.body.dataOriginClinicID)
+            'RequestDataAccess',
+            String(req.body.doctorID),
+            String(req.body.patientID),
+            String(req.body.dataOriginClinicID),
+            String(req.body.dataType),
+            String(req.body.purpose),
+            JSON.stringify(accessRequestDetails(req.body))
         ));
         return sendSuccess(res, { requestID: result.toString() }, 201, ['/requestDataAccess']);
     } catch (error) {
@@ -390,6 +415,13 @@ app.get('/clinical-records/:patientID/:recordType', authenticateToken, requireRo
 app.get('/clinical-access-logs/:patientID', authenticateToken, requireRoles('patient', 'system'), requirePatientSelfParam('patientID'), async (req, res) => {
     try { const result = await withContract(req, (contract) => contract.evaluateTransaction('GetClinicalAccessLogs', String(req.params.patientID))); return sendSuccess(res, parseBufferJson(result)); }
     catch (error) { return sendFabricError(res, error); }
+});
+
+app.get(['/audit/clinical-access/:patientID', '/getAccessAuditLogs/:patientID'], authenticateToken, requireRoles('admin', 'patient', 'system'), requirePatientSelfParam('patientID'), async (req, res) => {
+    try {
+        const result = await withContract(req, (contract) => contract.evaluateTransaction('GetClinicalAccessLogs', String(req.params.patientID)));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
 });
 
 app.post('/radiographic-files', authenticateToken, requireRoles('doctor'), express.raw({ type: 'application/octet-stream', limit: radiographicMaxFileBytes }), async (req, res) => {
@@ -781,43 +813,7 @@ app.get('/getPatientsByClinic/:clinicID', authenticateToken, requireRoles('admin
 
 
 // Endpoint for doctor to request data access
-app.post('/requestDataAccess', authenticateToken, requireRoles('doctor'), requireDoctorSelfBody('doctorID'), async (req, res) => {
-    try {
-        // console.log("Received API request:", req.body);
-
-        const { doctorID, patientID, dataOriginClinicID } = req.body;
-        
-        if (!doctorID || !patientID || !dataOriginClinicID) {
-            return res.status(400).json({ error: "Missing required parameters" });
-        }
-
-        const wallet = await Wallets.newFileSystemWallet(walletPath);
-
-        const gateway = new Gateway();
-        await gateway.connect(getConnectionProfile(), {
-            wallet,
-            identity: fabricIdentityForRequest(req),
-            discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
-        });
-
-        const network = await gateway.getNetwork(fabricChannel);
-        const contract = network.getContract(fabricChaincode);
-
-        // Convert clinic ID to string to match Fabric contract expectations
-        const requestID = await contract.submitTransaction(
-            'RequestDataAccess', 
-            doctorID, 
-            patientID, 
-            String(dataOriginClinicID)
-        );
-
-        res.status(200).json({ requestID: requestID.toString() });
-        await gateway.disconnect();
-    } catch (error) {
-        console.error(`Failed to submit transaction: ${error}`);
-        sendFabricError(res, error);
-    }
-});
+app.post('/requestDataAccess', authenticateToken, requireRoles('doctor'), requireDoctorSelfBody('doctorID'), requestAccessHandler);
 
 app.get('/getRequestsForAdmin/:clinicID', authenticateToken, requireRoles('admin'), requireAdminClinicParam('clinicID'), async (req, res) => {
     try {
@@ -998,6 +994,42 @@ app.post('/provideConsent', authenticateToken, requireRoles('patient'), requireP
         console.error(`Failed to submit transaction: ${error}`);
         sendFabricError(res, error);
     }
+});
+
+app.post(['/revokeConsent', '/patient/revokeConsent'], authenticateToken, requireRoles('patient'), requirePatientSelfBody('patientID'), async (req, res) => {
+    try {
+        requireFields(req.body, ['patientID', 'requestID']);
+        const result = await withContract(req, (contract) => contract.submitTransaction(
+            'RevokeConsent',
+            String(req.body.patientID),
+            String(req.body.requestID),
+            String(req.body.revocationReason || 'Patient revoked consent')
+        ));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.get('/notifications', authenticateToken, requireRoles('admin', 'doctor', 'patient'), async (req, res) => {
+    try {
+        const target = notificationTargetFromUser(req.user);
+        if (!target.id) {
+            return sendApiError(res, 403, 'NOTIFICATION_IDENTITY_REQUIRED', 'Authenticated user is missing a notification identity');
+        }
+        const result = await withContract(req, (contract) => contract.evaluateTransaction(
+            'GetNotificationsForActor',
+            String(target.role),
+            String(target.id),
+            String(req.query.status || 'ALL')
+        ));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.post('/notifications/:notificationID/read', authenticateToken, requireRoles('admin', 'doctor', 'patient'), async (req, res) => {
+    try {
+        const result = await withContract(req, (contract) => contract.submitTransaction('MarkNotificationRead', String(req.params.notificationID)));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
 });
 
 app.post('/rejectRequest', authenticateToken, requireRoles('patient'), requirePatientSelfBody('patientID'), async (req, res) => {

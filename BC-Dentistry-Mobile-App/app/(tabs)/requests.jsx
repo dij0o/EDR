@@ -42,8 +42,9 @@ const Requests = () => {
                 });
                 // console.log("Fetched Requests:", response.data);
                 
-                if (response.data.length > 0) {
-                    setRequests(response.data.filter((request) => request.status == 'PENDING_PATIENT_CONSENT'));
+                const payload = response.data?.data || response.data || [];
+                if (payload.length > 0) {
+                    setRequests(payload.filter((request) => request.status == 'PENDING_PATIENT_CONSENT'));
                 } else {
                     console.warn("No pending requests found.");
                 }
@@ -93,9 +94,9 @@ const Requests = () => {
                                 to={request.patientID}
                                 status={request.status}
                                 id={request.requestID}
-                                about={request.about || "N/A"}
-                                date={request.date || "N/A"}
-                                time={request.time || "N/A"}
+                                about={request.purpose || request.reason || request.dataType || "N/A"}
+                                date={request.requestedAt ? request.requestedAt.slice(0, 10) : "N/A"}
+                                time={request.requestedAt ? request.requestedAt.slice(11, 16) : "N/A"}
                             />
                         ))
                     )}

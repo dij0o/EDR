@@ -97,7 +97,7 @@ const AccesptReject = ({ requestID, patientID, updateStatus, setCardStatus, requ
             });
             console.log("Request Rejected:", response.data);
             Alert.alert("Success", "Request rejected successfully!");
-            updateStatus("REQUEST_REJECTED"); // 🔥 UI will update dynamically
+            updateStatus("REJECTED"); // 🔥 UI will update dynamically
         } catch (error) {
             setTimeout(()=>{
                 console.error("Error Accepting Request:", error.response?.data || error.message);

@@ -103,6 +103,94 @@ class DentalRecordSharing extends Contract {
         return { ...identity, actorID };
     }
 
+    _txTimestamp(ctx) {
+        const txTimestamp = ctx.stub.getTxTimestamp();
+        return new Date((Number(txTimestamp.seconds.toString()) * 1000) + Math.floor(txTimestamp.nanos / 1000000)).toISOString();
+    }
+
+    _parseDetailsJson(value) {
+        if (!value) {
+            return {};
+        }
+
+        if (typeof value === 'object') {
+            return value;
+        }
+
+        try {
+            const parsed = JSON.parse(value);
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (error) {
+            return {};
+        }
+    }
+
+    async _putNotification(ctx, notification) {
+        const timestamp = notification.createdAt || this._txTimestamp(ctx);
+        const notificationID = notification.notificationID
+            || `NOTIFICATION:${ctx.stub.getTxID()}:${notification.recipientRole}:${notification.recipientActorID || notification.recipientClinicID}:${notification.type}`;
+        const entry = {
+            docType: 'notification',
+            ...notification,
+            notificationID,
+            status: notification.status || 'UNREAD',
+            createdAt: timestamp,
+            readAt: notification.readAt || null,
+        };
+        await ctx.stub.putState(notificationID, Buffer.from(JSON.stringify(entry)));
+        return entry;
+    }
+
+    _requireNotificationOwner(ctx, notification) {
+        if (notification.recipientRole === 'admin') {
+            return this._requireAdminClinic(ctx, notification.recipientClinicID);
+        }
+
+        if (notification.recipientRole === 'patient') {
+            return this._requireActor(ctx, notification.recipientActorID, 'patient');
+        }
+
+        if (notification.recipientRole === 'doctor') {
+            return this._requireActor(ctx, notification.recipientActorID, 'doctor');
+        }
+
+        return this._requireRole(ctx, 'system');
+    }
+
+    async _findGrantedConsentRequest(ctx, patientID, doctorID, excludeRequestID = '') {
+        const iterator = await ctx.stub.getStateByRange('', '');
+        try {
+            for (;;) {
+                const result = await iterator.next();
+                if (result.value && result.value.value) {
+                    try {
+                        const record = JSON.parse(result.value.value.toString());
+                        if (
+                            record.docType === 'accessRequest'
+                            && record.patientID === patientID
+                            && record.doctorID === doctorID
+                            && record.requestID !== excludeRequestID
+                            && record.status === 'CONSENT_GRANTED'
+                        ) {
+                            return record;
+                        }
+                    } catch (error) {
+                        // Ignore non-JSON world-state entries from sample data.
+                    }
+                }
+
+                if (result.done) {
+                    break;
+                }
+            }
+        } finally {
+            if (iterator.close) {
+                await iterator.close();
+            }
+        }
+        return null;
+    }
+
     async InitLedger(ctx) {
         this._requireRole(ctx, 'system');
         
@@ -1140,7 +1228,7 @@ class DentalRecordSharing extends Contract {
 
     //     return request.requestID;
     // }
-    async RequestDataAccess(ctx, doctorID, patientID, dataOriginClinicID) {
+    async RequestDataAccess(ctx, doctorID, patientID, dataOriginClinicID, dataType, purpose, detailsJson) {
         this._requireActor(ctx, doctorID, 'doctor');
         const doctorAsBytes = await ctx.stub.getState(doctorID);
         if (!doctorAsBytes || doctorAsBytes.length === 0) {
@@ -1154,6 +1242,11 @@ class DentalRecordSharing extends Contract {
 
         const doctor = JSON.parse(doctorAsBytes.toString());
         const patient = JSON.parse(patientAsBytes.toString());
+        dataType = dataType || 'Dental and Medical Records';
+        purpose = purpose || 'clinical consultation';
+        detailsJson = detailsJson || '{}';
+        const details = this._parseDetailsJson(detailsJson);
+        const requestedAt = this._txTimestamp(ctx);
 
         // Ensure the patient has data at the requested clinic
         if (!patient.clinicIDs.includes(parseInt(dataOriginClinicID))) {
@@ -1166,14 +1259,42 @@ class DentalRecordSharing extends Contract {
             doctorID,
             doctorName: `${doctor.firstName} ${doctor.lastName}`,
             doctorClinicName: doctor.worksAt,
+            requestingClinicID: doctor.clinicID,
+            requestingClinicName: doctor.worksAt,
             patientID,
             clinicID: patient.clinicIDs,  // Clinics the patient is registered in
             dataOriginClinicID: parseInt(dataOriginClinicID), // Where the data exists
-            dataType: 'Dental and Medical Records',
+            holdingClinicID: parseInt(dataOriginClinicID),
+            dataType: String(dataType || 'Dental and Medical Records'),
+            purpose: String(purpose || 'clinical consultation'),
+            reason: String(details.reason || purpose || 'clinical consultation'),
+            requestedAt,
+            requestedBy: doctorID,
+            adminApprovedAt: null,
+            patientConsentedAt: null,
+            revokedAt: null,
+            details,
             status: 'PENDING_ADMIN_APPROVAL',
         };
 
         await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
+        await this._putNotification(ctx, {
+            notificationID: `NOTIFICATION:${request.requestID}:ADMIN_REVIEW`,
+            recipientRole: 'admin',
+            recipientClinicID: request.dataOriginClinicID,
+            type: 'ACCESS_REQUEST_PENDING_ADMIN',
+            relatedRequestID: request.requestID,
+            message: `Dr. ${request.doctorName} requested ${request.dataType} for patient ${patientID}.`,
+            payload: {
+                requestID: request.requestID,
+                doctorID,
+                patientID,
+                dataType: request.dataType,
+                purpose: request.purpose,
+                dataOriginClinicID: request.dataOriginClinicID,
+            },
+            createdAt: requestedAt,
+        });
 
         return request.requestID;
     }
@@ -1200,9 +1321,30 @@ class DentalRecordSharing extends Contract {
             throw new Error(`Request ${requestID} cannot be approved at this stage`);
         }
     
+        const approvedAt = this._txTimestamp(ctx);
         request.status = 'PENDING_PATIENT_CONSENT';
+        request.adminID = adminID;
+        request.adminClinicID = adminClinicID;
+        request.adminApprovedAt = approvedAt;
     
         await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
+        await this._putNotification(ctx, {
+            notificationID: `NOTIFICATION:${request.requestID}:PATIENT_CONSENT`,
+            recipientRole: 'patient',
+            recipientActorID: request.patientID,
+            type: 'ACCESS_REQUEST_PENDING_PATIENT',
+            relatedRequestID: request.requestID,
+            message: `Clinic ${adminClinicID} approved Dr. ${request.doctorName}'s request. Your consent is required.`,
+            payload: {
+                requestID: request.requestID,
+                doctorID: request.doctorID,
+                patientID: request.patientID,
+                dataType: request.dataType,
+                purpose: request.purpose,
+                adminClinicID,
+            },
+            createdAt: approvedAt,
+        });
     
         return { success: true, message: `Request ${requestID} approved by Admin from Clinic ${adminClinicID}.` };
     }
@@ -1264,7 +1406,13 @@ class DentalRecordSharing extends Contract {
             throw new Error(`Patient ${patientID} is not authorized to approve this request.`);
         }
 
+        const consentedAt = this._txTimestamp(ctx);
+        const identity = this._requireActor(ctx, patientID, 'patient');
         request.status = 'CONSENT_GRANTED';
+        request.patientConsentedAt = consentedAt;
+        request.consentActorID = identity.actorID;
+        request.consentMSPID = identity.mspID;
+        request.consentTxID = ctx.stub.getTxID();
 
         // Ensure `sharedWith` is initialized
         if (!patient.sharedWith) {
@@ -1279,6 +1427,21 @@ class DentalRecordSharing extends Contract {
         // Store the updated request and patient data on the ledger
         await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
         await ctx.stub.putState(patient.patientID, Buffer.from(JSON.stringify(patient)));
+        await this._putNotification(ctx, {
+            notificationID: `NOTIFICATION:${request.requestID}:DOCTOR_CONSENT_GRANTED`,
+            recipientRole: 'doctor',
+            recipientActorID: request.doctorID,
+            type: 'ACCESS_REQUEST_CONSENT_GRANTED',
+            relatedRequestID: request.requestID,
+            message: `Patient ${patientID} granted consent for ${request.dataType}.`,
+            payload: {
+                requestID: request.requestID,
+                patientID,
+                dataType: request.dataType,
+                purpose: request.purpose,
+            },
+            createdAt: consentedAt,
+        });
 
         return { success: true, message: `Patient ${patientID} granted consent for Doctor ${request.doctorID}.` };
     }
@@ -1408,24 +1571,99 @@ class DentalRecordSharing extends Contract {
     
         const request = JSON.parse(requestAsBytes.toString());
 
+        let rejectedRole;
         if (request.status === 'PENDING_ADMIN_APPROVAL') {
             this._requireAdminClinic(ctx, request.dataOriginClinicID);
+            rejectedRole = 'admin';
         } else if (request.status === 'PENDING_PATIENT_CONSENT') {
             this._requireActor(ctx, actorID, 'patient');
             if (actorID !== request.patientID) {
                 throw new Error(`Patient ${actorID} is not authorized to reject this request.`);
             }
+            rejectedRole = 'patient';
         }
     
         if (request.status === 'PENDING_ADMIN_APPROVAL' || request.status === 'PENDING_PATIENT_CONSENT') {
+            const rejectedAt = this._txTimestamp(ctx);
             request.status = 'REJECTED';
             request.rejectionReason = rejectionReason;
+            request.rejectedBy = actorID;
+            request.rejectedRole = rejectedRole;
+            request.rejectedAt = rejectedAt;
     
             await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
+            await this._putNotification(ctx, {
+                notificationID: `NOTIFICATION:${request.requestID}:DOCTOR_REJECTED`,
+                recipientRole: 'doctor',
+                recipientActorID: request.doctorID,
+                type: 'ACCESS_REQUEST_REJECTED',
+                relatedRequestID: request.requestID,
+                message: `Access request ${requestID} was rejected by ${rejectedRole}.`,
+                payload: {
+                    requestID: request.requestID,
+                    patientID: request.patientID,
+                    dataType: request.dataType,
+                    rejectionReason,
+                    rejectedRole,
+                },
+                createdAt: rejectedAt,
+            });
             return { success: true, message: `Request ${requestID} was rejected by ${actorID}.` };
         } else {
             throw new Error(`Request ${requestID} cannot be rejected at this stage.`);
         }
+    }
+
+    async RevokeConsent(ctx, patientID, requestID, revocationReason) {
+        this._requireActor(ctx, patientID, 'patient');
+        revocationReason = revocationReason || 'Patient revoked consent';
+        const requestAsBytes = await ctx.stub.getState(requestID);
+        if (!requestAsBytes || requestAsBytes.length === 0) {
+            throw new Error(`Request ${requestID} not found`);
+        }
+        const request = JSON.parse(requestAsBytes.toString());
+        if (request.patientID !== patientID) {
+            throw new Error(`Patient ${patientID} is not authorized to revoke this request.`);
+        }
+        if (request.status !== 'CONSENT_GRANTED') {
+            throw new Error(`Request ${requestID} does not have active consent.`);
+        }
+
+        const patientAsBytes = await ctx.stub.getState(patientID);
+        if (!patientAsBytes || patientAsBytes.length === 0) {
+            throw new Error(`Patient ${patientID} not found`);
+        }
+        const patient = JSON.parse(patientAsBytes.toString());
+        const revokedAt = this._txTimestamp(ctx);
+        request.status = 'CONSENT_REVOKED';
+        request.revokedAt = revokedAt;
+        request.revocationReason = revocationReason;
+        request.revocationTxID = ctx.stub.getTxID();
+
+        const otherConsent = await this._findGrantedConsentRequest(ctx, patientID, request.doctorID, requestID);
+        if (!otherConsent && Array.isArray(patient.sharedWith)) {
+            patient.sharedWith = patient.sharedWith.filter((doctorID) => doctorID !== request.doctorID);
+        }
+
+        await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
+        await ctx.stub.putState(patient.patientID, Buffer.from(JSON.stringify(patient)));
+        await this._putNotification(ctx, {
+            notificationID: `NOTIFICATION:${request.requestID}:DOCTOR_CONSENT_REVOKED`,
+            recipientRole: 'doctor',
+            recipientActorID: request.doctorID,
+            type: 'ACCESS_REQUEST_CONSENT_REVOKED',
+            relatedRequestID: request.requestID,
+            message: `Patient ${patientID} revoked consent for ${request.dataType}.`,
+            payload: {
+                requestID: request.requestID,
+                patientID,
+                dataType: request.dataType,
+                revocationReason,
+            },
+            createdAt: revokedAt,
+        });
+
+        return { success: true, message: `Patient ${patientID} revoked consent for Doctor ${request.doctorID}.` };
     }
     
     async LogAccess(ctx, doctorID, patientID) {
@@ -1440,6 +1678,57 @@ class DentalRecordSharing extends Contract {
         await ctx.stub.putState(logEntry.logID, Buffer.from(JSON.stringify(logEntry)));
     
         return { success: true, message: `Access logged for Doctor ${doctorID} and Patient ${patientID}` };
+    }
+
+    async GetNotificationsForActor(ctx, recipientRole, recipientID, statusFilter) {
+        statusFilter = statusFilter || 'ALL';
+        const role = String(recipientRole || '').toLowerCase();
+        if (role === 'admin') {
+            this._requireAdminClinic(ctx, recipientID);
+        } else if (role === 'patient') {
+            this._requireActor(ctx, recipientID, 'patient');
+        } else if (role === 'doctor') {
+            this._requireActor(ctx, recipientID, 'doctor');
+        } else {
+            throw new Error('Unsupported notification recipient role.');
+        }
+
+        const normalizedStatus = String(statusFilter || 'ALL').toUpperCase();
+        const iterator = await ctx.stub.getStateByRange('NOTIFICATION:', 'NOTIFICATION;');
+        const notifications = [];
+        try {
+            for (;;) {
+                const item = await iterator.next();
+                if (item.value && item.value.value) {
+                    const notification = JSON.parse(item.value.value.toString());
+                    const roleMatches = notification.recipientRole === role;
+                    const actorMatches = role === 'admin'
+                        ? String(notification.recipientClinicID) === String(recipientID)
+                        : String(notification.recipientActorID) === String(recipientID);
+                    const statusMatches = normalizedStatus === 'ALL' || notification.status === normalizedStatus;
+                    if (notification.docType === 'notification' && roleMatches && actorMatches && statusMatches) {
+                        notifications.push(notification);
+                    }
+                }
+                if (item.done) break;
+            }
+        } finally {
+            if (iterator.close) await iterator.close();
+        }
+        return JSON.stringify(notifications.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))));
+    }
+
+    async MarkNotificationRead(ctx, notificationID) {
+        const notificationBytes = await ctx.stub.getState(notificationID);
+        if (!notificationBytes || notificationBytes.length === 0) {
+            throw new Error(`Notification ${notificationID} not found`);
+        }
+        const notification = JSON.parse(notificationBytes.toString());
+        this._requireNotificationOwner(ctx, notification);
+        notification.status = 'READ';
+        notification.readAt = this._txTimestamp(ctx);
+        await ctx.stub.putState(notification.notificationID, Buffer.from(JSON.stringify(notification)));
+        return JSON.stringify(notification);
     }
 
     async _addClinicalMetadata(ctx, recordType, recordID, patientID, offChainRef, dataHash, doctorID, createdAt) {
@@ -1490,16 +1779,34 @@ class DentalRecordSharing extends Contract {
         const patient = JSON.parse(patientBytes.toString());
         const identity = this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor', 'patient');
         const actorID = identity.actorID;
-        const txTimestamp = ctx.stub.getTxTimestamp();
-        const timestamp = new Date((Number(txTimestamp.seconds.toString()) * 1000) + Math.floor(txTimestamp.nanos / 1000000)).toISOString();
-        const logEntry = { docType: 'clinicalAccessLog', logID: `ACCESS:${ctx.stub.getTxID()}`, actorID, actorRole: identity.role, patientID, recordType, purpose, timestamp };
+        const assignedDoctors = Array.isArray(patient.doctors) ? patient.doctors : [];
+        const sharedDoctors = Array.isArray(patient.sharedWith) ? patient.sharedWith : [];
+        let accessBasis = identity.role === 'patient' ? 'owner' : identity.role;
+        let requestID = null;
+        if (identity.role === 'doctor') {
+            if (assignedDoctors.includes(actorID)) {
+                accessBasis = 'assignment';
+            } else if (sharedDoctors.includes(actorID)) {
+                accessBasis = 'consent';
+                const consentRequest = await this._findGrantedConsentRequest(ctx, patientID, actorID);
+                requestID = consentRequest ? consentRequest.requestID : null;
+            }
+        }
+        const timestamp = this._txTimestamp(ctx);
+        const logEntry = { docType: 'clinicalAccessLog', logID: `ACCESS:${ctx.stub.getTxID()}`, actorID, actorRole: identity.role, patientID, recordType, purpose, requestID, accessBasis, timestamp };
         await ctx.stub.putState(logEntry.logID, Buffer.from(JSON.stringify(logEntry)));
         return JSON.stringify(logEntry);
     }
 
     async GetClinicalAccessLogs(ctx, patientID) {
-        const identity = this._requireRole(ctx, 'patient', 'system');
+        const identity = this._requireRole(ctx, 'admin', 'patient', 'system');
         if (identity.role === 'patient') this._requireActor(ctx, patientID, 'patient');
+        if (identity.role === 'admin') {
+            const patientBytes = await ctx.stub.getState(patientID);
+            if (!patientBytes || patientBytes.length === 0) throw new Error(`Patient ${patientID} does not exist`);
+            const patient = JSON.parse(patientBytes.toString());
+            this._requireAdminClinic(ctx, patient.clinicID || (Array.isArray(patient.clinicIDs) ? patient.clinicIDs[0] : undefined));
+        }
         const iterator = await ctx.stub.getStateByRange('ACCESS:', 'ACCESS;');
         const logs = [];
         for (;;) { const item = await iterator.next(); if (item.value?.value) { const log = JSON.parse(item.value.value.toString()); if (log.patientID === patientID) logs.push(log); } if (item.done) break; }
