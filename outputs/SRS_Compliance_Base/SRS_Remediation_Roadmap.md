@@ -250,9 +250,74 @@ Source checkpoint - 2026-07-12:
 - Added Phase 7 helper/API source tests and chaincode metadata/access tests. All 17 dependency-free Blockchain API source tests pass; chaincode/frontend dependency-based execution is pending in this workstation checkout because their `node_modules` directories are absent.
 - AWS deployment completed 2026-07-12: `basic` 1.0.5 sequence 7, persistent private storage, API/frontend rollout, 17 API tests, 18 chaincode tests, and full doctor/patient/admin upload/verify/tamper/missing/unauthorized smoke workflow passed. No MySQL migration was required.
 
+## Phase 7A: Web Frontend Stabilization Gate
+
+Scope: web frontend and its Database/Blockchain API-facing paths only. Mobile remains outside this phase.
+
+Status - 2026-07-13: **Deployed to AWS and authenticated runtime/API verification completed.** Commit `d6ecc1b` is live after backup `/home/ubuntu/deployment-backups/20260713-075154-phase7a-predeploy`; the Database API was rebuilt, the frontend was rebuilt and copied to the existing Nginx site, and Nginx was reloaded successfully.
+
+Tasks completed:
+
+- Scoped the legacy appointment and doctor compatibility APIs by JWT role, clinic, doctor, or patient identity; removed unrestricted `SELECT *` behavior.
+- Added a JWT-derived doctor assigned-patient projection and assignment/Fabric actor revalidation before patient PII is returned.
+- Added protected and role-aware React routes, JWT-expiry handling, logout, unauthorized handling, and removal of public signup navigation.
+- Connected doctor patient listing, patient detail, and dashboard appointments to scoped production APIs; removed client-side sharing decisions and patient/identity console output.
+- Removed misleading dashboard placeholders, disabled sample lab results and mock appointment creation, and implemented Settings/Info destinations.
+- Repaired ESLint, local fonts, production console stripping, patient-detail code splitting, and the production build gate.
+- Added an Nginx-served frontend image, health check, and same-origin Database/Blockchain API proxies to Compose.
+- Added four frontend source regressions and four additional API/source regressions.
+
+Verification completed:
+
+- Frontend tests: 4/4 pass.
+- Combined Blockchain/Database API source suite: 24/24 pass.
+- Frontend lint: pass with zero warnings.
+- Vite production build: pass; 1,331 modules transformed, main application chunk 474.88 kB and lazy patient/DICOM chunk 1,365.55 kB.
+- Compose configuration validation and local static HTTP serving passed earlier in this phase.
+
+Deployment verification:
+
+- AWS server tests: API/source 24/24, frontend 4/4, lint, and production build passed.
+- Live commit/service checks: `d6ecc1b`, healthy MySQL, running Database API, online Blockchain API, valid Nginx configuration, public frontend HTTP 200, and public Database API proxy HTTP 200.
+- Authenticated runtime smoke passed for public-proxy login, admin/doctor/patient login, unauthenticated appointment denial, role-scoped appointment reads, admin clinic-scoped doctor reads, doctor self-scoped doctor reads, assigned-patient list/detail, and disabled sample lab data.
+- Appointments UI hotfix `767400d` deployed after Playwright reproduced the response-envelope render crash; post-deployment Playwright renders the appointments empty state with zero page or console errors. Frontend regressions now pass 5/5.
+
+Remaining follow-up gates:
+
+- Run interactive authenticated browser UI coverage for admin, doctor, and patient screens, including responsive screenshots and keyboard/focus checks.
+- Run a real DICOM codec/viewer smoke test and resolve or accept the Cornerstone `fs`/`path` browser-externalization and large patient chunk warnings.
+- Perform the screenshot, responsive, keyboard, focus, contrast, and WCAG review under Phase 10.
+- Revisit bearer-token storage as part of the Phase 10/11 session and deployment hardening decision; current expiry/logout handling reduces stale-session risk but does not eliminate localStorage XSS exposure.
+- Complete the all-services Compose/container topology in Phase 11; this rollout intentionally preserved the established Nginx static frontend + Docker Database API + PM2 Blockchain API architecture.
+
+Exit criteria:
+
+- Source gate: **met**.
+- Deployed authenticated API/runtime gate: **met**.
+- Interactive browser, DICOM runtime, and Phase 10 accessibility gates: **pending**.
+
 ## Phase 8: Consent, Data Sharing, Notifications, And Audit
 
 SRS coverage: FR-21 to FR-28, SEC-08, GDPR audit
+
+Source checkpoint - 2026-07-13:
+
+- Source gate: **met locally**.
+- Hardened cross-clinic request creation so doctor requests include who, what, when, why, requesting clinic, holding clinic, data type, purpose, and request metadata.
+- Added ledger-backed admin/patient/doctor notifications with read-status updates.
+- Added admin approve/reject workflow and patient grant/reject/revoke workflow with JWT/MSP-bound API routes and chaincode identity metadata on decisions.
+- Preserved two-step access enforcement so consent-based sharing requires admin approval and patient consent, and revocation removes active sharing when no other granted request remains.
+- Extended immutable clinical access logs with access basis, request ID, purpose, and data type where available, plus admin/patient audit retrieval APIs and a web audit panel.
+- Added source tests covering Phase 8 chaincode/API/web/mobile surfaces; backend/API tests 28/28, frontend source tests 5/5, API and chaincode syntax checks, frontend lint, and Vite production build passed locally.
+
+Deployment checkpoint - 2026-07-14:
+
+- **Completed and deployed to AWS.**
+- No MySQL migration was required for Phase 8.
+- Fabric chaincode was upgraded after backup `/home/ubuntu/deployment-backups/20260714-064709-phase8-predeploy`; initial `basic` 1.0.8 sequence 10 was superseded because Fabric JavaScript metadata did not publish default-parameter transaction arity correctly, and final `basic` 1.0.9 sequence 11 is committed with Org1MSP and Org2MSP approvals.
+- Blockchain API was redeployed under PM2, the web frontend was rebuilt/copied to `/var/www/edr`, and Nginx was validated/reloaded in the accepted current topology.
+- Deployment verification passed: backend/API tests 28/28, direct chaincode tests 18/18, frontend tests 5/5, frontend lint, and Vite production build.
+- Authenticated AWS smoke passed for Doctor -> Admin -> Patient -> consent -> access -> audit -> revoke -> denied-after-revoke, ending with `PHASE8_CONSENT_AUDIT_SMOKE_OK`.
 
 Tasks:
 
@@ -267,9 +332,9 @@ Tasks:
 
 Exit criteria:
 
-- Full Doctor -> Admin -> Patient workflow is usable from web/mobile.
-- Data access without fulfilled consent fails.
-- Every data read through consent creates an audit log.
+- Full Doctor -> Admin -> Patient workflow is usable from web/mobile. **Met for deployed web/API and patient mobile source flow; mobile app store/device packaging remains outside this VM rollout.**
+- Data access without fulfilled consent fails. **Met in AWS smoke before consent and after revocation.**
+- Every data read through consent creates an audit log. **Met in AWS smoke through immutable audit retrieval.**
 
 ## Phase 9: Appointment Management
 

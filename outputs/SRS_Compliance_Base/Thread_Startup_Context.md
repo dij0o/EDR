@@ -58,6 +58,9 @@ Latest checkpoint, 2026-07-10:
 - Phase 5 deployment result - 2026-07-12: commit `4da2e8e` deployed after backup `/home/ubuntu/deployment-backups/20260712-101141-phase5-predeploy`; migration applied; `basic` 1.0.4 sequence 6 committed with Org1MSP/Org2MSP approval; APIs/frontend restarted; 14 source tests, 16 chaincode tests, and disposable create/list/license/update/read/self/spoof-denial/delete smoke checks passed. Legacy Doctor1/Doctor2 license and Emirates values remain null pending authoritative data.
 - Phase 6 deployment result - 2026-07-12: MySQL clinical payload storage, metadata-only Fabric hashing, canonical medical/dental APIs, UI, assignment/consent/owner enforcement, and automatic immutable read logs deployed. Migration applied; `basic` 1.0.7 sequence 9 committed with both MSP approvals; 20 API/source tests, 18 chaincode tests, and medical/dental create, doctor read, unauthorized denial, patient read, and audit-log smoke passed. Backup: `/home/ubuntu/deployment-backups/20260712-171801-phase6-completion-predeploy`.
 - Phase 7 deployment result - 2026-07-12: private `/var/lib/edr/radiographic-files` storage, streaming SHA-256, metadata-only Fabric anchoring, four-state verification, Phase 6 access enforcement, and UI were deployed. `basic` 1.0.5 sequence 7 is committed with both MSP approvals; 17 API tests, 18 chaincode tests, frontend build, and doctor/patient/admin upload/verify/tamper/missing/unauthorized smoke workflow passed. Backups: `/home/ubuntu/deployment-backups/20260712-111048-phase7-source-precopy` and `/home/ubuntu/deployment-backups/20260712-111209-phase7-predeploy`. No MySQL migration was required.
+- Phase 7A web frontend deployment result - 2026-07-13: commit `d6ecc1b` deployed after backup `/home/ubuntu/deployment-backups/20260713-075154-phase7a-predeploy`. Scoped appointment/doctor reads, JWT-derived doctor patient visibility, protected/session-aware routes, production data views, placeholder removal, and delivery changes are live. Server API/source 24/24, frontend 4/4, lint/build, service/Nginx/proxy checks, and authenticated admin/doctor/patient runtime smoke passed. Interactive browser screenshots, real DICOM execution, Phase 10 WCAG evidence, and Phase 11 all-services container alignment remain pending. Mobile was excluded.
+- Phase 8 source result - 2026-07-13: consent/data-sharing/notification/audit source work is locally complete. Chaincode now stores enriched cross-clinic request metadata, admin/patient/doctor notification records, patient consent actor/MSP/tx metadata, revocation, and expanded immutable clinical access logs. Blockchain API exposes enriched request, audit, notification read/update, and revoke routes. Web supports doctor request details, admin approve/reject, notification badge/read, and audit lookup. Mobile patient request screens show real request details and consent revocation. Verification passed locally: API and chaincode syntax checks, backend/API tests 28/28, frontend source tests 5/5, ESLint zero warnings, and Vite production build.
+- Phase 8 deployment result - 2026-07-14: deployed to AWS after backup `/home/ubuntu/deployment-backups/20260714-064709-phase8-predeploy`. No MySQL migration was required. Fabric chaincode initial `basic` 1.0.8 sequence 10 was superseded after a Fabric JavaScript default-parameter metadata arity mismatch was found during smoke; final `basic` 1.0.9 sequence 11 is committed with Org1MSP/Org2MSP approval. Blockchain API, web frontend, and Nginx were redeployed. Backend/API tests 28/28, direct chaincode tests 18/18, frontend tests 5/5, lint, and Vite build passed on the VM. Authenticated smoke passed for doctor request creation, admin notification/approval, patient notification/read status, patient consent metadata, consent-based doctor access, immutable audit retrieval, revocation, and denied access after revocation with marker `PHASE8_CONSENT_AUDIT_SMOKE_OK`.
 - Git-synchronized redeployment - 2026-07-11: the VM checkout now points to pushed commit `4892875`. A pre-sync backup is at `/home/ubuntu/deployment-backups/20260711-094718`; Database API, Blockchain API, and the Nginx frontend were rebuilt/restarted; patient mappings and service health were reverified; the Phase 1 public smoke suite and Phase 2 role/MSP tests passed again.
 - Known deployment/test item: direct chaincode Mocha tests pass 16/16, but `npm test` stops in the inherited ESLint pre-hook because its parser configuration does not accept object spread syntax used by the Node 18+ chaincode.
 - Dependency audit item from the clean AWS installs: `dental-backend` reports 28 vulnerabilities (3 critical), the frontend 33 (1 critical), and chaincode 19 (1 critical). Use reviewed dependency upgrades and compatibility testing rather than `npm audit fix --force` in production.
@@ -67,9 +70,9 @@ The main SRS compliance gaps are:
 - Phase 2 identity lifecycle automation remains: new clinics/users must be enrolled or revoked as their database lifecycle changes.
 - API endpoint names and coverage do not fully match the SRS.
 - Patient and doctor management are partial.
-- Clinical records are partial and not exposed as complete workflows.
-- DICOM/off-chain file SHA-256 integrity verification is missing.
-- Consent flow exists but needs authenticated identity, notifications, revocation/decision clarity, and automatic audit logging.
+- Clinical records are deployed for the Phase 6 medical/dental workflows; later usability/evidence polish remains.
+- DICOM/off-chain file SHA-256 integrity verification is deployed for Phase 7; real browser DICOM execution evidence remains pending.
+- Phase 8 consent, notifications, revocation, and audit are deployed and smoke-verified on AWS for the web/API flow and patient mobile source flow; external push notification delivery and packaged mobile-device runtime evidence remain separate if required.
 - Appointment management is mostly read-only/static.
 - Mobile app still has placeholder/static areas and needs full usability polish beyond the now-mapped patient request/consent flow.
 - Web/mobile contain placeholder workflows.
@@ -79,13 +82,15 @@ The main SRS compliance gaps are:
 
 ## Recommended Work Order
 
+0. Finish the remaining Phase 7A/10 evidence: interactive authenticated browser screenshots and keyboard/focus checks plus real DICOM execution. The Phase 7A source and AWS API/runtime gates are complete; all-services container alignment remains Phase 11 work.
+
 1. SRS API endpoint parity.
 2. Patient and doctor CRUD completion.
 3. Clinical record workflows.
 4. Patient and doctor CRUD completion.
 5. Clinical record workflows.
 6. DICOM/file hash integrity.
-7. Consent, notifications, audit logging.
+7. Consent, notifications, audit logging. **Deployed and smoke-verified on AWS on 2026-07-14; no MySQL migration required; final Fabric `basic` 1.0.9 sequence 11.**
 8. Appointment management.
 9. Mobile/web usability cleanup.
 10. Non-Fabric service containerization plus Fabric topology/deployment alignment.

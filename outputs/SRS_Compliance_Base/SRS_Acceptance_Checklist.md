@@ -94,23 +94,25 @@ Phase 3 deployment checkpoint, 2026-07-11: all Section 5 SRS route names and pat
 
 ## Consent And Cross-Institution Sharing
 
-- [ ] Doctor can initiate cross-clinic request.
-- [ ] Request records include who, what, when, why, requesting clinic, holding clinic, and data type.
-- [ ] Holding clinic admin can approve request.
+- [x] Doctor can initiate cross-clinic request.
+- [x] Request records include who, what, when, why, requesting clinic, holding clinic, and data type.
+- [x] Holding clinic admin can approve request.
 - [x] Holding clinic admin has a separate JWT/MSP-bound rejection endpoint with reason.
-- [ ] Patient receives request details in mobile app.
-- [ ] Patient can grant consent.
+- [x] Patient receives request details in mobile app.
+- [x] Patient can grant consent.
 - [x] Patient has a separate JWT/MSP owner-bound rejection endpoint with reason.
-- [ ] Consent decision is recorded on-chain with authenticated patient identity.
-- [ ] Access is granted only after admin approval and patient consent.
-- [ ] Consent revocation is implemented or formally documented as a deviation.
+- [x] Consent decision is recorded on-chain with authenticated patient identity.
+- [x] Access is granted only after admin approval and patient consent.
+- [x] Consent revocation is implemented or formally documented as a deviation.
+
+Phase 8 deployment checkpoint, 2026-07-14: AWS smoke passed for doctor request creation, admin notification/approval, patient notification/read status, patient consent metadata, consent-based doctor access, immutable audit retrieval, revocation, and denied access after revocation. Final Fabric state is `basic` 1.0.9 sequence 11; no MySQL migration was required.
 
 ## Audit Logging
 
-- [ ] `LogAccess` is automatically called when authorized data is retrieved.
-- [ ] Log includes actor, patient, timestamp, purpose/request ID, and data type where applicable.
-- [ ] Audit logs are immutable on-chain.
-- [ ] Admin/patient audit retrieval view or API exists.
+- [x] `LogAccess` is automatically called when authorized data is retrieved.
+- [x] Log includes actor, patient, timestamp, purpose/request ID, and data type where applicable.
+- [x] Audit logs are immutable on-chain.
+- [x] Admin/patient audit retrieval view or API exists.
 
 ## Appointment Management
 
@@ -123,21 +125,39 @@ Phase 3 deployment checkpoint, 2026-07-11: all Section 5 SRS route names and pat
 
 ## Notifications
 
-- [ ] Admin receives notification for incoming data requests.
-- [ ] Patient receives notification after admin approval.
-- [ ] Notification records persist in database or equivalent storage.
-- [ ] Notification status can be read/updated.
+- [x] Admin receives notification for incoming data requests.
+- [x] Patient receives notification after admin approval.
+- [x] Notification records persist in database or equivalent storage.
+- [x] Notification status can be read/updated.
 
 ## Usability
 
-- [ ] Web app has no placeholder-only core workflows.
+- [x] Web app has no enabled placeholder-only core workflows; sample labs and mock appointment creation are explicitly unavailable pending their implementation phases.
 - [x] Mobile app has no hard-coded `Patient1` workflow for protected request/consent API calls.
-- [ ] API base URLs are environment-driven.
+- [x] Web API base URLs are environment-driven and the Phase 7A frontend container provides same-origin proxy defaults.
 - [ ] Core forms show validation errors.
 - [ ] Core workflows show loading, empty, success, and failure states.
-- [ ] Consent status colors are green approved, red rejected, blue pending.
+- [x] Consent status colors are green approved, red rejected, blue pending.
 - [ ] Web UI is responsive for desktop and tablet.
 - [ ] WCAG 2.1 AA review is completed and findings are addressed or documented.
+
+## Phase 7A Web Frontend Stabilization Gate
+
+- [x] Protected web routes require a valid, unexpired JWT and enforce presentation-level role boundaries.
+- [x] Logout, unauthorized navigation, and expired-session clearing are implemented.
+- [x] Appointment compatibility reads are JWT scoped for admin, doctor, and patient roles.
+- [x] Doctor compatibility reads are clinic scoped for admins and self scoped for doctors.
+- [x] Doctor assigned-patient listing derives doctor identity from JWT and revalidates Fabric actor binding.
+- [x] Patient list/detail and dashboard appointment views use scoped production APIs without patient payload console logging.
+- [x] Sample lab results, mock appointment creation, false dashboard values, and blank Settings/Info routes are removed or explicitly unavailable.
+- [x] Frontend tests (4/4), API/source tests (24/24), lint, and production build pass.
+- [x] Nginx frontend container, health check, and same-origin API proxies are defined in Compose.
+- [ ] Complete Compose runtime is started and health-checked with the Docker engine running.
+- [x] AWS deployment runs commit `d6ecc1b`; MySQL, Database API, Blockchain API, Nginx frontend, and public Database API proxy health checks pass.
+- [x] Authenticated admin/doctor/patient API smoke passes for scoped appointments, doctor visibility, assigned-patient detail, unauthenticated denial, and disabled sample labs.
+- [ ] Interactive authenticated admin/doctor/patient browser UI smoke and responsive screenshots pass against the deployed stack.
+- [ ] Real DICOM browser execution is verified and Cornerstone bundling warnings are resolved or formally accepted.
+- [ ] Desktop/tablet responsive, keyboard, focus, contrast, and WCAG evidence is captured under Phase 10.
 
 ## Deployment And Architecture
 
@@ -158,7 +178,7 @@ Phase 3 deployment checkpoint, 2026-07-11: all Section 5 SRS route names and pat
 - [ ] Positive tests exist for all core workflows.
 - [ ] Negative tests exist for invalid input.
 - [ ] Unauthorized role tests exist.
-- [ ] Consent bypass tests exist.
+- [x] Consent bypass tests exist.
 - [ ] Expired token tests exist.
 - [ ] Boundary tests exist for record sizes and concurrent requests.
 - [ ] Caliper read tests cover 1, 10, 50, 100, 200 transactions.

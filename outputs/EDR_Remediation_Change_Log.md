@@ -212,3 +212,47 @@ These were created or refreshed to run and verify the remediation copy. They are
 - Added patient detail clinical record UI for doctor creation and doctor/patient history display.
 - Added Phase 6 tests; 20 API/source tests and 18 chaincode tests pass.
 - Deployed migration, APIs, frontend, and `basic` 1.0.7 sequence 9 on AWS. Authenticated medical/dental create, assigned-doctor read, unauthorized-doctor denial, patient-owner read, and automatic audit-log smoke checks passed. Backup: `/home/ubuntu/deployment-backups/20260712-171801-phase6-completion-predeploy`.
+# Phase 7A Web Frontend Stabilization Deployment Completion - 2026-07-13
+
+- Scoped legacy appointment and doctor compatibility reads by authenticated clinic/actor identity and removed unrestricted row/column exposure.
+- Added JWT-derived doctor assigned-patient projection with Fabric actor revalidation, and connected doctor patient list/detail to scoped Database API routes.
+- Added protected/role-aware routes, expiry clearing, logout, unauthorized handling, production data states, and removal of patient/identity console output.
+- Removed or explicitly disabled false dashboard metrics, sample lab data, and mock appointment creation; implemented Settings and Info navigation.
+- Repaired ESLint, local font bundling, production console stripping, and patient/DICOM lazy loading.
+- Added a multi-stage Nginx frontend image, health check, and same-origin Database/Blockchain API proxying in Compose.
+- Verification: frontend 4/4 tests, combined API/source 24/24 tests, lint with zero warnings, Vite production build, Compose configuration, and local static HTTP serving passed.
+- Deployment: commit `d6ecc1b` is live after backup `/home/ubuntu/deployment-backups/20260713-075154-phase7a-predeploy`; Database API rebuilt, frontend rebuilt/copied to `/var/www/edr`, Nginx validated/reloaded, and the existing Blockchain API remained online.
+- AWS evidence: API/source 24/24, frontend 4/4, lint/build, frontend/proxy HTTP 200, and authenticated admin/doctor/patient runtime smoke passed, including authorization-scoped lists and disabled sample labs.
+- Remaining evidence: interactive browser UI/responsive/keyboard capture, real DICOM browser execution, Phase 10 WCAG review, and Phase 11 all-services container alignment. Mobile was excluded.
+
+## Appointments White-Page Hotfix - 2026-07-13
+
+- Standalone Playwright reproduced the deployed `/Appointments` failure as an empty body with `e.map is not a function` and no `#AppointmentsSection`.
+- Corrected `AppointmentsSection.jsx` to unwrap the scoped `{ success, data }` API envelope, validate the array, handle 401/error responses, and render loading/empty/error states.
+- Added a fifth Phase 7A frontend regression preventing direct envelope assignment.
+- Commit `767400d` was deployed after backup `/home/ubuntu/deployment-backups/20260713-124634-appointments-hotfix-predeploy`; frontend tests 5/5, lint, build, Nginx validation, and reload passed.
+- Post-deployment standalone Playwright confirmed the appointments section renders `No appointments found` with zero page errors and zero console errors. Screenshot: `Outputs/verification/appointments-live-playwright.png`.
+
+# Phase 8 Consent, Sharing, Notifications, And Audit Source Completion - 2026-07-13
+
+- Added enriched cross-clinic access request metadata in chaincode and the Blockchain API: requester, requesting clinic, holding clinic, data type, purpose/reason, details JSON, timestamps, and actor metadata.
+- Added ledger-backed notification records for admin review, patient consent, doctor grant/reject, and revocation events, with authenticated notification read/update API routes.
+- Added patient owner-bound consent revocation that removes active sharing when no other granted request exists for the same patient/doctor pair.
+- Added consent decision evidence on-chain, including patient actor ID, MSP ID, transaction ID, and decision timestamps.
+- Extended immutable clinical access logging with access basis, request ID, purpose, and data type where available, and added admin/patient audit retrieval routes plus a web audit panel.
+- Updated web workflows for doctor request creation, holding-clinic admin approve/reject, notification badge/read status, consent status colors, and audit lookup.
+- Updated mobile patient request screens to display real request details and added revocation from the granted-request view.
+- Added `dental-backend/test/phase8ConsentNotificationsAudit.test.js`.
+- Verification: Blockchain API syntax check passed, chaincode syntax check passed, backend/API source tests 28/28 passed, frontend source tests 5/5 passed, frontend ESLint passed with zero warnings, and Vite production build passed. Existing DICOM/Cornerstone browser-compatibility and large-chunk build warnings remain.
+- Deployment note: no MySQL migration is expected for Phase 8. AWS rollout must upgrade Fabric chaincode, redeploy the Blockchain API, rebuild/copy the web frontend, refresh the mobile app package/runtime, and smoke-test Doctor -> Admin -> Patient -> access/audit workflows.
+
+# Phase 8 Consent, Sharing, Notifications, And Audit Deployment Completion - 2026-07-14
+
+- Deployed the Phase 8 source set to the AWS VM using a targeted payload into `/home/ubuntu/EDR` after backup `/home/ubuntu/deployment-backups/20260714-064709-phase8-predeploy`.
+- No MySQL migration was required for Phase 8.
+- Fixed a Fabric JavaScript contract metadata issue discovered during smoke testing by removing default parameter syntax from `RequestDataAccess`, `RevokeConsent`, and `GetNotificationsForActor` transaction signatures and applying defaults inside the function bodies. Initial deployed `basic` 1.0.8 sequence 10 was superseded by final `basic` 1.0.9 sequence 11.
+- Final Fabric lifecycle state: `basic` version `1.0.9`, sequence `11`, committed with Org1MSP and Org2MSP approvals.
+- Redeployed the Blockchain API under PM2, rebuilt the web frontend, copied the build output to `/var/www/edr`, and validated/reloaded Nginx in the accepted current topology.
+- Deployment verification passed on the VM: backend/API tests 28/28, direct chaincode tests 18/18, frontend tests 5/5, frontend lint, and Vite production build.
+- Authenticated smoke passed for public frontend HTTP 200, doctor/admin/patient login, pre-consent denial, doctor request creation, admin notification and approval, patient notification and read-status update, patient consent metadata, doctor access after consent, immutable audit retrieval, revocation, and denied access after revocation.
+- Final smoke marker: `PHASE8_CONSENT_AUDIT_SMOKE_OK`.

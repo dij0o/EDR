@@ -28,6 +28,7 @@ Use these files at the start of future threads instead of repeating the full SRS
 | `SRS_Acceptance_Checklist.md` | Completion criteria for each feature area. |
 | `Thread_Startup_Context.md` | Compact context to paste/read in future Codex threads to save tokens. |
 | `Phase1_AWS_Deployment_Runbook.md` | Existing AWS VM migration, env, and smoke-test checklist for Phase 1 rollout. |
+| `Web_Frontend_Comprehensive_Audit_2026-07-13.md` | Phase 7A web-only audit, remediation disposition, and remaining runtime/UX gates. |
 
 ## Current Baseline Summary
 
@@ -37,11 +38,14 @@ Primary gaps:
 
 - Phase 1 API-layer JWT/role enforcement is deployed on AWS; the patient mapping, matching JWT secrets, protected registration, service restarts, and public smoke suite passed again after pushed commit `4892875` was synchronized.
 - Phase 2 MSP/certificate binding and chaincode RBAC are deployed for the current AWS admin, doctor, patient, and system identities; automated enrollment/revocation remains incomplete.
-- Chaincode `basic` 1.0.1 sequence 3 validates trusted MSP, role, actor, clinic, assignment, ownership, and consent context on covered paths.
+- Chaincode validates trusted MSP, role, actor, clinic, assignment, ownership, and consent context on covered paths; the live sequence varies by deployed phase and must be checked on the VM before rollout.
 - REST endpoints do not fully match the SRS endpoint registry.
-- Patient, doctor, clinical record, appointment, notification, DICOM/hash, and audit flows are partial.
+- Patient, doctor, clinical record, DICOM/hash, and Phase 8 consent/notification/audit flows have deployed AWS coverage, but appointment management and final usability/evidence work remain incomplete.
 - Mobile now uses `/login`, JWT headers, and the authenticated user's off-chain `Patient.Blockchain_ID` for patient request/consent calls.
-- Web and mobile screens include placeholder/static workflows.
+- Phase 7A web frontend source stabilization is complete: scoped list APIs, protected/session-aware routes, production patient/appointment data, explicit unavailable states, lint/tests/build, and an Nginx/Compose frontend definition are present.
+- Phase 7A is deployed in the accepted current topology; interactive browser screenshots, real DICOM browser execution, Phase 10 WCAG evidence, and Phase 11 all-services container alignment remain pending.
+- Phase 8 consent, sharing, notifications, revocation, and audit are deployed and smoke-verified on AWS. Final Fabric chaincode state is `basic` 1.0.9 sequence 11; no MySQL migration was required.
+- Mobile and Phase 9 appointment workflows still include incomplete/static behavior.
 - Fabric default topology is closer to a development test network than the SRS target topology.
 - Before Phase 12 evidence capture, every non-Fabric service must be containerized and the Fabric/Hyperledger exception boundary must be documented.
 - Test and verification evidence is incomplete.
