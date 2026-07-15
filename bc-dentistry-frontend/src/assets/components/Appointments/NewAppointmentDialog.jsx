@@ -11,7 +11,7 @@ const NewAppointmentDialog = ({ reff, onCreated }) => {
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        Promise.all(['/patients', '/doctors'].map(async (path) => {
+        Promise.all(['/patients', '/appointment-options/doctors'].map(async (path) => {
             const response = await fetch(databaseUrl(path), { headers: authHeaders() });
             handleUnauthorizedResponse(response);
             const payload = await response.json();

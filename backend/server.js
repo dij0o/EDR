@@ -1043,6 +1043,15 @@ const APPOINTMENT_SELECT = `SELECT Appointment.Appointment_ID, Appointment.Meeti
     INNER JOIN Patient ON Appointment.Patient_ID = Patient.ID
     INNER JOIN User PatientUser ON Patient.ID = PatientUser.ID`;
 
+app.get('/appointment-options/doctors', authenticateToken, requireRoles('admin'), async (req, res) => {
+    try {
+        const rows = await query(`${DOCTOR_SELECT} WHERE Doctor.Clinic_ID=? OR (Doctor.Clinic_ID IS NULL AND EXISTS (
+            SELECT 1 FROM Patient WHERE Patient.Clinic_ID=? AND JSON_CONTAINS(Patient.Doctors, JSON_QUOTE(Doctor.Blockchain_ID))
+        )) ORDER BY User.Last_Name,User.First_Name`, [req.user.organizationId, req.user.organizationId]);
+        return res.json({ success: true, data: rows.map(normalizeDoctor) });
+    } catch (error) { return sendApiError(res, 500, 'APPOINTMENT_DOCTOR_OPTIONS_FAILED', 'Unable to retrieve clinic appointment doctors'); }
+});
+
 const listAppointments = async (req, res) => {
     try {
         const role = normalizeRole(req.user.role);
@@ -1081,12 +1090,15 @@ app.post('/appointments', authenticateToken, requireRoles('admin'), async (req, 
     try {
         const { patientID, doctorID, appointmentDateTime, specialty, meetingFor, notes } = req.body;
         if (![patientID, doctorID, appointmentDateTime, specialty, meetingFor].every(Boolean)) return sendApiError(res, 400, 'VALIDATION_ERROR', 'patientID, doctorID, appointmentDateTime, specialty, and meetingFor are required');
-        const rows = await query(`SELECT Patient.ID AS Patient_DB_ID, Patient.Clinic_ID AS Patient_Clinic_ID,
+        const rows = await query(`SELECT Patient.ID AS Patient_DB_ID, Patient.Clinic_ID AS Patient_Clinic_ID, Patient.Doctors AS Patient_Doctors,
             Doctor.ID AS Doctor_DB_ID, Doctor.Clinic_ID AS Doctor_Clinic_ID
             FROM Patient JOIN Doctor ON Doctor.Blockchain_ID=? WHERE Patient.Blockchain_ID=? LIMIT 1`, [doctorID, patientID]);
         if (!rows.length) return sendApiError(res, 404, 'APPOINTMENT_PARTY_NOT_FOUND', 'Patient or doctor not found');
         requireAdminClinic(req, rows[0].Patient_Clinic_ID);
-        requireAdminClinic(req, rows[0].Doctor_Clinic_ID);
+        if (rows[0].Doctor_Clinic_ID === null) {
+            const assignedDoctors = typeof rows[0].Patient_Doctors === 'string' ? JSON.parse(rows[0].Patient_Doctors || '[]') : (rows[0].Patient_Doctors || []);
+            if (!assignedDoctors.map(String).includes(String(doctorID))) return sendApiError(res, 403, 'APPOINTMENT_DOCTOR_SCOPE_DENIED', 'Legacy doctor must already be assigned to the patient in the admin clinic');
+        } else requireAdminClinic(req, rows[0].Doctor_Clinic_ID);
         const result = await query(`INSERT INTO Appointment (Meeting_For, Doctor_ID, Patient_ID, Date, Appointment_Date_Time, Specialty, Status, Notes, Modified_Date)
             VALUES (?, ?, ?, DATE(?), ?, ?, 'scheduled', ?, NOW())`, [meetingFor, rows[0].Doctor_DB_ID, rows[0].Patient_DB_ID, appointmentDateTime, appointmentDateTime, specialty, notes || null]);
         const created = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [result.insertId]);

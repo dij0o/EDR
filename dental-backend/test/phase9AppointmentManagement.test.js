@@ -22,8 +22,19 @@ test('admin-only create validates both patient and doctor clinic scope', () => {
   const source = route('post', '/appointments');
   assert.match(source, /requireRoles\('admin'\)/);
   assert.match(source, /requireAdminClinic\(req, rows\[0\]\.Patient_Clinic_ID\)/);
+  assert.match(source, /Doctor_Clinic_ID === null/);
+  assert.match(source, /Patient_Doctors/);
+  assert.match(source, /APPOINTMENT_DOCTOR_SCOPE_DENIED/);
   assert.match(source, /requireAdminClinic\(req, rows\[0\]\.Doctor_Clinic_ID\)/);
   assert.match(source, /INSERT INTO Appointment/);
+});
+
+test('appointment doctor options include only explicit clinic doctors or assigned legacy doctors', () => {
+  const source = route('get', '/appointment-options/doctors');
+  assert.match(source, /requireRoles\('admin'\)/);
+  assert.match(source, /Doctor\.Clinic_ID=\?/);
+  assert.match(source, /Doctor\.Clinic_ID IS NULL/);
+  assert.match(source, /JSON_CONTAINS\(Patient\.Doctors/);
 });
 
 test('update and cancel are admin-only and patient-clinic scoped', () => {

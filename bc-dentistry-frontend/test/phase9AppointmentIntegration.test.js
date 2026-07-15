@@ -7,6 +7,7 @@ const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), '
 test('web appointment dialog persists create requests and scoped identifiers', () => {
   const dialog = read('src/assets/components/Appointments/NewAppointmentDialog.jsx');
   assert.match(dialog, /databaseUrl\('\/appointments'\)/);
+  assert.match(dialog, /appointment-options\/doctors/);
   assert.match(dialog, /method: 'POST'/);
   for (const field of ['patientID', 'doctorID', 'appointmentDateTime', 'specialty', 'meetingFor']) assert.match(dialog, new RegExp(field));
 });
