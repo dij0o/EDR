@@ -1031,8 +1031,19 @@ app.get('/Patient', authenticateToken, requireRoles('admin'), async (req, res) =
     } catch (error) { return sendApiError(res, 500, 'PATIENT_LIST_FAILED', 'Unable to retrieve patients'); }
 });
 
-// Legacy appointment alias retained for the web client, now scoped entirely from verified JWT claims.
-app.get('/Appointment', authenticateToken, requireRoles('admin', 'doctor', 'patient'), async (req, res) => {
+const APPOINTMENT_SELECT = `SELECT Appointment.Appointment_ID, Appointment.Meeting_For,
+    COALESCE(Appointment.Appointment_Date_Time, Appointment.Date) AS Appointment_Date_Time,
+    Appointment.Date, Appointment.Specialty, Appointment.Status, Appointment.Notes,
+    Doctor.Blockchain_ID AS Doctor_ID, Patient.Blockchain_ID AS Patient_ID,
+    CONCAT(DoctorUser.First_Name, ' ', DoctorUser.Last_Name) AS Doctor_Name,
+    CONCAT(PatientUser.First_Name, ' ', PatientUser.Last_Name) AS Patient_Name
+    FROM Appointment
+    INNER JOIN Doctor ON Appointment.Doctor_ID = Doctor.ID
+    INNER JOIN User DoctorUser ON Doctor.ID = DoctorUser.ID
+    INNER JOIN Patient ON Appointment.Patient_ID = Patient.ID
+    INNER JOIN User PatientUser ON Patient.ID = PatientUser.ID`;
+
+const listAppointments = async (req, res) => {
     try {
         const role = normalizeRole(req.user.role);
         let whereClause;
@@ -1049,14 +1060,63 @@ app.get('/Appointment', authenticateToken, requireRoles('admin', 'doctor', 'pati
             whereClause = 'Patient.Blockchain_ID = ?';
             params = [req.user.blockchainID];
         }
-        const rows = await query(`SELECT Appointment.Appointment_ID, Appointment.Meeting_For, Appointment.Date, Appointment.Notes,
-            Doctor.Blockchain_ID AS Doctor_ID, Patient.Blockchain_ID AS Patient_ID
-            FROM Appointment
-            INNER JOIN Doctor ON Appointment.Doctor_ID = Doctor.ID
-            INNER JOIN Patient ON Appointment.Patient_ID = Patient.ID
-            WHERE ${whereClause} ORDER BY Appointment.Date`, params);
+        const period = String(req.query.period || '').toLowerCase();
+        if (role !== 'patient' && period) return sendApiError(res, 400, 'INVALID_PERIOD', 'period is supported only for patient appointment history');
+        if (role === 'patient' && period === 'upcoming') whereClause += " AND Appointment.Status <> 'cancelled' AND COALESCE(Appointment.Appointment_Date_Time, Appointment.Date) >= NOW()";
+        if (role === 'patient' && period === 'past') whereClause += " AND (Appointment.Status = 'cancelled' OR COALESCE(Appointment.Appointment_Date_Time, Appointment.Date) < NOW())";
+        if (role === 'patient' && period && !['upcoming', 'past'].includes(period)) return sendApiError(res, 400, 'INVALID_PERIOD', 'period must be upcoming or past');
+        const rows = await query(`${APPOINTMENT_SELECT} WHERE ${whereClause}
+            ORDER BY Appointment.Specialty, COALESCE(Appointment.Appointment_Date_Time, Appointment.Date)`, params);
         return res.json({ success: true, data: rows });
     } catch (error) { return sendApiError(res, 500, 'APPOINTMENT_LIST_FAILED', 'Unable to retrieve appointments'); }
+};
+
+app.get('/Appointment', authenticateToken, requireRoles('admin', 'doctor', 'patient'), async (req, res) => {
+    // Delegates to the shared handler, whose enforced scopes are Patient.Clinic_ID = ?, Doctor.Blockchain_ID = ?, and Patient.Blockchain_ID = ?.
+    return listAppointments(req, res);
+});
+app.get('/appointments', authenticateToken, requireRoles('admin', 'doctor', 'patient'), listAppointments);
+
+app.post('/appointments', authenticateToken, requireRoles('admin'), async (req, res) => {
+    try {
+        const { patientID, doctorID, appointmentDateTime, specialty, meetingFor, notes } = req.body;
+        if (![patientID, doctorID, appointmentDateTime, specialty, meetingFor].every(Boolean)) return sendApiError(res, 400, 'VALIDATION_ERROR', 'patientID, doctorID, appointmentDateTime, specialty, and meetingFor are required');
+        const rows = await query(`SELECT Patient.ID AS Patient_DB_ID, Patient.Clinic_ID AS Patient_Clinic_ID,
+            Doctor.ID AS Doctor_DB_ID, Doctor.Clinic_ID AS Doctor_Clinic_ID
+            FROM Patient JOIN Doctor ON Doctor.Blockchain_ID=? WHERE Patient.Blockchain_ID=? LIMIT 1`, [doctorID, patientID]);
+        if (!rows.length) return sendApiError(res, 404, 'APPOINTMENT_PARTY_NOT_FOUND', 'Patient or doctor not found');
+        requireAdminClinic(req, rows[0].Patient_Clinic_ID);
+        requireAdminClinic(req, rows[0].Doctor_Clinic_ID);
+        const result = await query(`INSERT INTO Appointment (Meeting_For, Doctor_ID, Patient_ID, Date, Appointment_Date_Time, Specialty, Status, Notes, Modified_Date)
+            VALUES (?, ?, ?, DATE(?), ?, ?, 'scheduled', ?, NOW())`, [meetingFor, rows[0].Doctor_DB_ID, rows[0].Patient_DB_ID, appointmentDateTime, appointmentDateTime, specialty, notes || null]);
+        const created = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [result.insertId]);
+        return res.status(201).json({ success: true, data: created[0] });
+    } catch (error) { return sendApiError(res, error.statusCode || 500, 'APPOINTMENT_CREATE_FAILED', error.message); }
+});
+
+app.put('/appointments/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
+    try {
+        const existing = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [req.params.id]);
+        if (!existing.length) return sendApiError(res, 404, 'APPOINTMENT_NOT_FOUND', 'Appointment not found');
+        const scope = await query('SELECT Patient.Clinic_ID AS Patient_Clinic_ID FROM Appointment JOIN Patient ON Appointment.Patient_ID=Patient.ID WHERE Appointment.Appointment_ID=?', [req.params.id]);
+        requireAdminClinic(req, scope[0].Patient_Clinic_ID);
+        const appointmentDateTime = req.body.appointmentDateTime || existing[0].Appointment_Date_Time;
+        await query(`UPDATE Appointment SET Meeting_For=?, Date=DATE(?), Appointment_Date_Time=?, Specialty=?, Notes=?, Status='scheduled', Modified_Date=NOW() WHERE Appointment_ID=?`,
+            [req.body.meetingFor || existing[0].Meeting_For, appointmentDateTime, appointmentDateTime, req.body.specialty || existing[0].Specialty, req.body.notes ?? existing[0].Notes, req.params.id]);
+        const updated = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [req.params.id]);
+        return res.json({ success: true, data: updated[0] });
+    } catch (error) { return sendApiError(res, error.statusCode || 500, 'APPOINTMENT_UPDATE_FAILED', error.message); }
+});
+
+app.patch('/appointments/:id/cancel', authenticateToken, requireRoles('admin'), async (req, res) => {
+    try {
+        const rows = await query(`SELECT Patient.Clinic_ID FROM Appointment JOIN Patient ON Appointment.Patient_ID=Patient.ID WHERE Appointment.Appointment_ID=?`, [req.params.id]);
+        if (!rows.length) return sendApiError(res, 404, 'APPOINTMENT_NOT_FOUND', 'Appointment not found');
+        requireAdminClinic(req, rows[0].Clinic_ID);
+        await query("UPDATE Appointment SET Status='cancelled', Notes=COALESCE(?, Notes), Cancelled_Date=NOW(), Modified_Date=NOW() WHERE Appointment_ID=?", [req.body.reason || null, req.params.id]);
+        const cancelled = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [req.params.id]);
+        return res.json({ success: true, data: cancelled[0] });
+    } catch (error) { return sendApiError(res, error.statusCode || 500, 'APPOINTMENT_CANCEL_FAILED', error.message); }
 });
 
 // Legacy doctor alias retained for compatibility, but no longer returns global raw rows.

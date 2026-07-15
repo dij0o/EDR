@@ -3,15 +3,14 @@ import { MainContainer } from "../../components";
 import AppointmentTicket from "../../components/Appointments/AppointmentTicket";
 import { authHeaders, databaseUrl, handleUnauthorizedResponse } from '../../config/api.js';
 
-const AppointmentsSection = () => {
+const AppointmentsSection = ({ refreshKey = 0 }) => {
     // State to store fetched appointments data
     const [appointmentsTickets, setAppointmentsTickets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
     // Fetch appointments from the backend API when the component mounts
-    useEffect(() => {
-        const fetchAppointments = async () => {
+    const fetchAppointments = async () => {
             try {
                 const response = await fetch(databaseUrl('/Appointment'), { headers: authHeaders() }); // Adjust the endpoint if needed
                 handleUnauthorizedResponse(response);
@@ -26,21 +25,33 @@ const AppointmentsSection = () => {
                 setLoading(false);
             }
         };
-
+    useEffect(() => {
         fetchAppointments();
-    }, []);
+    }, [refreshKey]);
+
+    const mutateAppointment = async (id, action, body = {}) => {
+        const path = action === 'cancel' ? `/appointments/${id}/cancel` : `/appointments/${id}`;
+        const response = await fetch(databaseUrl(path), { method: action === 'cancel' ? 'PATCH' : 'PUT', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) });
+        handleUnauthorizedResponse(response);
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.error?.message || `Unable to ${action} appointment`);
+        await fetchAppointments();
+    };
 
     // Map fetched appointments to AppointmentTicket components
     const allAppointments = appointmentsTickets.map((appointment, index) => {
         return (
             <AppointmentTicket
                 key={index}
-                date={appointment.Date}
+                date={appointment.Appointment_Date_Time || appointment.Date}
                 reason={appointment.Meeting_For}
                 dr={appointment.Doctor_ID}
                 id={appointment.Appointment_ID}
                 name={appointment.Patient_ID}
-                status={appointment.status}
+                specialty={appointment.Specialty}
+                status={appointment.Status}
+                onUpdate={(body) => mutateAppointment(appointment.Appointment_ID, 'update', body)}
+                onCancel={(reason) => mutateAppointment(appointment.Appointment_ID, 'cancel', { reason })}
             />
         );
     });
