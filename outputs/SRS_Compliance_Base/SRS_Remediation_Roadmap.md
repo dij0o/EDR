@@ -340,19 +340,23 @@ Exit criteria:
 
 SRS coverage: FR-29 to FR-31
 
+Status - 2026-07-15: **Deployed and authenticated runtime verified on AWS.** Commits `cc483e9` and `f3f8526` are live. The VM checkout was aligned from targeted Phase 8 state to `f3f8526`; backup `/home/ubuntu/deployment-backups/20260715-085512-phase9-predeploy` preserves the prior checkout, frontend, and MySQL dump.
+
 Tasks:
 
-- Add appointment create API.
-- Add appointment update API.
-- Add appointment cancel API.
-- Connect web appointment dialog to persisted API.
-- Add mobile upcoming/past appointments for authenticated patient.
-- Organize mobile appointment display by specialty and date.
+- [x] Add scoped admin appointment create API and migration.
+- [x] Add clinic-scoped admin appointment update API.
+- [x] Add clinic-scoped admin appointment cancel API with cancellation evidence.
+- [x] Connect web appointment dialog and ticket actions to persisted APIs.
+- [x] Add JWT patient-bound mobile upcoming/past retrieval.
+- [x] Organize mobile appointment display by specialty and date.
+
+Verification: backend/API 33/33, frontend/mobile source 8/8, frontend lint/build, migration inspection, API rebuild, Nginx validation, and authenticated `PHASE9_APPOINTMENT_SMOKE_OK` create/update/cancel/upcoming/past/role-denial smoke passed. No Fabric upgrade was required; `basic` remains 1.0.9 sequence 11. Legacy null-clinic doctors are eligible only through an existing assignment to a patient in the authenticated admin clinic; no clinic value was invented.
 
 Exit criteria:
 
-- Admin can create/update/cancel appointments.
-- Patient can view upcoming and past appointments in mobile app.
+- Admin can create/update/cancel appointments. **Met on AWS.**
+- Patient can view upcoming and past appointments in mobile app. **Met for authenticated API and mobile source integration; packaged-device evidence remains pending.**
 
 ## Phase 10: Usability And Accessibility
 

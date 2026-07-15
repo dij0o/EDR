@@ -116,12 +116,14 @@ Phase 8 deployment checkpoint, 2026-07-14: AWS smoke passed for doctor request c
 
 ## Appointment Management
 
-- [ ] Admin can create appointment with patient, doctor, date/time, and specialty.
-- [ ] Admin can update appointment.
-- [ ] Admin can cancel appointment.
-- [ ] Patient can view upcoming appointments in mobile app.
-- [ ] Patient can view past appointments in mobile app.
-- [ ] Appointments are organized by specialty/date.
+- [x] Admin can create appointment with patient, doctor, date/time, and specialty.
+- [x] Admin can update appointment.
+- [x] Admin can cancel appointment.
+- [x] Patient can view upcoming appointments through the authenticated API/mobile source flow.
+- [x] Patient can view past and cancelled appointments through the authenticated API/mobile source flow.
+- [x] Appointments are organized by specialty/date.
+
+Phase 9 deployment checkpoint, 2026-07-15: migration applied and VM checkout aligned to `f3f8526`; backend/API 33/33 and frontend 8/8 tests, lint/build, API/Nginx checks, and authenticated create/update/cancel/upcoming/past/role-denial smoke passed with marker `PHASE9_APPOINTMENT_SMOKE_OK`.
 
 ## Notifications
 

@@ -40,12 +40,12 @@ Primary gaps:
 - Phase 2 MSP/certificate binding and chaincode RBAC are deployed for the current AWS admin, doctor, patient, and system identities; automated enrollment/revocation remains incomplete.
 - Chaincode validates trusted MSP, role, actor, clinic, assignment, ownership, and consent context on covered paths; the live sequence varies by deployed phase and must be checked on the VM before rollout.
 - REST endpoints do not fully match the SRS endpoint registry.
-- Patient, doctor, clinical record, DICOM/hash, and Phase 8 consent/notification/audit flows have deployed AWS coverage, but appointment management and final usability/evidence work remain incomplete.
+- Patient, doctor, clinical record, DICOM/hash, consent/audit, and Phase 9 appointment flows have deployed AWS coverage; final usability/evidence work remains incomplete.
 - Mobile now uses `/login`, JWT headers, and the authenticated user's off-chain `Patient.Blockchain_ID` for patient request/consent calls.
 - Phase 7A web frontend source stabilization is complete: scoped list APIs, protected/session-aware routes, production patient/appointment data, explicit unavailable states, lint/tests/build, and an Nginx/Compose frontend definition are present.
 - Phase 7A is deployed in the accepted current topology; interactive browser screenshots, real DICOM browser execution, Phase 10 WCAG evidence, and Phase 11 all-services container alignment remain pending.
 - Phase 8 consent, sharing, notifications, revocation, and audit are deployed and smoke-verified on AWS. Final Fabric chaincode state is `basic` 1.0.9 sequence 11; no MySQL migration was required.
-- Mobile and Phase 9 appointment workflows still include incomplete/static behavior.
+- Phase 9 appointment management is deployed at `f3f8526`: admin web/API create-update-cancel and authenticated patient mobile-source upcoming/past views passed AWS smoke. Packaged mobile evidence remains pending.
 - Fabric default topology is closer to a development test network than the SRS target topology.
 - Before Phase 12 evidence capture, every non-Fabric service must be containerized and the Fabric/Hyperledger exception boundary must be documented.
 - Test and verification evidence is incomplete.

@@ -256,3 +256,12 @@ These were created or refreshed to run and verify the remediation copy. They are
 - Deployment verification passed on the VM: backend/API tests 28/28, direct chaincode tests 18/18, frontend tests 5/5, frontend lint, and Vite production build.
 - Authenticated smoke passed for public frontend HTTP 200, doctor/admin/patient login, pre-consent denial, doctor request creation, admin notification and approval, patient notification and read-status update, patient consent metadata, doctor access after consent, immutable audit retrieval, revocation, and denied access after revocation.
 - Final smoke marker: `PHASE8_CONSENT_AUDIT_SMOKE_OK`.
+
+# Phase 9 Appointment Management Deployment Completion - 2026-07-15
+
+- Added appointment migration fields for identity, date/time, specialty, status, cancellation, and modification evidence.
+- Added JWT/role-scoped create, update, cancel, legacy list, and patient upcoming/past APIs. Admin writes require patient clinic scope; explicit doctor clinics must match, while legacy null-clinic doctors require an existing patient assignment.
+- Replaced the static web dialog with persisted creation and connected ticket update/cancel actions; replaced mobile static data with authenticated specialty/date-grouped history.
+- Verification passed: backend/API 33/33, frontend 8/8, lint, Vite build, migration inspection, API rebuild, Nginx validation, and authenticated create/update/cancel/upcoming/past/role-denial smoke.
+- Aligned the VM checkout to `f3f8526`; backup `/home/ubuntu/deployment-backups/20260715-085512-phase9-predeploy`. Fabric remained `basic` 1.0.9 sequence 11.
+- Smoke marker: `PHASE9_APPOINTMENT_SMOKE_OK`. Packaged mobile evidence and authoritative legacy doctor clinic backfill remain later evidence/data tasks.
