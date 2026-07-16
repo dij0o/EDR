@@ -39,18 +39,18 @@ const Navbar = () => {
         });
 
     return (
-        <div id="Navbar" className="bg-[#000814] w-[14%] h-[95vh] px-10 py-10 rounded-xl fixed">
-            <NavLogo />
-            <div id="Navlinks" className="text-white text-lg flex flex-col gap-y-12 mt-16">
-                <div className="main flex flex-col gap-y-6 items-center">
+        <nav id="Navbar" aria-label="Primary navigation" className="fixed inset-x-3 top-3 z-40 rounded-xl bg-[#000814] px-3 py-2 lg:inset-x-auto lg:h-[95vh] lg:w-[14%] lg:px-6 lg:py-10">
+            <div className="hidden lg:block"><NavLogo /></div>
+            <div id="Navlinks" className="flex overflow-x-auto text-white lg:mt-16 lg:flex-col lg:gap-y-12 lg:overflow-visible">
+                <div className="main flex min-w-max items-center gap-2 lg:min-w-0 lg:flex-col lg:gap-y-6">
                     {renderNavLinks()}
                 </div>
-                <div className="personal flex flex-col gap-y-6 items-center">
+                <div className="personal ml-auto flex min-w-max items-center gap-2 lg:ml-0 lg:flex-col lg:gap-y-6">
                     <Link className="w-full" to="/settings"><NavLink icon={Icon6} title={"Settings"} link={"settings"} /></Link>
                     <Link className="w-full" to="/info"><NavLink icon={Icon7} title={"Info"} link={"info"} /></Link>
                 </div>
             </div>
-        </div>
+        </nav>
     );
 };
 

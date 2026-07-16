@@ -45,9 +45,10 @@ const Notifications = () => {
         <div className="flex items-center gap-x-8">
             {/* <UserType type={"Doctor"} /> */}
             <UserType />
-            <button id="Notifications" className="relative w-10 h-10 flex p-2 cursor-pointer" onClick={markLatestRead} title={notifications[0]?.message || "Notifications"}>
-                <img src={Alarm} alt="" />
-                {unread > 0 && <span className="absolute -top-1 -right-1 text-xs bg-red-600 text-white rounded-full px-1.5">{unread}</span>}
+            <button id="Notifications" type="button" aria-label={`${unread} unread notifications. Mark latest as read`} disabled={!unread} className="relative flex h-10 w-10 cursor-pointer p-2 disabled:cursor-default disabled:opacity-60" onClick={markLatestRead} title={notifications[0]?.message || "Notifications"}>
+                <img src={Alarm} alt="" aria-hidden="true" />
+                {unread > 0 && <span aria-hidden="true" className="absolute -right-1 -top-1 rounded-full bg-red-600 px-1.5 text-xs text-white">{unread}</span>}
+                <span className="sr-only" aria-live="polite">{unread} unread notifications</span>
             </button>
 
         </div>

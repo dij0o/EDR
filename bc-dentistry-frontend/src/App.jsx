@@ -30,11 +30,11 @@ function App() {
     return () => { window.removeEventListener('edr-session-expired', refreshSession); window.clearInterval(timer); };
   }, []);
   return (
-    <div className="flex w-full p-5 h-[100vh]" style={{gridTemplateColumns: '1fr 5fr'}} >
+    <div className="min-h-screen w-full p-3 md:p-5 lg:flex lg:gap-5">
       
       {!isHomePath && <PagesCover />}
       {!isHomePath && <Navbar />}
-      <div className="rounded-md w-[86%] ml-[15.5%]">
+      <main id="main-content" tabIndex="-1" className="min-w-0 flex-1 rounded-md pt-16 lg:ml-[15.5%] lg:w-[84.5%] lg:pt-0">
       {/**!homePaths.includes(location.pathname) && <Topbar />**/}
           {!isHomePath && <Topbar />}
         <Routes>
@@ -52,7 +52,7 @@ function App() {
           <Route path="/unauthorized" element={<div role="alert" className="m-8 rounded-xl border bg-white p-6">You are not authorized to view this page.</div>} />
           <Route path="*" element={<Navigate to={role ? '/dashboard' : '/login'} replace />} />
         </Routes>
-      </div>
+      </main>
     </div>
   )
 }
