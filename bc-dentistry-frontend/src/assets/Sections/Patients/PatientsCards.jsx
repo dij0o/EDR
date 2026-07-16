@@ -60,7 +60,7 @@ import PatientCard from "../../components/Patients/PatientCard";
 import NewPatientDialog from "../../components/Patients/NewPatientDialog";
 import RequestPatientCard from "../../components/Patients/RequestPatientCard";
 
-const PatientsCards = ({ patients, onChanged }) => {
+const PatientsCards = ({ patients, role, isAddPatientOpen, onCloseAddPatient, onChanged }) => {
     // Current date for age calculation
     let d = new Date();
 
@@ -137,7 +137,7 @@ const PatientsCards = ({ patients, onChanged }) => {
 
 
 
-            <NewPatientDialog onSaved={onChanged} />
+            {role === 'admin' && isAddPatientOpen && <NewPatientDialog onClose={onCloseAddPatient} onSaved={onChanged} />}
         </div>
     )
 }

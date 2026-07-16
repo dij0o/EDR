@@ -37,3 +37,15 @@ test('upload, on-chain metadata and access routes are source guarded', () => {
   const metadataTransaction = chaincode.match(/async AddDentalFileMetadata[\s\S]*?async addDentalFile/)[0];
   assert.doesNotMatch(metadataTransaction, /fileContent|fileBytes|base64/);
 });
+
+test('authorized content streaming verifies integrity and refuses unsafe storage', () => {
+  const api = fs.readFileSync(path.resolve(__dirname, '..', 'index.js'), 'utf8');
+  assert.match(api, /app\.get\('\/radiographic-files\/:fileID\/content', authenticateToken, requireRoles\('doctor', 'patient'\)/);
+  assert.match(api, /evaluateTransaction\('GetDentalFile', fileID\)/);
+  assert.match(api, /verification\.status !== 'verified'/);
+  assert.match(api, /INTEGRITY_CHECK_FAILED/);
+  assert.match(api, /submitTransaction\('LogClinicalAccess', String\(metadata\.patientID\), 'radiographic'/);
+  assert.match(api, /Cache-Control', 'private, no-store'/);
+  assert.match(api, /X-Content-Type-Options', 'nosniff'/);
+  assert.match(api, /fs\.createReadStream\(filePath\)/);
+});

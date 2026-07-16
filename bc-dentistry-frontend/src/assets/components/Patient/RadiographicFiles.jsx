@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import axios from "axios";
 import { authHeaders, blockchainUrl } from "../../config/api.js";
 
@@ -8,11 +8,13 @@ const statusClass = {
   "missing file": "bg-amber-100 text-amber-800",
   unknown: "bg-slate-100 text-slate-700",
 };
+const DicomViewer = lazy(() => import('./DicomViewer.jsx'));
 
 export default function RadiographicFiles({ patientID, canUpload }) {
   const [files, setFiles] = useState([]);
   const [statuses, setStatuses] = useState({});
   const [message, setMessage] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
 
   const loadFiles = async () => {
     try {
@@ -61,7 +63,8 @@ export default function RadiographicFiles({ patientID, canUpload }) {
         </div>
         <p className="mt-2 break-all font-mono text-xs">SHA-256: {file.sha256}</p>
         <p className="text-xs text-slate-500">Uploaded {new Date(file.uploadedAt).toLocaleString()} by {file.uploaderID}</p>
-        <button className="mt-2 border rounded px-3 py-1" onClick={() => verify(file.fileID)}>Verify integrity</button>
+        <div className="mt-2 flex flex-wrap gap-2"><button className="border rounded px-3 py-1" onClick={() => verify(file.fileID)}>Verify integrity</button><button className="border rounded px-3 py-1" onClick={() => setSelectedFile(file)}>View image</button></div>
       </div>)}</div>}
+    {selectedFile && <Suspense fallback={<p role="status" className="mt-4">Loading secure viewer…</p>}><DicomViewer file={selectedFile} onClose={() => setSelectedFile(null)} /></Suspense>}
   </section>;
 }

@@ -23,12 +23,14 @@ test('notification control exposes its accessible name and state', () => {
   assert.match(notifications, /aria-live="polite"/);
 });
 
-test('DICOM viewer exposes loading, success, error, and expanded states', () => {
+test('DICOM viewer securely streams real records and loads Cornerstone lazily', () => {
   const viewer = read('src/assets/components/Patient/DicomViewer.jsx');
-  for (const state of ['loading', 'success', 'error']) assert.match(viewer, new RegExp(`status: "${state}"`));
-  assert.match(viewer, /aria-controls="dicom-viewport"/);
-  assert.match(viewer, /aria-label="DICOM radiographic image viewport"/);
-  assert.doesNotMatch(viewer, /X-Ray Sample/);
+  const files = read('src/assets/components/Patient/RadiographicFiles.jsx');
+  assert.match(files, /lazy\(\(\) => import\('\.\/DicomViewer\.jsx'\)\)/);
+  assert.match(viewer, /radiographic-files\/\$\{encodeURIComponent\(file\.fileID\)\}\/content/);
+  assert.match(viewer, /import\('@cornerstonejs\/core'\)/);
+  assert.match(viewer, /renderingEngine\?\.destroy\(\)/);
+  assert.doesNotMatch(viewer, /0002\.DCM|X-Ray Sample/);
 });
 
 test('mobile account and personal information use authenticated data without fixtures', () => {
@@ -52,4 +54,17 @@ test('patient list and request controls remove placeholders and expose unique na
 test('patient detail displays all SRS profile categories', () => {
   const detail = read('src/assets/components/Patient/PatientPersonalInfo.jsx');
   for (const label of ['Patient ID', 'Insurance Provider', 'Policy Number', 'Coverage Type', 'Emirates ID', 'Nationality', 'Address', 'Blood Type', 'Phone Number', 'Email', 'Clinic', 'Assigned Doctors']) assert.match(detail, new RegExp(label));
+});
+
+test('patient login uses an owner-scoped route and admin patient creation is mounted accessibly', () => {
+  const login = read('src/assets/Sections/LoginSection.jsx'), app = read('src/App.jsx');
+  const cards = read('src/assets/Sections/Patients/PatientsCards.jsx'), dialog = read('src/assets/components/Patients/NewPatientDialog.jsx');
+  assert.match(login, /role === 'patient' \? '\/my-record'/);
+  assert.match(app, /path="\/my-record"/);
+  assert.match(app, /getStoredUser\(\)\?\.blockchainID/);
+  assert.doesNotMatch(app, /PagesCover/);
+  assert.match(cards, /role === 'admin' && isAddPatientOpen/);
+  assert.match(dialog, /role="dialog"/);
+  assert.match(dialog, /aria-modal="true"/);
+  assert.doesNotMatch(dialog, /document\.getElementById|window\.location\.hash|translate-y/);
 });

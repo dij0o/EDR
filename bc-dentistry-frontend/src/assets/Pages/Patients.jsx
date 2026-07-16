@@ -36,7 +36,7 @@
 // export default Patients;
 import PatientsCards from "../Sections/Patients/PatientsCards";
 import axios from "axios";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Lo from "../images/icons/calendar.svg";
 import { authHeaders, databaseUrl } from "../config/api.js";
 import { getStoredUser } from "../utils/auth.js";
@@ -45,6 +45,9 @@ const Patients = () => {
     const [patients, setPatients] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [isAddPatientOpen, setAddPatientOpen] = useState(false);
+    const addPatientButton = useRef(null);
+    const closeAddPatient = () => { setAddPatientOpen(false); window.requestAnimationFrame(() => addPatientButton.current?.focus()); };
     const user = getStoredUser(); // Retrieve user details
     const role = user?.role?.toLowerCase();
 
@@ -95,11 +98,11 @@ const Patients = () => {
                             <div className="icon">
                                 <img className="w-5 h-5" src={Lo} alt="" />
                             </div>
-                            <a onClick={() => { document.getElementById("AddNewPatientDialog").lastElementChild.scrollTop = 0 }} id="addNewPatientBtn" className="icon" href="#addNewPatient">Add a new Patient</a>
+                            <button ref={addPatientButton} type="button" onClick={() => setAddPatientOpen(true)} id="addNewPatientBtn" className="icon">Add a new Patient</button>
                         </div>
                     )}
                 </div>
-                <PatientsCards patients={patients} onChanged={() => window.location.reload()} />
+                <PatientsCards patients={patients} role={role} isAddPatientOpen={isAddPatientOpen} onCloseAddPatient={closeAddPatient} onChanged={() => window.location.reload()} />
             </div>
         </div>
     );

@@ -30,8 +30,9 @@ const LoginSection = () => {
             localStorage.setItem('user', JSON.stringify(user));
             setUserRole(user.role?.toLowerCase() || null);
     
-            // Redirect to the dashboard
-            navigate('/dashboard');
+            const role = user.role?.toLowerCase();
+            const destination = role === 'patient' ? '/my-record' : ['admin', 'doctor'].includes(role) ? '/dashboard' : '/unauthorized';
+            navigate(destination, { replace: true });
         } catch {
             setError('Invalid email or password');
         }

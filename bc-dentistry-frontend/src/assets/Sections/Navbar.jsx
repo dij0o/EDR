@@ -19,13 +19,14 @@ const Navbar = () => {
         setCurrentPath(location.pathname.split("/").pop());
     }, [location]);
 
-    const navList = [
+    const normalizedRole = userRole?.toLowerCase();
+    const navList = normalizedRole === 'patient' ? [{ title: "My Record", link:'My-Record', icon: Icon3 }] : [
         { title: "Dashboard", link:'Dashboard', icon: Icon1 },
         { title: "Appointments", link:'Appointments', icon: Icon2 },
         { title: "Patients", link:'Patients', icon: Icon3 },
-        ...(userRole?.toLowerCase() === 'admin' ? [{ title: "Doctors", link:'Doctors', icon: Icon3 }] : []),
+        ...(normalizedRole === 'admin' ? [{ title: "Doctors", link:'Doctors', icon: Icon3 }] : []),
         { title: "Lab Results", link:'LabResults', icon: Icon4 },
-        ...(userRole?.toLowerCase() !== 'doctor' ? [{ title: "Data Requests", link:'DataRequests', icon: Icon5 }] : []),
+        ...(normalizedRole === 'admin' ? [{ title: "Data Requests", link:'DataRequests', icon: Icon5 }] : []),
     ];
 
     const renderNavLinks = () =>
@@ -46,8 +47,8 @@ const Navbar = () => {
                     {renderNavLinks()}
                 </div>
                 <div className="personal ml-auto flex min-w-max items-center gap-2 lg:ml-0 lg:flex-col lg:gap-y-6">
-                    <Link className="w-full" to="/settings"><NavLink icon={Icon6} title={"Settings"} link={"settings"} /></Link>
-                    <Link className="w-full" to="/info"><NavLink icon={Icon7} title={"Info"} link={"info"} /></Link>
+                    {normalizedRole !== 'patient' && <Link className="w-full" to="/settings"><NavLink icon={Icon6} title={"Settings"} link={"settings"} /></Link>}
+                    {normalizedRole !== 'patient' && <Link className="w-full" to="/info"><NavLink icon={Icon7} title={"Info"} link={"info"} /></Link>}
                 </div>
             </div>
         </nav>

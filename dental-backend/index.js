@@ -478,6 +478,34 @@ app.get('/radiographic-files/:fileID/verify-integrity', authenticateToken, requi
     } catch (error) { return sendFabricError(res, error); }
 });
 
+app.get('/radiographic-files/:fileID/content', authenticateToken, requireRoles('doctor', 'patient'), async (req, res) => {
+    try {
+        const fileID = String(req.params.fileID);
+        const result = await withContract(req, (contract) => contract.evaluateTransaction('GetDentalFile', fileID));
+        const metadata = parseBufferJson(result);
+        if (!metadata.storageReference?.startsWith('filesystem:') || !metadata.sha256) return sendApiError(res, 422, 'INVALID_FILE_METADATA', 'The radiographic file does not have a valid private-storage reference and hash');
+        const storedID = metadata.storageReference.slice('filesystem:'.length);
+        if (storedID !== fileID || !/^[0-9a-f-]{36}$/i.test(storedID)) return sendApiError(res, 422, 'INVALID_FILE_METADATA', 'The radiographic storage reference is invalid');
+        const filePath = path.join(radiographicStorageRoot, storedID);
+        const verification = await verifyFileIntegrity(filePath, metadata.sha256);
+        if (verification.status === 'missing file') return sendApiError(res, 404, 'FILE_NOT_FOUND', 'The radiographic file is missing from private storage');
+        if (verification.status !== 'verified') return sendApiError(res, 409, 'INTEGRITY_CHECK_FAILED', 'The radiographic file failed integrity verification and will not be streamed');
+        await withContract(req, (contract) => contract.submitTransaction('LogClinicalAccess', String(metadata.patientID), 'radiographic', String(req.query.purpose || 'radiographic image view')));
+        const stat = await fs.promises.stat(filePath);
+        const mediaType = /^image\/(jpeg|png|webp)$/i.test(metadata.mediaType) ? metadata.mediaType : 'application/dicom';
+        const safeName = path.basename(String(metadata.fileName || `${fileID}.dcm`));
+        res.status(200);
+        res.setHeader('Content-Type', mediaType);
+        res.setHeader('Content-Length', stat.size);
+        res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(safeName)}`);
+        res.setHeader('Cache-Control', 'private, no-store');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        const stream = fs.createReadStream(filePath);
+        stream.on('error', (error) => { if (!res.headersSent) sendFabricError(res, error); else res.destroy(error); });
+        stream.pipe(res);
+    } catch (error) { return sendFabricError(res, error); }
+});
+
 app.get('/getDentalChartData/:id', authenticateToken, requireRoles('admin', 'doctor', 'patient', 'system'), requirePatientSelfParam('id'), async (req, res) => {
     try {
         const result = await withContract(req, (contract) => contract.evaluateTransaction('getAllDentalChartData', String(req.params.id)));

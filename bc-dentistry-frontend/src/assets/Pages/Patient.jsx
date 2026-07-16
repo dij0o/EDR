@@ -36,7 +36,7 @@
 // export default Patient;
 
 // import Data from "../../../data";
-import { useLocation } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { MainContainer } from "../components";
 import PatientMainBar from "../components/Patient/PatientMainBar";
 import PatientPersonalInfo from "../components/Patient/PatientPersonalInfo";
@@ -50,15 +50,15 @@ import { getStoredUser } from "../utils/auth.js";
 import RadiographicFiles from "../components/Patient/RadiographicFiles.jsx";
 import ClinicalRecords from "../components/Patient/ClinicalRecords.jsx";
 
-const Patient = () => {
-    const path = useLocation().pathname;
+const Patient = ({ patientID: patientIDOverride }) => {
+    const { id: routePatientID } = useParams();
     const { userRole } = useRole();
     const user = getStoredUser(); // Retrieve user details
 
     // const patientDetails = Data.filter((patient) => {
     //     return patient.id == path.split('/').pop();
     // })
-    const patientId = path.split('/').pop(); // Extract patient ID from URL
+    const patientId = patientIDOverride || routePatientID;
 
     const [patientDetails, setPatientDetails] = useState(null); // State to hold the patient data
     const [loading, setLoading] = useState(true); // Loading state
