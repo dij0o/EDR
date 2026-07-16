@@ -35,7 +35,6 @@
 
 // export default Patients;
 import PatientsCards from "../Sections/Patients/PatientsCards";
-import PatientsFilters from "../Sections/Patients/PatientsFilters";
 import axios from "axios";
 import { useEffect, useState } from "react";
 import Lo from "../images/icons/calendar.svg";
@@ -86,8 +85,7 @@ const Patients = () => {
     if (error) return <div role="alert" className="w-full border border-red-300 bg-red-50 rounded-xl p-4 text-red-800">{error}</div>;
 
     return (
-        <div id="Patients" className="grid grid-cols-12 gap-x-8" style={{ gridTemplateColumns: "2fr 8fr" }}>
-            <PatientsFilters />
+        <div id="Patients" className="w-full">
             <div className="flex flex-col w-full gap-y-4">
                 <div className="flex items-center border bg-white px-4 py-4 rounded-xl w-full justify-between">
                     <h1 className="patients-header text-2xl font-bold">Patients</h1>
@@ -97,9 +95,7 @@ const Patients = () => {
                             <div className="icon">
                                 <img className="w-5 h-5" src={Lo} alt="" />
                             </div>
-                            <button onClick={() => { document.getElementById("AddNewPatientDialog").lastElementChild.scrollTop = 0 }} id="addNewPatientBtn" className="icon">
-                                <a href="#addNewPatient">Add a new Patient</a>
-                            </button>
+                            <a onClick={() => { document.getElementById("AddNewPatientDialog").lastElementChild.scrollTop = 0 }} id="addNewPatientBtn" className="icon" href="#addNewPatient">Add a new Patient</a>
                         </div>
                     )}
                 </div>

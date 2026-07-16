@@ -115,8 +115,6 @@ const RequestPatientCard = () => {
 
     // Function to submit data to API
     const handleSubmit = async () => {
-        console.log("Submitting Request with:", { doctorID, patientID, clinicID });
-
         if (!doctorID || !patientID || !clinicID || !dataType || !purpose) {
             alert("Please enter patient, clinic, data type, and request purpose before submitting.");
             return;
@@ -138,8 +136,6 @@ const RequestPatientCard = () => {
             });
 
             const data = await response.json();
-            console.log("API Response:", data);
-
             if (response.ok) {
                 alert(`Request sent successfully! Request ID: ${data.requestID}`);
             } else {
@@ -153,7 +149,7 @@ const RequestPatientCard = () => {
 
     return (
         <div className="patient-card relative flex flex-col text-center text-gray-400 border border-[.2em] border-dashed border-gray-300 rounded-md p-5 gap-y-3 h-56 justify-between">
-            <a onClick={expandRequestForm} href="#" className="patient-card-btn text-8xl font-extralight">+</a>
+            <button type="button" onClick={expandRequestForm} aria-label="Request access to a patient at another clinic" className="patient-card-btn text-8xl font-extralight">+</button>
             <div>
                 <p>Click here to request data for a specific patient</p>
             </div>

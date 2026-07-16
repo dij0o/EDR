@@ -40,3 +40,16 @@ test('mobile account and personal information use authenticated data without fix
   assert.match(personal, /Patient information is unavailable/);
   assert.doesNotMatch(personal, /John|Peanuts|Aspirin/);
 });
+
+test('patient list and request controls remove placeholders and expose unique names', () => {
+  const page = read('src/assets/Pages/Patients.jsx').replace(/^\s*\/\/.*$/gm, '');
+  const request = read('src/assets/components/Patients/RequestPatientCard.jsx').replace(/^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(page, /PatientsFilters/);
+  assert.match(request, /aria-label="Request access/);
+  assert.doesNotMatch(request, /console\.log/);
+});
+
+test('patient detail displays all SRS profile categories', () => {
+  const detail = read('src/assets/components/Patient/PatientPersonalInfo.jsx');
+  for (const label of ['Patient ID', 'Insurance Provider', 'Policy Number', 'Coverage Type', 'Emirates ID', 'Nationality', 'Address', 'Blood Type', 'Phone Number', 'Email', 'Clinic', 'Assigned Doctors']) assert.match(detail, new RegExp(label));
+});
