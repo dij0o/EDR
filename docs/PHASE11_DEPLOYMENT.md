@@ -101,7 +101,7 @@ docker compose down
 
 ## AWS deployment record template
 
-The current Phase 11 source pass does not itself authorize or prove an AWS rollout. Before an AWS update:
+The Phase 11 test-VM rollout completed on 2026-07-17 from commit `8e03f22`. Evidence is recorded in [`PHASE11_DEPLOYMENT_EVIDENCE_2026-07-17.md`](PHASE11_DEPLOYMENT_EVIDENCE_2026-07-17.md). For subsequent AWS updates:
 
 1. Record checkout and commit; create a timestamped backup under `/home/ubuntu/deployment-backups/`.
 2. Back up MySQL, radiographic storage, Fabric wallet/profile material, `.env`, and any existing Nginx/PM2 configuration being replaced.
