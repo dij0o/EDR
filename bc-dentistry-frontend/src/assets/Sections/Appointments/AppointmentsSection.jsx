@@ -4,15 +4,13 @@ import AppointmentTicket from "../../components/Appointments/AppointmentTicket";
 import { authHeaders, databaseUrl, handleUnauthorizedResponse } from '../../config/api.js';
 
 const AppointmentsSection = ({ refreshKey = 0 }) => {
-    // State to store fetched appointments data
     const [appointmentsTickets, setAppointmentsTickets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
-    // Fetch appointments from the backend API when the component mounts
     const fetchAppointments = async () => {
             try {
-                const response = await fetch(databaseUrl('/Appointment'), { headers: authHeaders() }); // Adjust the endpoint if needed
+                const response = await fetch(databaseUrl('/appointments'), { headers: authHeaders() });
                 handleUnauthorizedResponse(response);
                 const data = await response.json();
                 if (!response.ok || data?.success === false) {
@@ -38,7 +36,6 @@ const AppointmentsSection = ({ refreshKey = 0 }) => {
         await fetchAppointments();
     };
 
-    // Map fetched appointments to AppointmentTicket components
     const allAppointments = appointmentsTickets.map((appointment, index) => {
         return (
             <AppointmentTicket

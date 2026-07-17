@@ -314,7 +314,7 @@ const readPatientHandler = async (req, res) => {
     try {
         const patientID = req.params.id || req.params.patientID;
         const result = await withContract(req, (contract) => contract.evaluateTransaction('ReadPatient', String(patientID)));
-        return sendSuccess(res, parseBufferJson(result), 200, ['/readPatient/:patientID']);
+        return sendSuccess(res, parseBufferJson(result));
     } catch (error) {
         return sendFabricError(res, error);
     }
@@ -332,7 +332,7 @@ const requestAccessHandler = async (req, res) => {
             String(req.body.purpose),
             JSON.stringify(accessRequestDetails(req.body))
         ));
-        return sendSuccess(res, { requestID: result.toString() }, 201, ['/requestDataAccess']);
+        return sendSuccess(res, { requestID: result.toString() }, 201);
     } catch (error) {
         return sendFabricError(res, error);
     }
@@ -344,7 +344,7 @@ const grantConsentHandler = async (req, res) => {
         const result = await withContract(req, (contract) => contract.submitTransaction(
             'ProvideConsent', String(req.body.patientID), String(req.body.requestID)
         ));
-        return sendSuccess(res, parseBufferJson(result), 200, ['/provideConsent']);
+        return sendSuccess(res, parseBufferJson(result));
     } catch (error) {
         return sendFabricError(res, error);
     }
@@ -526,7 +526,7 @@ app.get('/getPendingRequests', authenticateToken, requireRoles('patient'), async
             throw error;
         }
         const result = await withContract(req, (contract) => contract.evaluateTransaction('GetPendingRequestsForPatient', String(req.user.blockchainID)));
-        return sendSuccess(res, parseBufferJson(result), 200, ['/getPendingRequestsForPatient/:patientID']);
+        return sendSuccess(res, parseBufferJson(result));
     } catch (error) {
         return sendFabricError(res, error);
     }
@@ -591,7 +591,7 @@ app.post('/patient/rejectRequest', authenticateToken, requireRoles('patient'), r
     try {
         requireFields(req.body, ['patientID', 'requestID', 'rejectionReason']);
         const result = await withContract(req, (contract) => contract.submitTransaction('RejectRequest', String(req.body.patientID), String(req.body.requestID), String(req.body.rejectionReason)));
-        return sendSuccess(res, parseBufferJson(result), 200, ['/rejectRequest']);
+        return sendSuccess(res, parseBufferJson(result));
     } catch (error) { return sendFabricError(res, error); }
 });
 
@@ -756,56 +756,6 @@ app.get('/getAllPatients', authenticateToken, requireRoles('admin', 'system'), a
     }
 });
 
-app.get('/readPatient/:patientID', authenticateToken, requireRoles('admin', 'doctor'), async (req, res) => {
-    try {
-        const wallet = await Wallets.newFileSystemWallet(walletPath);
-
-        const gateway = new Gateway();
-        await gateway.connect(getConnectionProfile(), {
-            wallet,
-            identity: fabricIdentityForRequest(req),
-            discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
-        });
-
-        const network = await gateway.getNetwork(fabricChannel);
-        const contract = network.getContract(fabricChaincode);
-
-        const patientID = req.params.patientID;
-        const result = await contract.evaluateTransaction('ReadPatient', patientID);
-
-        res.status(200).json(JSON.parse(result.toString()));
-        await gateway.disconnect();
-    } catch (error) {
-        console.error(`Failed to evaluate transaction: ${error}`);
-        sendFabricError(res, error);
-    }
-});
-
-app.get('/getPatientsAssignedToDoctor/:doctorID', authenticateToken, requireRoles('admin', 'doctor'), requireDoctorSelfParam('doctorID'), async (req, res) => {
-    try {
-        const wallet = await Wallets.newFileSystemWallet(walletPath);
-
-        const gateway = new Gateway();
-        await gateway.connect(getConnectionProfile(), {
-            wallet,
-            identity: fabricIdentityForRequest(req),
-            discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
-        });
-
-        const network = await gateway.getNetwork(fabricChannel);
-        const contract = network.getContract(fabricChaincode);
-
-        const doctorID = req.params.doctorID;
-        const result = await contract.evaluateTransaction('getPatientsAssignedToDoctor', doctorID);
-
-        res.status(200).json(JSON.parse(result.toString()));
-        await gateway.disconnect();
-    } catch (error) {
-        console.error(`Failed to evaluate transaction: ${error}`);
-        sendFabricError(res, error);
-    }
-});
-
 app.get('/doctor/me/assigned-patients', authenticateToken, requireRoles('doctor'), async (req, res) => {
     try {
         if (!req.user.blockchainID) return sendError(res, 403, 'DOCTOR_IDENTITY_MISSING', 'Authenticated doctor has no blockchain identity');
@@ -840,8 +790,6 @@ app.get('/getPatientsByClinic/:clinicID', authenticateToken, requireRoles('admin
 });
 
 
-// Endpoint for doctor to request data access
-app.post('/requestDataAccess', authenticateToken, requireRoles('doctor'), requireDoctorSelfBody('doctorID'), requestAccessHandler);
 
 app.get('/getRequestsForAdmin/:clinicID', authenticateToken, requireRoles('admin'), requireAdminClinicParam('clinicID'), async (req, res) => {
     try {
@@ -918,31 +866,6 @@ app.post('/approveRequest', authenticateToken, requireRoles('admin'), requireAdm
     }
 });
 
-app.get('/getPendingRequestsForPatient/:patientID', authenticateToken, requireRoles('patient'), requirePatientSelfParam('patientID'), async (req, res) => {
-    try {
-        const wallet = await Wallets.newFileSystemWallet(walletPath);
-
-        const gateway = new Gateway();
-        await gateway.connect(getConnectionProfile(), {
-            wallet,
-            identity: fabricIdentityForRequest(req),
-            discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
-        });
-
-        const network = await gateway.getNetwork(fabricChannel);
-        const contract = network.getContract(fabricChaincode);
-
-        const patientID = req.params.patientID;
-        const result = await contract.evaluateTransaction('GetPendingRequestsForPatient', patientID);
-
-        res.status(200).json(JSON.parse(result.toString()));
-        await gateway.disconnect();
-    } catch (error) {
-        console.error(`Failed to evaluate transaction: ${error}`);
-        sendFabricError(res, error);
-    }
-});
-
 app.get('/getProcessedRequestsForPatient/:patientID', authenticateToken, requireRoles('patient'), requirePatientSelfParam('patientID'), async (req, res) => {
     try {
         const wallet = await Wallets.newFileSystemWallet(walletPath);
@@ -994,37 +917,7 @@ app.get('/getAllRequestsForPatient/:patientID', authenticateToken, requireRoles(
 });
 
 
-app.post('/provideConsent', authenticateToken, requireRoles('patient'), requirePatientSelfBody('patientID'), async (req, res) => {
-    try {
-        const { patientID, requestID } = req.body;
-        
-        if (!patientID || !requestID) {
-            return res.status(400).json({ error: "Missing required parameters" });
-        }
-
-        const wallet = await Wallets.newFileSystemWallet(walletPath);
-
-        const gateway = new Gateway();
-        await gateway.connect(getConnectionProfile(), {
-            wallet,
-            identity: fabricIdentityForRequest(req),
-            discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
-        });
-
-        const network = await gateway.getNetwork(fabricChannel);
-        const contract = network.getContract(fabricChaincode);
-
-        const result = await contract.submitTransaction('ProvideConsent', patientID, requestID);
-
-        res.status(200).json(JSON.parse(result.toString()));
-        await gateway.disconnect();
-    } catch (error) {
-        console.error(`Failed to submit transaction: ${error}`);
-        sendFabricError(res, error);
-    }
-});
-
-app.post(['/revokeConsent', '/patient/revokeConsent'], authenticateToken, requireRoles('patient'), requirePatientSelfBody('patientID'), async (req, res) => {
+app.post('/patient/revokeConsent', authenticateToken, requireRoles('patient'), requirePatientSelfBody('patientID'), async (req, res) => {
     try {
         requireFields(req.body, ['patientID', 'requestID']);
         const result = await withContract(req, (contract) => contract.submitTransaction(
@@ -1058,43 +951,4 @@ app.post('/notifications/:notificationID/read', authenticateToken, requireRoles(
         const result = await withContract(req, (contract) => contract.submitTransaction('MarkNotificationRead', String(req.params.notificationID)));
         return sendSuccess(res, parseBufferJson(result));
     } catch (error) { return sendFabricError(res, error); }
-});
-
-app.post('/rejectRequest', authenticateToken, requireRoles('patient'), requirePatientSelfBody('patientID'), async (req, res) => {
-    try {
-        const { patientID, requestID, rejectionReason } = req.body;
-        
-        if (!patientID || !requestID || !rejectionReason) {
-            return res.status(400).json({ error: "Missing required parameters" });
-        }
-
-        const wallet = await Wallets.newFileSystemWallet(walletPath);
-
-        const gateway = new Gateway();
-        await gateway.connect(getConnectionProfile(), {
-            wallet,
-            identity: fabricIdentityForRequest(req),
-            discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
-        });
-
-        const network = await gateway.getNetwork(fabricChannel);
-        const contract = network.getContract(fabricChaincode);
-
-        const result = await contract.submitTransaction('RejectRequest', patientID, requestID, rejectionReason);
-
-        res.status(200).json(JSON.parse(result.toString()));
-        await gateway.disconnect();
-    } catch (error) {
-        console.error(`Failed to submit transaction: ${error}`);
-        sendFabricError(res, error);
-    }
-});
-
-// const PORT = process.env.PORT || 8081;
-// app.listen(PORT, () => {
-//     console.log(`Server running on port ${PORT}`);
-// });
-const PORT = process.env.PORT || 8081;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
 });

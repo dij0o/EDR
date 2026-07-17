@@ -9,7 +9,7 @@ const Appointments = () => {
 
     useEffect(() => {
         let active = true;
-        fetch(databaseUrl('/Appointment'), { headers: authHeaders() })
+        fetch(databaseUrl('/appointments'), { headers: authHeaders() })
             .then((response) => response.ok ? response.json() : Promise.reject())
             .then((payload) => { if (active) setAppointments(payload.data || []); })
             .catch(() => { if (active) setAppointments([]); });

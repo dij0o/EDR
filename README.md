@@ -72,7 +72,6 @@ BC-Dentistry-EDR/
 │   ├── wallet/                              ← Fabric identities (gitignored)
 │   ├── enrollAdmin.js
 │   ├── registerRoleIdentities.js            ← Role/actor-bound CA enrollment
-│   ├── registerUser.js                      ← Legacy shared identity helper (not used by Phase 2)
 │   ├── index.js                             ← API entry point  (port 8081)
 │   ├── .env.example
 │   └── package.json
@@ -721,7 +720,7 @@ CORS_ORIGIN=http://localhost:5174
 
 The Blockchain API selects a Fabric wallet identity from verified JWT claims:
 `admin-<organizationId>`, `doctor-<blockchainID>`, `patient-<blockchainID>`, or
-`role-system`. The legacy shared `appUser` identity is not used by Phase 2 routes.
+`role-system`. Shared service identities are not used for actor-bound requests.
 
 ### `backend/.env`
 
@@ -872,22 +871,22 @@ CORS_ORIGIN=http://localhost:5174
 ---
 
 *University of Sharjah — College of Computing and Informatics*
-# SRS Section 5 API compatibility
+# SRS Section 5 API
 
-The Blockchain API on port `8081` exposes the SRS route names below. All require `Authorization: Bearer <JWT>` and retain the Phase 2 mapping from JWT claims to role/actor/clinic-bound Fabric wallet identities.
+The Blockchain API on port `8081` exposes the SRS routes below. All require `Authorization: Bearer <JWT>` and map verified claims to role-, actor-, and clinic-bound Fabric wallet identities.
 
-| SRS route | Role | Compatible legacy route |
-|---|---|---|
-| `GET /getPatientByID/:id` | Admin, Doctor, Patient (self), System | `GET /readPatient/:patientID` |
-| `POST /addMedicalRecord` | Doctor (self) | New canonical route |
-| `GET /getDentalChartData/:id` | Admin, Doctor, Patient (self), System | Chaincode `getAllDentalChartData` |
-| `POST /requestAccess` | Doctor (self) | `POST /requestDataAccess` |
-| `POST /grantConsent` | Patient (self) | `POST /provideConsent` |
-| `GET /getPendingRequests` | Patient; ID derived from JWT | `GET /getPendingRequestsForPatient/:patientID` |
-| `PUT`, `DELETE /patient/:id` | Admin (clinic-bound) | New canonical routes |
-| `GET /doctor/:id` | Admin, Doctor (self), System | New canonical route |
-| `PUT`, `DELETE /doctor/:id` | Admin (clinic-bound) | New canonical routes |
-| `POST /admin/rejectRequest` | Admin (clinic-bound) | Stage-specific replacement for generic rejection |
-| `POST /patient/rejectRequest` | Patient (self) | `POST /rejectRequest` |
+| SRS route | Role |
+|---|---|
+| `GET /getPatientByID/:id` | Admin, Doctor, Patient (self), System |
+| `POST /addMedicalRecord` | Doctor (self) |
+| `GET /getDentalChartData/:id` | Admin, Doctor, Patient (self), System |
+| `POST /requestAccess` | Doctor (self) |
+| `POST /grantConsent` | Patient (self) |
+| `GET /getPendingRequests` | Patient; ID derived from JWT |
+| `PUT`, `DELETE /patient/:id` | Admin (clinic-bound) |
+| `GET /doctor/:id` | Admin, Doctor (self), System |
+| `PUT`, `DELETE /doctor/:id` | Admin (clinic-bound) |
+| `POST /admin/rejectRequest` | Admin (clinic-bound) |
+| `POST /patient/rejectRequest` | Patient (self) |
 
-Canonical Phase 3 responses use `{ "success": true, "data": ... }`; errors use `{ "success": false, "error": { "code": "...", "message": "..." } }`. Legacy success payloads are preserved for existing clients.
+Successful responses use `{ "success": true, "data": ... }`; errors use `{ "success": false, "error": { "code": "...", "message": "..." } }`.

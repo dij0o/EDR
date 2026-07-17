@@ -69,7 +69,7 @@ const Patient = ({ patientID: patientIDOverride }) => {
         const fetchPatientDetails = async () => {
             try {
                 const response = await axios.get(databaseUrl(`/patients/${encodeURIComponent(patientId)}`), { headers: authHeaders() });
-                setPatientDetails(response.data.data || response.data); // Canonical API envelope with legacy fallback
+                setPatientDetails(response.data.data);
                 
                 setLoading(false);
             } catch (error) {

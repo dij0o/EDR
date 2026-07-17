@@ -33,7 +33,7 @@ const ProceedRequests = () => {
 
   const revokeConsent = async (requestID) => {
     try {
-      await axios.post(blockchainUrl('/revokeConsent'), {
+      await axios.post(blockchainUrl('/patient/revokeConsent'), {
         patientID,
         requestID,
         revocationReason: 'Revoked from patient mobile app',

@@ -260,330 +260,6 @@ app.post('/login', async (req, res) => {
 });
 
 
-// Login
-// app.post('/login', (req, res) => {
-//     const { username, password } = req.body;
-
-//     console.log('Login attempt:', username);
-
-//     // Fetch user details along with role and organization ID (for admins only)
-//     const sql = `
-//         SELECT User.ID, User.First_Name, User.Last_Name, User.Email, User.Password, 
-//                UserRole.Name AS Role_Name, 
-//                COALESCE(Admin.Organization_ID, NULL) AS Organization_ID
-//         FROM User 
-//         INNER JOIN UserRole ON User.Role_ID = UserRole.Role_ID
-//         LEFT JOIN Admin ON User.ID = Admin.User_ID  -- Join Admin table to get Organization_ID
-//         WHERE User.Email = ?
-//     `;
-
-//     db.query(sql, [username], async (err, results) => {
-//         if (err) {
-//             console.error('Database error:', err);
-//             return res.status(500).json({ error: 'Database error during login' });
-//         }
-
-//         if (results.length === 0) {
-//             console.log('User not found:', username);
-//             return res.status(401).json({ error: 'Invalid username or password' });
-//         }
-
-//         const user = results[0];
-
-//         const passwordMatch = await bcrypt.compare(password, user.Password);
-
-//         if (!passwordMatch) {
-//             return res.status(401).json({ error: 'Invalid username or password' });
-//         }
-
-//         // Update Last_Login_Date
-//         const updateLoginDateSQL = "UPDATE User SET Last_Login_Date = NOW() WHERE ID = ?";
-//         db.query(updateLoginDateSQL, [user.ID], (updateErr) => {
-//             if (updateErr) {
-//                 console.error('Error updating Last_Login_Date:', updateErr);
-//                 return res.status(500).json({ error: 'Error updating Last Login Date' });
-//             }
-//         });
-
-//         const token = jwt.sign({ id: user.ID, role: user.Role_Name }, SECRET_KEY, { expiresIn: '1h' });
-
-//         // Send user details including organization ID for admins
-//         res.json({ 
-//             token, 
-//             user: { 
-//                 id: user.ID, 
-//                 name: `${user.First_Name} ${user.Last_Name}`, 
-//                 role: user.Role_Name,
-//                 organizationId: user.Organization_ID || null // Include organization ID only for admins
-//             } 
-//         });
-//     });
-// });
-
-
-// app.post('/login', async (req, res) => {
-//     const { email, password } = req.body;
-
-//     console.log('Login attempt:', req.body);
-
-//     const sql = `
-//         SELECT User.ID, User.First_Name, User.Last_Name, User.Email, User.Password, 
-//                UserRole.Name AS Role_Name, 
-//                COALESCE(Admin.Organization_ID, NULL) AS Organization_ID,
-//                COALESCE(Doctor.Works_At, NULL) AS WorksAt,
-//                COALESCE(Doctor.Specialty, NULL) AS Specialty,
-//                COALESCE(Doctor.Blockchain_ID, NULL) AS BlockchainID
-//         FROM User 
-//         INNER JOIN UserRole ON User.Role_ID = UserRole.Role_ID
-//         LEFT JOIN Admin ON User.ID = Admin.User_ID  
-//         LEFT JOIN Doctor ON User.ID = Doctor.ID  
-//         WHERE User.Email = ?
-//     `;
-
-//     db.query(sql, [email], async (err, results) => {
-//         if (err) {
-//             console.error('Database error:', err);
-//             return res.status(500).json({ error: 'Database error during login' });
-//         }
-
-//         if (results.length === 0) {
-//             console.log('User not found:', email);
-//             return res.status(401).json({ error: 'Invalid email' });
-//         }
-
-//         const user = results[0];
-
-//         const passwordMatch = await bcrypt.compare(password, user.Password);
-//         console.log('✅ Retrieved user:', user.Email);
-//         console.log('🔐 Stored hash:', user.Password);
-//         console.log('🔑 Input password:', password);
-//         console.log('🔑 Password Match:', passwordMatch);
-
-//         if (!passwordMatch) {
-//             return res.status(401).json({ error: 'Invalid password' });
-//         }
-
-//         // Update Last_Login_Date
-//         const updateLoginDateSQL = "UPDATE User SET Last_Login_Date = NOW() WHERE ID = ?";
-//         db.query(updateLoginDateSQL, [user.ID], (updateErr) => {
-//             if (updateErr) {
-//                 console.error('Error updating Last_Login_Date:', updateErr);
-//                 return res.status(500).json({ error: 'Error updating Last Login Date' });
-//             }
-//         });
-
-//         // Construct user object based on role
-//         const userData = {
-//             id: user.ID,
-//             name: `${user.First_Name} ${user.Last_Name}`,
-//             role: user.Role_Name,
-//             organizationId: user.Organization_ID || null, // Only for Admins
-//             worksAt: user.WorksAt || null, // Only for Doctors
-//             specialty: user.Specialty || null, // Only for Doctors
-//             blockchainID: user.BlockchainID || null // Only for Doctors
-//         };
-
-//         // Create JWT token including blockchainID (for doctors)
-//         const tokenPayload = { 
-//             id: user.ID, 
-//             role: user.Role_Name, 
-//             blockchainID: user.BlockchainID || null 
-//         };
-//         const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: '1h' });
-
-//         // Return token + user details
-//         res.json({ token, user: userData });
-//     });
-// });
-
-
-
-
-// Middleware to authenticate token
-
-
-
-const getBearerToken = (req) => {
-    const authHeader = req.headers['authorization'];
-    if (!authHeader) return null;
-
-    const [scheme, token] = authHeader.split(' ');
-    return /^Bearer$/i.test(scheme) ? token : null;
-};
-
-const safeTokenEquals = (receivedToken, expectedToken) => {
-    const received = Buffer.from(String(receivedToken || ''), 'utf8');
-    const expected = Buffer.from(String(expectedToken || ''), 'utf8');
-
-    if (received.length !== expected.length) {
-        return false;
-    }
-
-    return crypto.timingSafeEqual(received, expected);
-};
-
-const authenticateToken = (req, res, next) => {
-    const token = getBearerToken(req);
-
-    if (!token) return sendApiError(res, 401, 'AUTH_REQUIRED', 'Access denied');
-
-    if (!SECRET_KEY) {
-        return sendApiError(res, 500, 'AUTH_CONFIGURATION_ERROR', 'JWT secret is not configured');
-    }
-
-    jwt.verify(token, SECRET_KEY, (err, user) => {
-        if (err) return sendApiError(res, 403, 'INVALID_TOKEN', 'Invalid token');
-        req.user = user;
-        next();
-    });
-};
-
-const requireRoles = (...allowedRoles) => {
-    const allowed = allowedRoles.map(normalizeRole);
-
-    return (req, res, next) => {
-        const userRole = normalizeRole(req.user?.role);
-
-        if (!userRole || !allowed.includes(userRole)) {
-            return sendApiError(res, 403, 'FORBIDDEN', 'Forbidden: insufficient role permissions');
-        }
-
-        next();
-    };
-};
-
-const authorizeAdminRegistration = (req, res, next) => {
-    const bootstrapToken = req.headers['x-bootstrap-token'];
-
-    if (bootstrapToken) {
-        if (!ADMIN_BOOTSTRAP_TOKEN || !safeTokenEquals(bootstrapToken, ADMIN_BOOTSTRAP_TOKEN)) {
-            return res.status(403).json({ error: 'Invalid admin bootstrap token' });
-        }
-
-        req.user = { role: 'system', bootstrap: true };
-        return next();
-    }
-
-    const token = getBearerToken(req);
-
-    if (!token) {
-        return res.status(401).json({ error: 'Admin registration requires an Admin/System token or configured bootstrap token' });
-    }
-
-    if (!SECRET_KEY) {
-        return res.status(500).json({ error: 'JWT secret is not configured' });
-    }
-
-    try {
-        const user = jwt.verify(token, SECRET_KEY);
-        const userRole = normalizeRole(user?.role);
-
-        if (!['admin', 'system'].includes(userRole)) {
-            return res.status(403).json({ error: 'Forbidden: admin registration requires Admin/System permissions' });
-        }
-
-        req.user = user;
-        return next();
-    } catch (err) {
-        return res.status(403).json({ error: 'Invalid token' });
-    }
-};
-
-// Protected route example
-app.get('/protected', authenticateToken, (req, res) => {
-    res.json({ message: 'Access granted', user: req.user });
-});
-
-
-// Sync On-Chain Patients to Off-Chain MySQL
-// Route to sync on-chain patients into MySQL Patient and User tables
-app.post('/syncOnChainPatients', authenticateToken, requireRoles('admin', 'system'), async (req, res) => {
-    if (!BLOCKCHAIN_API_URL) {
-        return res.status(500).json({ error: 'Blockchain API URL is not configured' });
-    }
-
-    try {
-        const response = await fetch(`${BLOCKCHAIN_API_URL}/getAllPatients`, {
-            headers: { Authorization: req.headers.authorization }
-        });
-        const onChainPatients = await response.json();
-
-        const insertPatient = (patient) => {
-            return new Promise((resolve, reject) => {
-                const blockchainPatientID = patient.patientID || patient.PatientID || patient.id || null;
-                const selectSQL = 'SELECT * FROM Patient WHERE Emirates_ID = ? OR Blockchain_ID = ?';
-                db.query(selectSQL, [patient.emiratesID, blockchainPatientID], async (err, results) => {
-                    if (err) return reject(err);
-
-                    if (results.length > 0) {
-                        const existingPatient = results[0];
-
-                        if (blockchainPatientID && existingPatient.Blockchain_ID && existingPatient.Blockchain_ID !== blockchainPatientID) {
-                            return resolve(`Patient already exists with blockchain ID ${existingPatient.Blockchain_ID}`);
-                        }
-
-                        if (blockchainPatientID && !existingPatient.Blockchain_ID) {
-                            const updatePatientSQL = 'UPDATE Patient SET Blockchain_ID = ? WHERE ID = ?';
-                            db.query(updatePatientSQL, [blockchainPatientID, existingPatient.ID], (err) => {
-                                if (err) return reject(err);
-                                resolve(`Linked existing patient ${existingPatient.ID} to ${blockchainPatientID}`);
-                            });
-                            return;
-                        }
-
-                        return resolve('Patient already exists');
-                    }
-
-                    const insertUserSQL = `INSERT INTO User (First_Name, Last_Name, Email, Contact_Number, Password, Role_ID, Created_Date, IsActive) VALUES (?, ?, ?, ?, ?, ?, NOW(), 1)`;
-                    const hashedPassword = await bcrypt.hash('DefaultPassword123!', 10); // Default password
-
-                    db.query(insertUserSQL, [
-                        patient.firstName,
-                        patient.lastName,
-                        patient.email,
-                        patient.contactNumber,
-                        hashedPassword,
-                        4  // Role_ID for Patient
-                    ], (err, userResult) => {
-                        if (err) return reject(err);
-                        const userId = userResult.insertId;
-
-                        const insertPatientSQL = `INSERT INTO Patient (ID, Date_of_Birth, Gender, Emirates_ID, Blockchain_ID) VALUES (?, ?, ?, ?, ?)`;
-                        db.query(insertPatientSQL, [
-                            userId,
-                            patient.dateOfBirth,
-                            patient.gender,
-                            patient.emiratesID,
-                            blockchainPatientID
-                        ], (err) => {
-                            if (err) return reject(err);
-                            resolve(`Inserted patient ${patient.firstName} ${patient.lastName}`);
-                        });
-                    });
-                });
-            });
-        };
-
-        const insertResults = [];
-        for (const patient of onChainPatients) {
-            try {
-                const result = await insertPatient(patient);
-                insertResults.push(result);
-            } catch (err) {
-                insertResults.push(`Error inserting ${patient.patientID}: ${err.message}`);
-            }
-        }
-
-        res.json({ message: 'Sync complete', details: insertResults });
-    } catch (error) {
-        console.error('Error syncing patients:', error);
-        res.status(500).json({ error: 'Failed to sync patients' });
-    }
-});
-
-
-// Authentication APIs
-// Register a new organization admin through an Admin/System JWT or deployment bootstrap token.
 app.post('/register', authorizeAdminRegistration, async (req, res) => {
     const { firstName, lastName, username, contactNumber, password, organizationId } = req.body;
     const roleId = 2; // Hardcoded for Admin role (Only Admins can register)
@@ -668,68 +344,6 @@ app.post('/register', authorizeAdminRegistration, async (req, res) => {
     });
 });
 
-app.post('/registerDoctorLegacy', authenticateToken, requireRoles('admin'), async (req, res) => {
-    const { firstName, lastName, username, contactNumber, password, worksAt, speciality, doctorID } = req.body;
-    const roleId = 3; // Role ID for Doctor
-
-    // Validate required fields
-    if (!firstName || !lastName || !username || !contactNumber || !password || !worksAt || !speciality) {
-        return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    try {
-        // Check if the doctor already exists in the User table
-        const checkUserSQL = "SELECT * FROM User WHERE Email = ?";
-        db.query(checkUserSQL, [username], async (err, results) => {
-            if (err) {
-                console.error(err);
-                return res.status(500).json({ error: 'Database error during user check' });
-            }
-            if (results.length > 0) {
-                return res.status(400).json({ error: 'Doctor already exists' });
-            }
-
-            // Hash the password
-            const hashedPassword = await bcrypt.hash(password, 10);
-
-            // Insert into User table
-            const insertUserSQL = `
-                INSERT INTO User 
-                (First_Name, Last_Name, Email, Contact_Number, Password, Role_ID, Created_Date, IsActive) 
-                VALUES (?, ?, ?, ?, ?, ?, NOW(), 1)
-            `;
-            db.query(insertUserSQL, [firstName, lastName, username, contactNumber, hashedPassword, roleId], (err, result) => {
-                if (err) {
-                    console.error(err);
-                    return res.status(500).json({ error: 'Database error during user registration' });
-                }
-
-                const userId = result.insertId; // Get the new doctor’s MySQL ID
-
-                // If `doctorID` is provided, use it; otherwise, generate it as `Doctor<ID>`
-                const blockchainDoctorID = doctorID || `Doctor${userId}`;
-
-                // Insert into Doctor table with Blockchain ID
-                const insertDoctorSQL = `INSERT INTO Doctor (ID, Works_At, Specialty, Blockchain_ID) VALUES (?, ?, ?, ?)`;
-                db.query(insertDoctorSQL, [userId, worksAt, speciality, blockchainDoctorID], async (err) => {
-                    if (err) {
-                        console.error(err);
-                        return res.status(500).json({ error: 'Database error during doctor registration' });
-                    }
-
-                    return res.json({ 
-                        message: 'Doctor registered successfully in MySQL', 
-                        doctorID: blockchainDoctorID 
-                    });
-                });
-            });
-        });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Error processing doctor registration' });
-    }
-});
-
 const DOCTOR_SELECT = `SELECT Doctor.*, User.First_Name, User.Last_Name, User.Email, User.Contact_Number, User.Created_Date
     FROM Doctor INNER JOIN User ON Doctor.ID = User.ID`;
 const normalizeDoctor = (row) => ({ doctorID: row.Blockchain_ID, firstName: row.First_Name, lastName: row.Last_Name,
@@ -744,7 +358,7 @@ const validateDoctorPayload = (body, isCreate = false) => {
     if (!/^\S+@\S+\.\S+$/.test(body.email)) { const error = new Error('Invalid email address'); error.statusCode = 400; throw error; }
 };
 
-app.post(['/doctors', '/registerDoctor'], authenticateToken, requireRoles('admin'), async (req, res) => {
+app.post('/doctors', authenticateToken, requireRoles('admin'), async (req, res) => {
     let connection;
     try {
         validateDoctorPayload(req.body, true);
@@ -1023,14 +637,6 @@ app.get(['/patients/:id/clinical-records/:recordType', '/getMedicalRecords/:id',
     } catch (error) { return sendApiError(res, error.statusCode || 500, 'CLINICAL_RECORD_READ_FAILED', error.message); }
 });
 
-// Legacy list retained for existing clients, now clinic-scoped and PII sourced only from MySQL.
-app.get('/Patient', authenticateToken, requireRoles('admin'), async (req, res) => {
-    try {
-        const rows = await query(`${PATIENT_SELECT} WHERE Patient.Clinic_ID = ?`, [req.user.organizationId]);
-        return res.json(rows.map(normalizePatient));
-    } catch (error) { return sendApiError(res, 500, 'PATIENT_LIST_FAILED', 'Unable to retrieve patients'); }
-});
-
 const APPOINTMENT_SELECT = `SELECT Appointment.Appointment_ID, Appointment.Meeting_For,
     COALESCE(Appointment.Appointment_Date_Time, Appointment.Date) AS Appointment_Date_Time,
     Appointment.Date, Appointment.Specialty, Appointment.Status, Appointment.Notes,
@@ -1080,10 +686,6 @@ const listAppointments = async (req, res) => {
     } catch (error) { return sendApiError(res, 500, 'APPOINTMENT_LIST_FAILED', 'Unable to retrieve appointments'); }
 };
 
-app.get('/Appointment', authenticateToken, requireRoles('admin', 'doctor', 'patient'), async (req, res) => {
-    // Delegates to the shared handler, whose enforced scopes are Patient.Clinic_ID = ?, Doctor.Blockchain_ID = ?, and Patient.Blockchain_ID = ?.
-    return listAppointments(req, res);
-});
 app.get('/appointments', authenticateToken, requireRoles('admin', 'doctor', 'patient'), listAppointments);
 
 app.post('/appointments', authenticateToken, requireRoles('admin'), async (req, res) => {
@@ -1097,7 +699,7 @@ app.post('/appointments', authenticateToken, requireRoles('admin'), async (req, 
         requireAdminClinic(req, rows[0].Patient_Clinic_ID);
         if (rows[0].Doctor_Clinic_ID === null) {
             const assignedDoctors = typeof rows[0].Patient_Doctors === 'string' ? JSON.parse(rows[0].Patient_Doctors || '[]') : (rows[0].Patient_Doctors || []);
-            if (!assignedDoctors.map(String).includes(String(doctorID))) return sendApiError(res, 403, 'APPOINTMENT_DOCTOR_SCOPE_DENIED', 'Legacy doctor must already be assigned to the patient in the admin clinic');
+            if (!assignedDoctors.map(String).includes(String(doctorID))) return sendApiError(res, 403, 'APPOINTMENT_DOCTOR_SCOPE_DENIED', 'Doctor must be assigned to the patient in the admin clinic');
         } else requireAdminClinic(req, rows[0].Doctor_Clinic_ID);
         const result = await query(`INSERT INTO Appointment (Meeting_For, Doctor_ID, Patient_ID, Date, Appointment_Date_Time, Specialty, Status, Notes, Modified_Date)
             VALUES (?, ?, ?, DATE(?), ?, ?, 'scheduled', ?, NOW())`, [meetingFor, rows[0].Doctor_DB_ID, rows[0].Patient_DB_ID, appointmentDateTime, appointmentDateTime, specialty, notes || null]);
@@ -1131,89 +733,9 @@ app.patch('/appointments/:id/cancel', authenticateToken, requireRoles('admin'), 
     } catch (error) { return sendApiError(res, error.statusCode || 500, 'APPOINTMENT_CANCEL_FAILED', error.message); }
 });
 
-// Legacy doctor alias retained for compatibility, but no longer returns global raw rows.
-app.get('/Doctor', authenticateToken, requireRoles('admin', 'doctor'), async (req, res) => {
-    try {
-        const role = normalizeRole(req.user.role);
-        const rows = role === 'admin'
-            ? await query(`${DOCTOR_SELECT} WHERE Doctor.Clinic_ID=? ORDER BY User.Last_Name,User.First_Name`, [req.user.organizationId])
-            : await query(`${DOCTOR_SELECT} WHERE Doctor.Blockchain_ID=? LIMIT 1`, [req.user.blockchainID]);
-        return res.json({ success: true, data: rows.map(normalizeDoctor) });
-    } catch (error) { return sendApiError(res, 500, 'DOCTOR_LIST_FAILED', 'Unable to retrieve doctors'); }
-});
-
 // Route to fetch Lab Results
 app.get('/Lab_Results', authenticateToken, requireRoles('admin', 'doctor'), (req, res) => {
     return sendApiError(res, 501, 'LAB_RESULTS_NOT_IMPLEMENTED', 'Lab results are unavailable until a scoped clinical data source is configured');
-    /* Historical sample data intentionally disabled so demo records cannot be presented as clinical truth.
-    const testData = [
-        {
-            ID: 1,
-            T_Name: 'Hemoglobin Test',
-            Order_ID: 1001,
-            Case_ID: 501,
-            Site_ID: 101,
-            Discipline: 'Hematology',
-            Status: 'Completed',
-            Created_Date: '2024-08-01'
-        },
-        {
-            ID: 2,
-            T_Name: 'Lipid Panel',
-            Order_ID: 1002,
-            Case_ID: 502,
-            Site_ID: 102,
-            Discipline: 'Cardiology',
-            Status: 'In Progress',
-            Created_Date: '2024-09-15'
-        },
-        {
-            ID: 3,
-            T_Name: 'Complete Blood Count',
-            Order_ID: 1003,
-            Case_ID: 503,
-            Site_ID: 103,
-            Discipline: 'Hematology',
-            Status: 'Completed',
-            Created_Date: '2024-07-25'
-        },
-        {
-            ID: 4,
-            T_Name: 'Kidney Function Test',
-            Order_ID: 1004,
-            Case_ID: 504,
-            Site_ID: 104,
-            Discipline: 'Nephrology',
-            Status: 'Pending',
-            Created_Date: '2024-10-01'
-        },
-        {
-            ID: 5,
-            T_Name: 'Liver Function Test',
-            Order_ID: 1005,
-            Case_ID: 505,
-            Site_ID: 105,
-            Discipline: 'Gastroenterology',
-            Status: 'Completed',
-            Created_Date: '2024-06-10'
-        },
-        {
-            ID: 6,
-            T_Name: 'Thyroid Function Test',
-            Order_ID: 1006,
-            Case_ID: 506,
-            Site_ID: 106,
-            Discipline: 'Endocrinology',
-            Status: 'Pending',
-            Created_Date: '2024-07-22'
-        }
-    ];
-
-    // Log the test data
-    console.log('Lab Results fetched (test data):', testData);
-    
-    // Send the test data as a response
-    res.json(testData); */
 });
 
 // Route to fetch all users
@@ -1232,10 +754,6 @@ app.get('/users', authenticateToken, requireRoles('admin'), (req, res) => {
     });
 });
 
-// Start the server
-// app.listen(8080, () => {
-//     console.log("listening on port 8080");
-// }); 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`listening on port ${PORT}`);

@@ -7,11 +7,10 @@ const AppointmentsTable = () => {
     const [appointments, setAppointments] = useState([]);
     const [error, setError] = useState('');
 
-    // Fetch data from the API when the component mounts
     useEffect(() => {
         const fetchAppointments = async () => {
             try {
-                const response = await fetch(databaseUrl('/Appointment'), { headers: authHeaders() }); 
+                const response = await fetch(databaseUrl('/appointments'), { headers: authHeaders() });
                 const payload = await response.json();
                 if (!response.ok) throw new Error(payload?.error?.message || 'Unable to load appointments');
                 setAppointments(payload.data || []);
@@ -23,7 +22,6 @@ const AppointmentsTable = () => {
         fetchAppointments();
     }, []); 
 
-    // Process the fetched appointments and render rows
     const appointmentRows = appointments.map((appointment, index) => {
         return (
             <AppointmentTableRow
