@@ -11,6 +11,24 @@ const route = (pattern) => {
   return match[0];
 };
 
+test('database API defines authorization middleware before protected routes are registered', () => {
+  const definitions = [
+    'const getBearerToken =',
+    'const safeTokenEquals =',
+    'const authenticateToken =',
+    'const requireRoles =',
+    'const authorizeAdminRegistration ='
+  ];
+  const firstProtectedRoute = databaseApi.indexOf("app.post('/register', authorizeAdminRegistration");
+
+  assert.ok(firstProtectedRoute > 0, 'Expected the protected registration route');
+  for (const definition of definitions) {
+    const position = databaseApi.indexOf(definition);
+    assert.ok(position >= 0, `Expected ${definition} to be defined`);
+    assert.ok(position < firstProtectedRoute, `Expected ${definition} before protected routes`);
+  }
+});
+
 test('appointment listing scopes every role from JWT claims', () => {
   const source = route(/const listAppointments = async[\s\S]*?\n\};/);
   assert.match(source, /Patient\.Clinic_ID = \?/);

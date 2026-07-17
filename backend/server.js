@@ -259,6 +259,80 @@ app.post('/login', async (req, res) => {
     });
 });
 
+const getBearerToken = (req) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return null;
+
+    const [scheme, token] = authHeader.split(' ');
+    return /^Bearer$/i.test(scheme) ? token : null;
+};
+
+const safeTokenEquals = (receivedToken, expectedToken) => {
+    const received = Buffer.from(String(receivedToken || ''), 'utf8');
+    const expected = Buffer.from(String(expectedToken || ''), 'utf8');
+
+    if (received.length !== expected.length) return false;
+    return crypto.timingSafeEqual(received, expected);
+};
+
+const authenticateToken = (req, res, next) => {
+    const token = getBearerToken(req);
+
+    if (!token) return sendApiError(res, 401, 'AUTH_REQUIRED', 'Access denied');
+    if (!SECRET_KEY) {
+        return sendApiError(res, 500, 'AUTH_CONFIGURATION_ERROR', 'JWT secret is not configured');
+    }
+
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) return sendApiError(res, 403, 'INVALID_TOKEN', 'Invalid token');
+        req.user = user;
+        next();
+    });
+};
+
+const requireRoles = (...allowedRoles) => {
+    const allowed = allowedRoles.map(normalizeRole);
+
+    return (req, res, next) => {
+        const userRole = normalizeRole(req.user?.role);
+        if (!userRole || !allowed.includes(userRole)) {
+            return sendApiError(res, 403, 'FORBIDDEN', 'Forbidden: insufficient role permissions');
+        }
+        next();
+    };
+};
+
+const authorizeAdminRegistration = (req, res, next) => {
+    const bootstrapToken = req.headers['x-bootstrap-token'];
+
+    if (bootstrapToken) {
+        if (!ADMIN_BOOTSTRAP_TOKEN || !safeTokenEquals(bootstrapToken, ADMIN_BOOTSTRAP_TOKEN)) {
+            return res.status(403).json({ error: 'Invalid admin bootstrap token' });
+        }
+        req.user = { role: 'system', bootstrap: true };
+        return next();
+    }
+
+    const token = getBearerToken(req);
+    if (!token) {
+        return res.status(401).json({ error: 'Admin registration requires an Admin/System token or configured bootstrap token' });
+    }
+    if (!SECRET_KEY) {
+        return res.status(500).json({ error: 'JWT secret is not configured' });
+    }
+
+    try {
+        const user = jwt.verify(token, SECRET_KEY);
+        if (!['admin', 'system'].includes(normalizeRole(user?.role))) {
+            return res.status(403).json({ error: 'Forbidden: admin registration requires Admin/System permissions' });
+        }
+        req.user = user;
+        return next();
+    } catch {
+        return res.status(403).json({ error: 'Invalid token' });
+    }
+};
+
 
 app.post('/register', authorizeAdminRegistration, async (req, res) => {
     const { firstName, lastName, username, contactNumber, password, organizationId } = req.body;
