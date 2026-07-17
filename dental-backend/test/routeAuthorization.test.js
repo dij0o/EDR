@@ -45,3 +45,8 @@ test('canonical API responses use the normalized success/error envelopes', () =>
     assert.match(source, /access denied\|not authorized\|forbidden/,
         'Fabric authorization failures must map to HTTP 403');
 });
+
+test('blockchain API starts its HTTP listener', () => {
+    assert.match(source, /const PORT = process\.env\.PORT \|\| 8081;/);
+    assert.match(source, /app\.listen\(PORT, '0\.0\.0\.0'/);
+});

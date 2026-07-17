@@ -952,3 +952,8 @@ app.post('/notifications/:notificationID/read', authenticateToken, requireRoles(
         return sendSuccess(res, parseBufferJson(result));
     } catch (error) { return sendFabricError(res, error); }
 });
+
+const PORT = process.env.PORT || 8081;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+});
