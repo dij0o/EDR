@@ -175,6 +175,15 @@ app.get('/', (req, res) => {
     return res.json("from backend side");
 });
 
+app.get('/health', (req, res) => {
+    db.query('SELECT 1 AS ready', (error) => {
+        if (error) {
+            return res.status(503).json({ status: 'not-ready', service: 'database-api', database: false });
+        }
+        return res.json({ status: 'ok', service: 'database-api', database: true });
+    });
+});
+
 
 
 app.post('/login', async (req, res) => {

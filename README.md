@@ -219,6 +219,8 @@ ls fabric-samples/bin/
 
 ## 5. Full System Startup — Step by Step
 
+> **Phase 11 application topology:** use [`docs/PHASE11_DEPLOYMENT.md`](docs/PHASE11_DEPLOYMENT.md) for the repeatable all-container application stack and explicit Fabric/mobile exception boundary. The manual component steps below remain useful for debugging but are not the preferred complete application startup path.
+
 > Open a **separate terminal** for each step. Steps must run in order.
 
 ---
