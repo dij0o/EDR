@@ -3,77 +3,97 @@ import { databaseUrl, jsonHeaders } from '../../config/api.js';
 import { getStoredUser } from '../../utils/auth.js';
 
 const empty = {
-    firstName: '', lastName: '', dateOfBirth: '', gender: '', contactNumber: '', email: '', password: '',
-    emiratesID: '', nationality: '', address: '', bloodType: '', medicalHistory: '', allergies: '', medications: '',
-    insuranceProvider: '', policyNumber: '', coverageType: '', clinicID: '', doctors: ''
+  firstName: '', lastName: '', dateOfBirth: '', gender: '', contactNumber: '', email: '', password: '',
+  emiratesID: '', nationality: '', address: '', bloodType: '', medicalHistory: '', allergies: '', medications: '',
+  insuranceProvider: '', policyNumber: '', coverageType: '', clinicID: '', doctors: ''
 };
 
-const NewPatientDialog = ({ onClose, onSaved }) => {
-    const user = getStoredUser();
-    const [form, setForm] = useState({ ...empty, clinicID: user?.organizationId || '' });
-    const [status, setStatus] = useState({ loading: false, error: '' });
-    const firstField = useRef(null);
-    const dialog = useRef(null);
-    const set = (name) => (event) => setForm((value) => ({ ...value, [name]: event.target.value }));
+const toForm = (patient, clinicID) => patient ? {
+  ...empty, ...patient,
+  dateOfBirth: String(patient.dateOfBirth || '').slice(0, 10),
+  password: '',
+  medicalHistory: (patient.medicalHistory || []).join('\n'),
+  allergies: (patient.allergies || []).join('\n'),
+  medications: (patient.medications || []).join('\n'),
+  insuranceProvider: patient.insuranceDetails?.provider || '',
+  policyNumber: patient.insuranceDetails?.policyNumber || '',
+  coverageType: patient.insuranceDetails?.coverageType || '',
+  doctors: (patient.doctors || []).join(', '),
+  clinicID: patient.clinicID || clinicID || ''
+} : { ...empty, clinicID: clinicID || '' };
 
-    useEffect(() => {
-        firstField.current?.focus();
-        const handleDialogKeys = (event) => {
-            if (event.key === 'Escape' && !status.loading) onClose();
-            if (event.key !== 'Tab') return;
-            const controls = [...dialog.current.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled])')];
-            if (!controls.length) return;
-            const first = controls[0], last = controls[controls.length - 1];
-            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-            if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-        };
-        document.addEventListener('keydown', handleDialogKeys);
-        return () => document.removeEventListener('keydown', handleDialogKeys);
-    }, [onClose, status.loading]);
+const NewPatientDialog = ({ onClose, onSaved, patient = null }) => {
+  const user = getStoredUser();
+  const isEditing = Boolean(patient);
+  const [form, setForm] = useState(() => toForm(patient, user?.organizationId));
+  const [status, setStatus] = useState({ loading: false, error: '' });
+  const firstField = useRef(null);
+  const dialog = useRef(null);
+  const set = (name) => (event) => setForm((value) => ({ ...value, [name]: event.target.value }));
 
-    const submit = async (event) => {
-        event.preventDefault(); setStatus({ loading: true, error: '' });
-        const payload = {
-            ...form,
-            clinicID: Number(form.clinicID),
-            medicalHistory: form.medicalHistory.split('\n').filter(Boolean),
-            allergies: form.allergies.split('\n').filter(Boolean),
-            medications: form.medications.split('\n').filter(Boolean),
-            insuranceDetails: { provider: form.insuranceProvider, policyNumber: form.policyNumber, coverageType: form.coverageType },
-            doctors: form.doctors.split(',').map((item) => item.trim()).filter(Boolean)
-        };
-        try {
-            const response = await fetch(databaseUrl('/patients'), { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(payload) });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result?.error?.message || 'Unable to create patient');
-            setForm({ ...empty, clinicID: user?.organizationId || '' });
-            onClose();
-            onSaved?.(result.data);
-        } catch (error) { setStatus({ loading: false, error: error.message }); return; }
-        setStatus({ loading: false, error: '' });
+  useEffect(() => {
+    firstField.current?.focus();
+    const handleKeys = (event) => {
+      if (event.key === 'Escape' && !status.loading) onClose();
+      if (event.key !== 'Tab' || !dialog.current) return;
+      const controls = [...dialog.current.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled])')];
+      if (!controls.length) return;
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
+    document.addEventListener('keydown', handleKeys);
+    return () => document.removeEventListener('keydown', handleKeys);
+  }, [onClose, status.loading]);
 
-    const fields = [
-        ['firstName','First name','text'], ['lastName','Last name','text'], ['dateOfBirth','Date of birth','date'],
-        ['gender','Gender','text'], ['contactNumber','Contact number','tel'], ['email','Email','email'],
-        ['password','Temporary password','password'], ['emiratesID','Emirates ID','text'], ['nationality','Nationality','text'],
-        ['address','Address','text'], ['bloodType','Blood type (A+, O-, etc.)','text'], ['insuranceProvider','Insurance provider','text'],
-        ['policyNumber','Policy number','text'], ['coverageType','Coverage type','text'], ['doctors','Doctor IDs (comma-separated)','text']
-    ];
-    return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !status.loading) onClose(); }}>
-      <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="add-patient-title" className="max-h-[90vh] w-[68em] max-w-[95vw] overflow-y-auto rounded-md bg-white p-8 drop-shadow-xl">
-        <form onSubmit={submit} aria-label="Add patient">
-            <div className="flex justify-between"><h1 id="add-patient-title" className="text-3xl font-bold">Add patient</h1><button type="button" onClick={onClose} disabled={status.loading} aria-label="Close add patient dialog">Close</button></div>
-            <p className="my-3 text-sm text-gray-600">PII and clinical details are stored in MySQL. Fabric stores only a reference and SHA-256 hash.</p>
-            <div className="grid grid-cols-3 gap-4">
-                {fields.map(([name,label,type], index) => <label key={name} className="text-sm">{label}<input ref={index === 0 ? firstField : undefined} required className="block border rounded p-2 w-full" type={type} value={form[name]} onChange={set(name)} /></label>)}
-                {['medicalHistory','allergies','medications'].map((name) => <label key={name} className="text-sm capitalize">{name.replace(/([A-Z])/g,' $1')} (one per line)<textarea required className="block border rounded p-2 w-full" value={form[name]} onChange={set(name)} /></label>)}
-            </div>
-            {status.error && <p role="alert" className="text-red-700 mt-3">{status.error}</p>}
-            <button disabled={status.loading} className="bg-[#000834] text-white px-6 py-3 rounded mt-5">{status.loading ? 'Creating…' : 'Create patient'}</button>
-        </form>
-      </div>
-    </div>;
+  const submit = async (event) => {
+    event.preventDefault();
+    setStatus({ loading: true, error: '' });
+    const payload = {
+      ...form,
+      clinicID: Number(form.clinicID),
+      medicalHistory: form.medicalHistory.split('\n').map((value) => value.trim()).filter(Boolean),
+      allergies: form.allergies.split('\n').map((value) => value.trim()).filter(Boolean),
+      medications: form.medications.split('\n').map((value) => value.trim()).filter(Boolean),
+      insuranceDetails: { provider: form.insuranceProvider, policyNumber: form.policyNumber, coverageType: form.coverageType },
+      doctors: form.doctors.split(',').map((value) => value.trim()).filter(Boolean)
+    };
+    delete payload.insuranceProvider; delete payload.policyNumber; delete payload.coverageType;
+    if (isEditing) delete payload.password;
+    try {
+      const response = await fetch(databaseUrl(isEditing ? `/patients/${encodeURIComponent(patient.patientID)}` : '/patients'), {
+        method: isEditing ? 'PUT' : 'POST', headers: jsonHeaders(), body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result?.error?.message || `Unable to ${isEditing ? 'update' : 'create'} patient`);
+      onSaved?.(result.data);
+      onClose();
+    } catch (error) { setStatus({ loading: false, error: error.message }); }
+  };
+
+  const fields = [
+    ['firstName','First name','text'], ['lastName','Last name','text'], ['dateOfBirth','Date of birth','date'],
+    ['gender','Gender','text'], ['contactNumber','Contact number','tel'], ['email','Email','email'],
+    ...(!isEditing ? [['password','Temporary password','password']] : []),
+    ['emiratesID','Emirates ID','text'], ['nationality','Nationality','text'], ['address','Address','text'],
+    ['bloodType','Blood type','text'], ['insuranceProvider','Insurance provider','text'], ['policyNumber','Policy number','text'],
+    ['coverageType','Coverage type','text'], ['doctors','Doctor IDs (comma-separated)','text']
+  ];
+
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(event) => event.target === event.currentTarget && !status.loading && onClose()}>
+    <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="patient-dialog-title" className="max-h-[90vh] w-[68em] max-w-[95vw] overflow-y-auto rounded-xl bg-white p-8 shadow-2xl">
+      <form onSubmit={submit} aria-label={isEditing ? 'Edit patient' : 'Add patient'}>
+        <div className="flex justify-between gap-4"><h1 id="patient-dialog-title" className="text-3xl font-bold">{isEditing ? 'Edit patient' : 'Add patient'}</h1><button type="button" onClick={onClose} disabled={status.loading} className="rounded-md px-3 py-2 font-semibold hover:bg-gray-100">Close</button></div>
+        <p className="my-3 text-sm text-gray-600">Complete profile details are stored securely in the clinical database.</p>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {fields.map(([name,label,type], index) => <label key={name} className="text-sm font-medium">{label}<input ref={index === 0 ? firstField : undefined} required className="mt-1 block w-full rounded-md border p-2" type={type} value={form[name]} onChange={set(name)} /></label>)}
+          {['medicalHistory','allergies','medications'].map((name) => <label key={name} className="text-sm font-medium capitalize">{name.replace(/([A-Z])/g,' $1')} (one per line)<textarea required className="mt-1 block min-h-24 w-full rounded-md border p-2" value={form[name]} onChange={set(name)} /></label>)}
+        </div>
+        {status.error && <p role="alert" className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-red-800">{status.error}</p>}
+        <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={onClose} disabled={status.loading} className="rounded-md border px-6 py-3 font-semibold">Cancel</button><button disabled={status.loading} className="rounded-md bg-[#000834] px-6 py-3 font-semibold text-white">{status.loading ? 'Saving…' : isEditing ? 'Save changes' : 'Create patient'}</button></div>
+      </form>
+    </div>
+  </div>;
 };
 
 export default NewPatientDialog;
