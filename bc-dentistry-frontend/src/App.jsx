@@ -45,7 +45,7 @@ function App() {
           <Route path="/" element={<Login/>} /> 
           <Route path="/login" element={<Login/>} />
           <Route path="/dashboard" element={<ProtectedRoute roles={['admin','doctor']}><Home/></ProtectedRoute>} />
-          <Route path="/appointments" element={<ProtectedRoute roles={['admin','doctor']}><Appointments/></ProtectedRoute>} />
+          <Route path="/appointments" element={<ProtectedRoute roles={['admin','doctor','patient']}><Appointments/></ProtectedRoute>} />
           <Route path="/patients" element={<ProtectedRoute roles={['admin','doctor']}><Patients/></ProtectedRoute>} />
           <Route path="/patients/:id" element={<ProtectedRoute roles={['admin','doctor']}><Suspense fallback={<div role="status">Loading patient record…</div>}><Patient/></Suspense></ProtectedRoute>} />
           <Route path="/my-record" element={<ProtectedRoute roles={['patient']}><Suspense fallback={<div role="status">Loading patient record…</div>}><PatientSelfRecord/></Suspense></ProtectedRoute>} />

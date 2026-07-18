@@ -32,3 +32,18 @@ test('mobile loads authenticated upcoming and past appointments and groups by sp
   assert.match(mobile, /appointment\.Specialty/);
   assert.doesNotMatch(mobile, /appointmentsData/);
 });
+
+test('patient web appointments are authorized, navigable, grouped, and read-only', () => {
+  const app = read('src/App.jsx');
+  const nav = read('src/assets/Sections/Navbar.jsx');
+  const page = read('src/assets/Pages/Appointments.jsx');
+  const section = read('src/assets/Sections/Appointments/AppointmentsSection.jsx');
+  const ticket = read('src/assets/components/Appointments/AppointmentTicket.jsx');
+  assert.match(app, /roles=\{\['admin','doctor','patient'\]\}/);
+  assert.match(nav, /normalizedRole === 'patient'[\s\S]*Appointments/);
+  assert.match(page, /My Appointments/);
+  assert.match(section, /Upcoming appointments/);
+  assert.match(section, /Past and cancelled appointments/);
+  assert.match(section, /canManage=\{!isPatient/);
+  assert.match(ticket, /canManage && status !== 'cancelled'/);
+});

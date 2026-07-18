@@ -20,7 +20,10 @@ const Navbar = () => {
     }, [location]);
 
     const normalizedRole = userRole?.toLowerCase();
-    const navList = normalizedRole === 'patient' ? [{ title: "My Record", link:'My-Record', icon: Icon3 }] : [
+    const navList = normalizedRole === 'patient' ? [
+        { title: "My Record", link:'My-Record', icon: Icon3 },
+        { title: "Appointments", link:'Appointments', icon: Icon2 },
+    ] : [
         { title: "Dashboard", link:'Dashboard', icon: Icon1 },
         { title: "Appointments", link:'Appointments', icon: Icon2 },
         { title: "Patients", link:'Patients', icon: Icon3 },
