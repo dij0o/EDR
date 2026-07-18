@@ -35,7 +35,7 @@ function App() {
     return () => { window.removeEventListener('edr-session-expired', refreshSession); window.clearInterval(timer); };
   }, []);
   return (
-    <div className="min-h-screen w-full p-3 md:p-5 lg:flex lg:gap-5">
+    <div data-release="2026-07-18-responsive-forms" className="min-h-screen w-full p-3 md:p-5 lg:flex lg:gap-5">
       
       {!isHomePath && <Navbar />}
       <main id="main-content" tabIndex="-1" className="min-w-0 flex-1 rounded-md pt-16 lg:ml-[15.5%] lg:w-[84.5%] lg:pt-0">

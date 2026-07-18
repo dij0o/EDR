@@ -9,6 +9,7 @@ test('web shell provides responsive layout, semantic navigation, and visible foc
   const nav = read('src/assets/Sections/Navbar.jsx');
   const css = read('src/index.css');
   assert.match(app, /<main id="main-content" tabIndex="-1"/);
+  assert.match(app, /data-release="2026-07-18-responsive-forms"/);
   assert.match(app, /lg:ml-\[15\.5%\]/);
   assert.match(nav, /<nav[^>]+aria-label="Primary navigation"/);
   assert.match(nav, /overflow-x-auto/);
