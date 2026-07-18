@@ -76,6 +76,10 @@ test('patient management uses complete themed workflows without browser dialogs'
   assert.match(patientCard, /appointment-options\/doctors/);
   assert.match(patientCard, /title=\{`Delete \$\{fullName\}\?`\}/);
   assert.match(patientDialog, /method: isEditing \? 'PUT' : 'POST'/);
+  assert.match(patientDialog, /appointment-options\/doctors/);
+  assert.match(patientDialog, /type="search" role="combobox"/);
+  assert.match(patientDialog, /aria-multiselectable="true"/);
+  assert.doesNotMatch(patientDialog, /Doctor IDs \(comma-separated\)/);
   assert.match(patientCards, /role === 'doctor' && <RequestPatientCard/);
   for (const field of ['nationality', 'address', 'bloodType', 'medicalHistory', 'allergies', 'medications', 'insuranceProvider']) assert.match(patientDialog, new RegExp(field));
 

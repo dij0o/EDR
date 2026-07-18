@@ -5,7 +5,7 @@ import { getStoredUser } from '../../utils/auth.js';
 const empty = {
   firstName: '', lastName: '', dateOfBirth: '', gender: '', contactNumber: '', email: '', password: '',
   emiratesID: '', nationality: '', address: '', bloodType: '', medicalHistory: '', allergies: '', medications: '',
-  insuranceProvider: '', policyNumber: '', coverageType: '', clinicID: '', doctors: ''
+  insuranceProvider: '', policyNumber: '', coverageType: '', clinicID: '', doctors: []
 };
 
 const toForm = (patient, clinicID) => patient ? {
@@ -18,7 +18,7 @@ const toForm = (patient, clinicID) => patient ? {
   insuranceProvider: patient.insuranceDetails?.provider || '',
   policyNumber: patient.insuranceDetails?.policyNumber || '',
   coverageType: patient.insuranceDetails?.coverageType || '',
-  doctors: (patient.doctors || []).join(', '),
+  doctors: patient.doctors || [],
   clinicID: patient.clinicID || clinicID || ''
 } : { ...empty, clinicID: clinicID || '' };
 
@@ -27,6 +27,9 @@ const NewPatientDialog = ({ onClose, onSaved, patient = null }) => {
   const isEditing = Boolean(patient);
   const [form, setForm] = useState(() => toForm(patient, user?.organizationId));
   const [status, setStatus] = useState({ loading: false, error: '' });
+  const [clinicDoctors, setClinicDoctors] = useState([]);
+  const [doctorQuery, setDoctorQuery] = useState('');
+  const [doctorOptionsError, setDoctorOptionsError] = useState('');
   const firstField = useRef(null);
   const dialog = useRef(null);
   const set = (name) => (event) => setForm((value) => ({ ...value, [name]: event.target.value }));
@@ -46,6 +49,14 @@ const NewPatientDialog = ({ onClose, onSaved, patient = null }) => {
     return () => document.removeEventListener('keydown', handleKeys);
   }, [onClose, status.loading]);
 
+  useEffect(() => {
+    fetch(databaseUrl('/appointment-options/doctors'), { headers: jsonHeaders() }).then(async (response) => {
+      const result = await response.json();
+      if (!response.ok) throw new Error(result?.error?.message || 'Unable to load clinic doctors');
+      setClinicDoctors(result.data || []);
+    }).catch((error) => setDoctorOptionsError(error.message));
+  }, []);
+
   const submit = async (event) => {
     event.preventDefault();
     setStatus({ loading: true, error: '' });
@@ -56,7 +67,7 @@ const NewPatientDialog = ({ onClose, onSaved, patient = null }) => {
       allergies: form.allergies.split('\n').map((value) => value.trim()).filter(Boolean),
       medications: form.medications.split('\n').map((value) => value.trim()).filter(Boolean),
       insuranceDetails: { provider: form.insuranceProvider, policyNumber: form.policyNumber, coverageType: form.coverageType },
-      doctors: form.doctors.split(',').map((value) => value.trim()).filter(Boolean)
+      doctors: form.doctors
     };
     delete payload.insuranceProvider; delete payload.policyNumber; delete payload.coverageType;
     if (isEditing) delete payload.password;
@@ -77,8 +88,10 @@ const NewPatientDialog = ({ onClose, onSaved, patient = null }) => {
     ...(!isEditing ? [['password','Temporary password','password']] : []),
     ['emiratesID','Emirates ID','text'], ['nationality','Nationality','text'], ['address','Address','text'],
     ['bloodType','Blood type','text'], ['insuranceProvider','Insurance provider','text'], ['policyNumber','Policy number','text'],
-    ['coverageType','Coverage type','text'], ['doctors','Doctor IDs (comma-separated)','text']
+    ['coverageType','Coverage type','text']
   ];
+  const filteredDoctors = clinicDoctors.filter((doctor) => `${doctor.firstName} ${doctor.lastName} ${doctor.doctorID} ${doctor.speciality || doctor.specialty || ''}`.toLowerCase().includes(doctorQuery.toLowerCase()));
+  const toggleDoctor = (doctorID) => setForm((value) => ({ ...value, doctors: value.doctors.includes(doctorID) ? value.doctors.filter((id) => id !== doctorID) : [...value.doctors, doctorID] }));
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(event) => event.target === event.currentTarget && !status.loading && onClose()}>
     <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="patient-dialog-title" className="max-h-[90vh] w-[68em] max-w-[95vw] overflow-y-auto rounded-xl bg-white p-8 shadow-2xl">
@@ -87,6 +100,15 @@ const NewPatientDialog = ({ onClose, onSaved, patient = null }) => {
         <p className="my-3 text-sm text-gray-600">Complete profile details are stored securely in the clinical database.</p>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {fields.map(([name,label,type], index) => <label key={name} className="text-sm font-medium">{label}<input ref={index === 0 ? firstField : undefined} required className="mt-1 block w-full rounded-md border p-2" type={type} value={form[name]} onChange={set(name)} /></label>)}
+          <fieldset className="rounded-lg border p-3 md:col-span-2 xl:col-span-3">
+            <legend className="px-1 text-sm font-semibold">Clinic doctors</legend>
+            <label className="text-sm font-medium">Search doctors<input type="search" role="combobox" aria-expanded="true" aria-controls="clinic-doctor-options" placeholder="Search by name, specialty, or doctor ID" value={doctorQuery} onChange={(event) => setDoctorQuery(event.target.value)} className="mt-1 block w-full rounded-md border p-3" /></label>
+            {form.doctors.length > 0 && <div className="mt-3 flex flex-wrap gap-2" aria-label="Selected doctors">{form.doctors.map((doctorID) => { const doctor = clinicDoctors.find((item) => item.doctorID === doctorID); return <button key={doctorID} type="button" onClick={() => toggleDoctor(doctorID)} className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-900" aria-label={`Remove ${doctor?.firstName || doctorID}`}>{doctor ? `${doctor.firstName} ${doctor.lastName}` : doctorID} ×</button>; })}</div>}
+            <div id="clinic-doctor-options" role="listbox" aria-multiselectable="true" className="mt-3 max-h-44 overflow-y-auto rounded-md border bg-white">
+              {filteredDoctors.length ? filteredDoctors.map((doctor) => <label key={doctor.doctorID} className="flex cursor-pointer items-start gap-3 border-b p-3 last:border-b-0 hover:bg-gray-50"><input type="checkbox" checked={form.doctors.includes(doctor.doctorID)} onChange={() => toggleDoctor(doctor.doctorID)} className="mt-1" /><span><strong>{doctor.firstName} {doctor.lastName}</strong><span className="block text-xs text-gray-600">{doctor.speciality || doctor.specialty || 'Specialty not recorded'} · {doctor.doctorID}</span></span></label>) : <p className="p-3 text-sm text-gray-600">No clinic doctors match your search.</p>}
+            </div>
+            {doctorOptionsError && <p role="alert" className="mt-2 text-sm text-red-700">{doctorOptionsError}</p>}
+          </fieldset>
           {['medicalHistory','allergies','medications'].map((name) => <label key={name} className="text-sm font-medium capitalize">{name.replace(/([A-Z])/g,' $1')} (one per line)<textarea required className="mt-1 block min-h-24 w-full rounded-md border p-2" value={form[name]} onChange={set(name)} /></label>)}
         </div>
         {status.error && <p role="alert" className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-red-800">{status.error}</p>}
