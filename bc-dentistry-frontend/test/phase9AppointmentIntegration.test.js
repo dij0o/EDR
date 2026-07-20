@@ -19,9 +19,14 @@ test('web appointment dialog persists create requests and scoped identifiers', (
 
 test('web appointment tickets call persisted update and cancel endpoints', () => {
   const section = read('src/assets/Sections/Appointments/AppointmentsSection.jsx');
+  const actionDialog = read('src/assets/components/ActionDialog.jsx');
   assert.match(section, /`\/appointments\/\$\{id\}\/cancel`/);
   assert.match(section, /method: action === 'cancel' \? 'PATCH' : 'PUT'/);
   assert.match(section, /authHeaders/);
+  assert.match(actionDialog, /const onCloseRef = useRef\(onClose\)/);
+  assert.match(actionDialog, /onCloseRef\.current\?\.\(\)/);
+  assert.match(actionDialog, /\}, \[busy\]\);/);
+  assert.doesNotMatch(actionDialog, /\[busy, onClose\]/);
 });
 
 test('mobile loads authenticated upcoming and past appointments and groups by specialty', () => {

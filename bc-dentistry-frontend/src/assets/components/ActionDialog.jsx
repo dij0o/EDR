@@ -3,11 +3,16 @@ import { useEffect, useRef } from 'react';
 const ActionDialog = ({ title, description, confirmLabel = 'Confirm', danger = false, busy = false, error = '', children, onConfirm, onClose }) => {
   const dialog = useRef(null);
   const closeButton = useRef(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     closeButton.current?.focus();
     const handleKey = (event) => {
-      if (event.key === 'Escape' && !busy) onClose();
+      if (event.key === 'Escape' && !busy) onCloseRef.current?.();
       if (event.key !== 'Tab' || !dialog.current) return;
       const controls = [...dialog.current.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])')];
       if (!controls.length) return;
@@ -17,7 +22,7 @@ const ActionDialog = ({ title, description, confirmLabel = 'Confirm', danger = f
     };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-  }, [busy, onClose]);
+  }, [busy]);
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
     <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="action-dialog-title" className="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl">
