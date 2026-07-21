@@ -20,7 +20,9 @@ const Navbar = () => {
     }, [location]);
 
     const normalizedRole = userRole?.toLowerCase();
-    const navList = normalizedRole === 'patient' ? [
+    const navList = normalizedRole === 'system' ? [
+        { title: "Clinics", link:'Clinics', icon: Icon1 },
+    ] : normalizedRole === 'patient' ? [
         { title: "My Record", link:'My-Record', icon: Icon3 },
         { title: "Appointments", link:'Appointments', icon: Icon2 },
     ] : [
@@ -50,8 +52,8 @@ const Navbar = () => {
                     {renderNavLinks()}
                 </div>
                 <div className="personal ml-auto flex min-w-max items-center gap-2 lg:ml-0 lg:flex-col lg:gap-y-6">
-                    {normalizedRole !== 'patient' && <Link className="w-full" to="/settings"><NavLink icon={Icon6} title={"Settings"} link={"settings"} /></Link>}
-                    {normalizedRole !== 'patient' && <Link className="w-full" to="/info"><NavLink icon={Icon7} title={"Info"} link={"info"} /></Link>}
+                    {['admin','doctor'].includes(normalizedRole) && <Link className="w-full" to="/settings"><NavLink icon={Icon6} title={"Settings"} link={"settings"} /></Link>}
+                    {['admin','doctor'].includes(normalizedRole) && <Link className="w-full" to="/info"><NavLink icon={Icon7} title={"Info"} link={"info"} /></Link>}
                 </div>
             </div>
         </nav>

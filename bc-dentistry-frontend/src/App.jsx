@@ -9,6 +9,8 @@ import LabResults from './assets/Pages/LabResults.jsx';
 import Settings from './assets/Pages/Settings.jsx';
 import Info from './assets/Pages/Info.jsx';
 import Login from './assets/Pages/Login.jsx';
+import Clinics from './assets/Pages/Clinics.jsx';
+import ChangePassword from './assets/Pages/ChangePassword.jsx';
 import Navbar from "./assets/Sections/Navbar.jsx"
 import Topbar from "./assets/Sections/Topbar.jsx"
 import { getStoredUser, getStoredUserRole } from "./assets/utils/auth.js";
@@ -24,7 +26,7 @@ const PatientSelfRecord = () => {
 
 function App() {
   const [, setSessionTick] = useState(0);
-  const homePaths = ["/", "/login", "/unauthorized"]
+  const homePaths = ["/", "/login", "/unauthorized", "/change-password"]
   const location = useLocation();
   const isHomePath = homePaths.includes(location.pathname.toLowerCase());
   const role = getStoredUserRole();
@@ -44,6 +46,8 @@ function App() {
         <Routes>
           <Route path="/" element={<Login/>} /> 
           <Route path="/login" element={<Login/>} />
+          <Route path="/change-password" element={<ProtectedRoute roles={['system','admin','doctor','patient']}><ChangePassword/></ProtectedRoute>} />
+          <Route path="/clinics" element={<ProtectedRoute roles={['system']}><Clinics/></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute roles={['admin','doctor']}><Home/></ProtectedRoute>} />
           <Route path="/appointments" element={<ProtectedRoute roles={['admin','doctor','patient']}><Appointments/></ProtectedRoute>} />
           <Route path="/patients" element={<ProtectedRoute roles={['admin','doctor']}><Patients/></ProtectedRoute>} />
@@ -55,7 +59,7 @@ function App() {
           <Route path="/settings" element={<ProtectedRoute roles={['admin','doctor']}><Settings/></ProtectedRoute>} />
           <Route path="/info" element={<ProtectedRoute roles={['admin','doctor']}><Info/></ProtectedRoute>} />
           <Route path="/unauthorized" element={<div role="alert" className="m-8 rounded-xl border bg-white p-6">You are not authorized to view this page.</div>} />
-          <Route path="*" element={<Navigate to={role === 'patient' ? '/my-record' : role ? '/dashboard' : '/login'} replace />} />
+          <Route path="*" element={<Navigate to={role === 'system' ? '/clinics' : role === 'patient' ? '/my-record' : role ? '/dashboard' : '/login'} replace />} />
         </Routes>
       </main>
     </div>
