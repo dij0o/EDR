@@ -447,16 +447,18 @@ app.post('/clinics', authenticateToken, requireRoles('system'), async (req, res)
         connection = await db.promise().getConnection(); await connection.beginTransaction();
         const [duplicate] = await connection.query('SELECT ID FROM User WHERE Email = ? LIMIT 1', [admin.email]);
         if (duplicate.length) { const error = new Error('Admin email already exists'); error.statusCode = 409; throw error; }
-        const [clinicResult] = await connection.query(`INSERT INTO Organization
-            (Name, Address, Description, Coordinates, Type, IsActive, Created_Date) VALUES (?, ?, ?, ?, ?, 1, NOW())`,
-            [name, address, description || null, coordinates || null, type]);
+        const [lastClinic] = await connection.query('SELECT Organization_ID FROM Organization ORDER BY Organization_ID DESC LIMIT 1 FOR UPDATE');
+        const clinicID = Number(lastClinic[0]?.Organization_ID || 0) + 1;
+        await connection.query(`INSERT INTO Organization
+            (Organization_ID, Name, Address, Description, Coordinates, Type, IsActive, Created_Date) VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
+            [clinicID, name, address, description || null, coordinates || null, type]);
         const passwordHash = await bcrypt.hash(admin.password, 10);
         const [userResult] = await connection.query(`INSERT INTO User
             (First_Name, Last_Name, Password, Email, Contact_Number, Role_ID, Created_Date, IsActive, Must_Change_Password)
             VALUES (?, ?, ?, ?, ?, ?, NOW(), 1, 1)`, [admin.firstName, admin.lastName, passwordHash, admin.email, admin.contactNumber, ADMIN_ROLE_ID]);
-        await connection.query('INSERT INTO Admin (Organization_ID, User_ID) VALUES (?, ?)', [clinicResult.insertId, userResult.insertId]);
+        await connection.query('INSERT INTO Admin (Organization_ID, User_ID) VALUES (?, ?)', [clinicID, userResult.insertId]);
         await connection.commit();
-        return res.status(201).json({ success: true, data: { clinicID: clinicResult.insertId, primaryAdminID: userResult.insertId } });
+        return res.status(201).json({ success: true, data: { clinicID, primaryAdminID: userResult.insertId } });
     } catch (error) {
         if (connection) await connection.rollback(); console.error(error);
         return sendApiError(res, error.statusCode || 500, 'CLINIC_CREATE_FAILED', error.message || 'Unable to create clinic');

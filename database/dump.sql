@@ -804,7 +804,7 @@ DROP TABLE IF EXISTS `Organization`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `Organization` (
-  `Organization_ID` int NOT NULL AUTO_INCREMENT,
+  `Organization_ID` int NOT NULL,
   `Name` varchar(255) DEFAULT NULL,
   `Address` text,
   `Description` text,

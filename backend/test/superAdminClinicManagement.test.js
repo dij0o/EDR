@@ -10,8 +10,10 @@ test('clinic creation is system-only and atomically requires one admin', () => {
   assert.match(server, /app\.post\('\/clinics', authenticateToken, requireRoles\('system'\)/);
   assert.match(server, /admin\?\.firstName/);
   assert.match(server, /INSERT INTO Admin \(Organization_ID, User_ID\)/);
+  assert.match(server, /ORDER BY Organization_ID DESC LIMIT 1 FOR UPDATE/);
   assert.match(server, /await connection\.beginTransaction\(\)/);
   assert.doesNotMatch(migration, /DROP PRIMARY KEY/);
+  assert.doesNotMatch(migration, /AUTO_INCREMENT/);
 });
 
 test('first-login password change is enforced', () => {
