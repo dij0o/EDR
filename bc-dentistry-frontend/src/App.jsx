@@ -15,6 +15,7 @@ import Navbar from "./assets/Sections/Navbar.jsx"
 import Topbar from "./assets/Sections/Topbar.jsx"
 import { getStoredUser, getStoredUserRole } from "./assets/utils/auth.js";
 import ProtectedRoute from "./assets/components/ProtectedRoute.jsx";
+import { syncWebPushIfPermitted } from "./config/firebaseMessaging.js";
 
 const Patient = lazy(() => import('./assets/Pages/Patient.jsx'));
 
@@ -36,6 +37,20 @@ function App() {
     const timer = window.setInterval(refreshSession, 30000);
     return () => { window.removeEventListener('edr-session-expired', refreshSession); window.clearInterval(timer); };
   }, []);
+  useEffect(() => {
+    if (!role) return;
+    const synchronizePush = () => {
+      syncWebPushIfPermitted().catch((error) => console.warn("Unable to synchronize browser push registration", error));
+    };
+    const synchronizeWhenVisible = () => { if (document.visibilityState === "visible") synchronizePush(); };
+    synchronizePush();
+    const timer = window.setInterval(synchronizePush, 60 * 60 * 1000);
+    document.addEventListener("visibilitychange", synchronizeWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", synchronizeWhenVisible);
+    };
+  }, [role, location.pathname]);
   return (
     <div data-release="2026-07-18-responsive-forms" className="min-h-screen w-full p-3 md:p-5 lg:flex lg:gap-5">
       

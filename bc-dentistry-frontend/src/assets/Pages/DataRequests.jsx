@@ -3,6 +3,7 @@ import DataRequest from "../Sections/DataRequests/DataRequest.jsx";
 import DataRequestsOrders from "../Sections/DataRequests/DataRequestsOrders.jsx";
 import { authHeaders, blockchainUrl } from "../config/api.js";
 import { getStoredUser } from "../utils/auth.js";
+import { useSearchParams } from "react-router-dom";
 
 const formatRequest = (request) => ({
     requestId: request.requestID,
@@ -26,6 +27,8 @@ const DataRequests = () => {
     const [auditPatientID, setAuditPatientID] = useState("");
     const [auditLogs, setAuditLogs] = useState([]);
     const [auditError, setAuditError] = useState("");
+    const [searchParams] = useSearchParams();
+    const focusedRequestID = searchParams.get("requestId");
     const user = getStoredUser();
     const adminClinicID = user?.organizationId;
 
@@ -51,6 +54,11 @@ const DataRequests = () => {
 
         fetchAllRequests();
     }, [adminClinicID, refreshKey]);
+
+    useEffect(() => {
+        if (!focusedRequestID || allRequests.length === 0) return;
+        document.getElementById(`request-${focusedRequestID}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, [allRequests, focusedRequestID]);
 
     const fetchAuditLogs = async () => {
         setAuditError("");
@@ -94,6 +102,7 @@ const DataRequests = () => {
                                 requester={request.requester}
                                 status={request.status}
                                 data={request.data}
+                                highlighted={request.requestId === focusedRequestID}
                             />
                         )) : <p className="text-gray-600 text-sm">No data sharing requests found.</p>}
                     </div>

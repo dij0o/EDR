@@ -3,7 +3,7 @@ import DataRequestDescription from "../../components/DataRequests/DataRequestDes
 import DataRequestHeader from "../../components/DataRequests/DataRequestHeader";
 import DataRequestType from "../../components/DataRequests/DataRequestType";
 
-const DataRequest = ({ id, type, fileType, dataType, description, requester, status, data }) => {
+const DataRequest = ({ id, type, fileType, dataType, description, requester, status, data, highlighted = false }) => {
     const requestID = String(id || '');
     // Truncate long IDs (show first 6 and last 6 characters)
     const truncatedID = requestID.length > 12 ? `${requestID.slice(0, 6)}...${requestID.slice(-6)}` : requestID;
@@ -17,7 +17,7 @@ const DataRequest = ({ id, type, fileType, dataType, description, requester, sta
     };
 
     return (
-        <div className="DataRequest flex flex-col gap-y-2 justify-between bg-white py-3 px-4 rounded-md border">
+        <div id={`request-${requestID}`} className={`DataRequest flex flex-col gap-y-2 justify-between bg-white py-3 px-4 rounded-md border ${highlighted ? "ring-2 ring-blue-600 ring-offset-2" : ""}`}>
             {/* Request Type */}
             <DataRequestType Type={type} />
 

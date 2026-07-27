@@ -1328,7 +1328,7 @@ class DentalRecordSharing extends Contract {
         request.adminApprovedAt = approvedAt;
     
         await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
-        await this._putNotification(ctx, {
+        const notification = await this._putNotification(ctx, {
             notificationID: `NOTIFICATION:${request.requestID}:PATIENT_CONSENT`,
             recipientRole: 'patient',
             recipientActorID: request.patientID,
@@ -1346,7 +1346,7 @@ class DentalRecordSharing extends Contract {
             createdAt: approvedAt,
         });
     
-        return { success: true, message: `Request ${requestID} approved by Admin from Clinic ${adminClinicID}.` };
+        return { success: true, message: `Request ${requestID} approved by Admin from Clinic ${adminClinicID}.`, notification };
     }
 
     //Admin gets all request related to clinic
@@ -1427,7 +1427,7 @@ class DentalRecordSharing extends Contract {
         // Store the updated request and patient data on the ledger
         await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
         await ctx.stub.putState(patient.patientID, Buffer.from(JSON.stringify(patient)));
-        await this._putNotification(ctx, {
+        const notification = await this._putNotification(ctx, {
             notificationID: `NOTIFICATION:${request.requestID}:DOCTOR_CONSENT_GRANTED`,
             recipientRole: 'doctor',
             recipientActorID: request.doctorID,
@@ -1443,7 +1443,7 @@ class DentalRecordSharing extends Contract {
             createdAt: consentedAt,
         });
 
-        return { success: true, message: `Patient ${patientID} granted consent for Doctor ${request.doctorID}.` };
+        return { success: true, message: `Patient ${patientID} granted consent for Doctor ${request.doctorID}.`, notification };
     }
 
 // Get Patient Data for the doctor if authorized
@@ -1592,7 +1592,7 @@ class DentalRecordSharing extends Contract {
             request.rejectedAt = rejectedAt;
     
             await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
-            await this._putNotification(ctx, {
+            const notification = await this._putNotification(ctx, {
                 notificationID: `NOTIFICATION:${request.requestID}:DOCTOR_REJECTED`,
                 recipientRole: 'doctor',
                 recipientActorID: request.doctorID,
@@ -1608,7 +1608,7 @@ class DentalRecordSharing extends Contract {
                 },
                 createdAt: rejectedAt,
             });
-            return { success: true, message: `Request ${requestID} was rejected by ${actorID}.` };
+            return { success: true, message: `Request ${requestID} was rejected by ${actorID}.`, notification };
         } else {
             throw new Error(`Request ${requestID} cannot be rejected at this stage.`);
         }
@@ -1647,7 +1647,7 @@ class DentalRecordSharing extends Contract {
 
         await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
         await ctx.stub.putState(patient.patientID, Buffer.from(JSON.stringify(patient)));
-        await this._putNotification(ctx, {
+        const notification = await this._putNotification(ctx, {
             notificationID: `NOTIFICATION:${request.requestID}:DOCTOR_CONSENT_REVOKED`,
             recipientRole: 'doctor',
             recipientActorID: request.doctorID,
@@ -1663,7 +1663,7 @@ class DentalRecordSharing extends Contract {
             createdAt: revokedAt,
         });
 
-        return { success: true, message: `Patient ${patientID} revoked consent for Doctor ${request.doctorID}.` };
+        return { success: true, message: `Patient ${patientID} revoked consent for Doctor ${request.doctorID}.`, notification };
     }
     
     async LogAccess(ctx, doctorID, patientID) {

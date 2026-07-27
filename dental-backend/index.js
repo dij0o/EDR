@@ -10,6 +10,15 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { fabricIdentityForUser } = require('./fabricIdentity');
 const { sha256File, verifyFileIntegrity } = require('./radiographicIntegrity');
+const {
+    pushStatus,
+    registerPushSubscription,
+    unregisterPushSubscription,
+    listPushSubscriptions,
+    removePushSubscription,
+    pruneStaleSubscriptions,
+    sendPushNotification,
+} = require('./pushNotifications');
 
 require('dotenv').config();
 
@@ -321,6 +330,61 @@ const notificationTargetFromUser = (user) => {
     return { role: normalizeRole(user.role), id: user.blockchainID || user.organizationId || user.id };
 };
 
+const notificationDeepLink = (notification) => {
+    const requestID = notification.relatedRequestID || notification.payload?.requestID;
+    const query = requestID ? `?requestId=${encodeURIComponent(requestID)}` : '';
+    if (notification.type === 'ACCESS_REQUEST_PENDING_ADMIN') return `/datarequests${query}`;
+    if (notification.recipientRole === 'doctor' && notification.payload?.patientID) {
+        return `/patients/${encodeURIComponent(notification.payload.patientID)}${query}`;
+    }
+    if (notification.recipientRole === 'patient') return `/my-record${query}`;
+    return '/dashboard';
+};
+
+const pushTitleForType = {
+    ACCESS_REQUEST_PENDING_ADMIN: 'New data access request',
+    ACCESS_REQUEST_PENDING_PATIENT: 'Your consent is required',
+    ACCESS_REQUEST_CONSENT_GRANTED: 'Patient consent granted',
+    ACCESS_REQUEST_REJECTED: 'Data access request rejected',
+    ACCESS_REQUEST_CONSENT_REVOKED: 'Patient consent revoked',
+};
+
+const pushBodyForType = {
+    ACCESS_REQUEST_PENDING_ADMIN: 'Open EDR to review the new request.',
+    ACCESS_REQUEST_PENDING_PATIENT: 'Open EDR to review and respond.',
+    ACCESS_REQUEST_CONSENT_GRANTED: 'Open EDR to view the updated request.',
+    ACCESS_REQUEST_REJECTED: 'Open EDR to view the updated request.',
+    ACCESS_REQUEST_CONSENT_REVOKED: 'Open EDR to view the updated request.',
+};
+
+const dispatchNotificationPush = async (notification) => {
+    if (!notification?.recipientRole) return;
+    const recipientID = notification.recipientRole === 'admin'
+        ? notification.recipientClinicID
+        : notification.recipientActorID;
+    const deepLink = notificationDeepLink(notification);
+    try {
+        const delivery = await sendPushNotification({
+            role: notification.recipientRole,
+            recipientID,
+            title: pushTitleForType[notification.type] || 'EDR notification',
+            // Avoid exposing patient identifiers or clinical details on a locked device.
+            body: pushBodyForType[notification.type] || 'Open EDR to view this notification.',
+            data: {
+                notificationID: notification.notificationID,
+                notificationType: notification.type,
+                requestID: notification.relatedRequestID || notification.payload?.requestID,
+                deepLink,
+            },
+        });
+        console.info('Push notification delivery', { type: notification.type, recipientID, ...delivery });
+    } catch (error) {
+        // The Fabric transaction is authoritative. Push delivery is best-effort and must not
+        // turn a committed clinical workflow into an HTTP failure.
+        console.error(`Push notification delivery failed: ${error.message}`);
+    }
+};
+
 const readPatientHandler = async (req, res) => {
     try {
         const patientID = req.params.id || req.params.patientID;
@@ -343,7 +407,17 @@ const requestAccessHandler = async (req, res) => {
             String(req.body.purpose),
             JSON.stringify(accessRequestDetails(req.body))
         ));
-        return sendSuccess(res, { requestID: result.toString() }, 201);
+        const requestID = result.toString();
+        await dispatchNotificationPush({
+            notificationID: `NOTIFICATION:${requestID}:ADMIN_REVIEW`,
+            recipientRole: 'admin',
+            recipientClinicID: req.body.dataOriginClinicID,
+            type: 'ACCESS_REQUEST_PENDING_ADMIN',
+            relatedRequestID: requestID,
+            message: `A doctor requested ${req.body.dataType} for patient ${req.body.patientID}.`,
+            payload: { requestID, patientID: req.body.patientID, doctorID: req.body.doctorID },
+        });
+        return sendSuccess(res, { requestID }, 201);
     } catch (error) {
         return sendFabricError(res, error);
     }
@@ -355,7 +429,9 @@ const grantConsentHandler = async (req, res) => {
         const result = await withContract(req, (contract) => contract.submitTransaction(
             'ProvideConsent', String(req.body.patientID), String(req.body.requestID)
         ));
-        return sendSuccess(res, parseBufferJson(result));
+        const response = parseBufferJson(result);
+        await dispatchNotificationPush(response.notification);
+        return sendSuccess(res, response);
     } catch (error) {
         return sendFabricError(res, error);
     }
@@ -594,7 +670,9 @@ app.post('/admin/rejectRequest', authenticateToken, requireRoles('admin'), requi
     try {
         requireFields(req.body, ['adminID', 'adminClinicID', 'requestID', 'rejectionReason']);
         const result = await withContract(req, (contract) => contract.submitTransaction('RejectRequest', String(req.body.adminID), String(req.body.requestID), String(req.body.rejectionReason)));
-        return sendSuccess(res, parseBufferJson(result));
+        const response = parseBufferJson(result);
+        await dispatchNotificationPush(response.notification);
+        return sendSuccess(res, response);
     } catch (error) { return sendFabricError(res, error); }
 });
 
@@ -602,7 +680,9 @@ app.post('/patient/rejectRequest', authenticateToken, requireRoles('patient'), r
     try {
         requireFields(req.body, ['patientID', 'requestID', 'rejectionReason']);
         const result = await withContract(req, (contract) => contract.submitTransaction('RejectRequest', String(req.body.patientID), String(req.body.requestID), String(req.body.rejectionReason)));
-        return sendSuccess(res, parseBufferJson(result));
+        const response = parseBufferJson(result);
+        await dispatchNotificationPush(response.notification);
+        return sendSuccess(res, response);
     } catch (error) { return sendFabricError(res, error); }
 });
 
@@ -868,8 +948,9 @@ app.post('/approveRequest', authenticateToken, requireRoles('admin'), requireAdm
         );
 
         console.log("Approval Response:", result.toString());
-
-        res.status(200).json(JSON.parse(result.toString()));
+        const response = JSON.parse(result.toString());
+        await dispatchNotificationPush(response.notification);
+        res.status(200).json(response);
         await gateway.disconnect();
     } catch (error) {
         console.error(`Failed to approve request: ${error}`);
@@ -937,7 +1018,9 @@ app.post('/patient/revokeConsent', authenticateToken, requireRoles('patient'), r
             String(req.body.requestID),
             String(req.body.revocationReason || 'Patient revoked consent')
         ));
-        return sendSuccess(res, parseBufferJson(result));
+        const response = parseBufferJson(result);
+        await dispatchNotificationPush(response.notification);
+        return sendSuccess(res, response);
     } catch (error) { return sendFabricError(res, error); }
 });
 
@@ -963,6 +1046,78 @@ app.post('/notifications/:notificationID/read', authenticateToken, requireRoles(
         return sendSuccess(res, parseBufferJson(result));
     } catch (error) { return sendFabricError(res, error); }
 });
+
+app.get('/push/config', authenticateToken, requireRoles('admin', 'doctor', 'patient'), (req, res) => {
+    return sendSuccess(res, { ...pushStatus(), staleDays: Number(process.env.PUSH_TOKEN_STALE_DAYS || 60) });
+});
+
+app.get('/push/subscriptions', authenticateToken, requireRoles('admin', 'doctor', 'patient'), async (req, res) => {
+    try {
+        const target = notificationTargetFromUser(req.user);
+        if (!target.id) return sendApiError(res, 403, 'NOTIFICATION_IDENTITY_REQUIRED', 'Authenticated user is missing a notification identity');
+        return sendSuccess(res, await listPushSubscriptions({ role: target.role, recipientID: target.id }));
+    } catch (error) {
+        console.error(`Push subscription listing failed: ${error.message}`);
+        return sendApiError(res, 503, 'PUSH_SUBSCRIPTION_UNAVAILABLE', 'Push subscription storage is unavailable');
+    }
+});
+
+app.post('/push/subscriptions', authenticateToken, requireRoles('admin', 'doctor', 'patient'), async (req, res) => {
+    try {
+        requireFields(req.body, ['platform', 'token']);
+        const target = notificationTargetFromUser(req.user);
+        if (!target.id) return sendApiError(res, 403, 'NOTIFICATION_IDENTITY_REQUIRED', 'Authenticated user is missing a notification identity');
+        const subscriptionID = await registerPushSubscription({
+            role: target.role,
+            recipientID: target.id,
+            platform: req.body.platform,
+            token: req.body.token,
+            deviceLabel: req.body.deviceLabel,
+        });
+        return sendSuccess(res, { registered: true, subscriptionID }, 201);
+    } catch (error) {
+        console.error(`Push subscription registration failed: ${error.message}`);
+        return sendApiError(res, 503, 'PUSH_SUBSCRIPTION_UNAVAILABLE', 'Push subscription storage is unavailable');
+    }
+});
+
+app.delete('/push/subscriptions', authenticateToken, requireRoles('admin', 'doctor', 'patient'), async (req, res) => {
+    try {
+        requireFields(req.body, ['token']);
+        const target = notificationTargetFromUser(req.user);
+        if (!target.id) return sendApiError(res, 403, 'NOTIFICATION_IDENTITY_REQUIRED', 'Authenticated user is missing a notification identity');
+        await unregisterPushSubscription({ role: target.role, recipientID: target.id, token: req.body.token });
+        return sendSuccess(res, { unregistered: true });
+    } catch (error) {
+        console.error(`Push subscription removal failed: ${error.message}`);
+        return sendApiError(res, 503, 'PUSH_SUBSCRIPTION_UNAVAILABLE', 'Push subscription storage is unavailable');
+    }
+});
+
+app.delete('/push/subscriptions/:subscriptionID', authenticateToken, requireRoles('admin', 'doctor', 'patient'), async (req, res) => {
+    try {
+        const target = notificationTargetFromUser(req.user);
+        if (!target.id) return sendApiError(res, 403, 'NOTIFICATION_IDENTITY_REQUIRED', 'Authenticated user is missing a notification identity');
+        const removed = await removePushSubscription({
+            role: target.role,
+            recipientID: target.id,
+            subscriptionID: req.params.subscriptionID,
+        });
+        if (!removed) return sendApiError(res, 404, 'PUSH_SUBSCRIPTION_NOT_FOUND', 'Push subscription was not found');
+        return sendSuccess(res, { unregistered: true });
+    } catch (error) {
+        console.error(`Push subscription removal failed: ${error.message}`);
+        return sendApiError(res, 503, 'PUSH_SUBSCRIPTION_UNAVAILABLE', 'Push subscription storage is unavailable');
+    }
+});
+
+const pushPruneInterval = setInterval(() => {
+    pruneStaleSubscriptions().then((count) => {
+        if (count) console.info(`Deactivated ${count} stale push subscription(s)`);
+    }).catch((error) => console.error(`Push subscription pruning failed: ${error.message}`));
+}, 24 * 60 * 60 * 1000);
+pushPruneInterval.unref();
+pruneStaleSubscriptions().catch((error) => console.warn(`Initial push subscription pruning skipped: ${error.message}`));
 
 const PORT = process.env.PORT || 8081;
 app.listen(PORT, '0.0.0.0', () => {

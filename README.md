@@ -902,3 +902,40 @@ The Blockchain API on port `8081` exposes the SRS routes below. All require `Aut
 | `POST /patient/rejectRequest` | Patient (self) |
 
 Successful responses use `{ "success": true, "data": ... }`; errors use `{ "success": false, "error": { "code": "...", "message": "..." } }`.
+## Web And Shared Push Notifications
+
+The Blockchain API persists browser and mobile push tokens in the off-chain
+`Push_Subscription` table and uses Firebase Cloud Messaging for delivery.
+Tokens are registered against the authenticated Fabric recipient identity; API
+clients cannot select another user's role or actor ID.
+
+Configure the values documented in `.env.compose.example` before building the
+frontend or starting Compose:
+
+- `FIREBASE_SERVICE_ACCOUNT_BASE64`: complete Firebase service-account JSON,
+  base64 encoded as one line. Keep this server-side and out of Git.
+- `FIREBASE_PROJECT_ID`: Firebase project used by the Admin SDK.
+- `WEB_APP_URL`: public HTTPS origin used for browser notification links.
+- `VITE_FIREBASE_*`: public Firebase web-app settings and VAPID public key.
+
+The web application registers its FCM token through
+`POST /push/subscriptions`. Native clients can use the same authenticated route
+with `platform` set to `android` or `ios`. Revoked or unregistered FCM tokens
+are automatically disabled after Firebase reports them invalid.
+
+After the user grants browser permission once, the web application
+automatically re-synchronizes the token after account changes and at least once
+per active day. Explicit logout unregisters that browser from the signed-in
+account. Users can review and revoke their own active notification devices from
+the notification panel. The API also deactivates registrations that have not
+been synchronized within `PUSH_TOKEN_STALE_DAYS` (60 days by default).
+
+Notification navigation uses these event-aware destinations:
+
+- admin access review: `/datarequests?requestId=<fabric-request-id>`;
+- doctor consent/rejection/revocation: `/patients/<patient-id>?requestId=<fabric-request-id>`;
+- patient notification: `/my-record?requestId=<fabric-request-id>`.
+
+Firebase browser push requires HTTPS outside localhost. After changing any
+`VITE_FIREBASE_*` value, rebuild the web image because Vite embeds those public
+values at build time.

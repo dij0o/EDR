@@ -19,8 +19,9 @@ test('web shell provides responsive layout, semantic navigation, and visible foc
 
 test('notification control exposes its accessible name and state', () => {
   const notifications = read('src/assets/components/Notifications.jsx');
-  assert.match(notifications, /aria-label=\{`\$\{unread\} unread notifications/);
-  assert.match(notifications, /disabled=\{!unread\}/);
+  assert.match(notifications, /aria-label=\{`\$\{unread\} unread notifications`\}/);
+  assert.match(notifications, /aria-expanded=\{open\}/);
+  assert.match(notifications, /aria-controls="notification-panel"/);
   assert.match(notifications, /aria-live="polite"/);
 });
 
