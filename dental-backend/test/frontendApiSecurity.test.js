@@ -14,14 +14,16 @@ const route = (pattern) => {
 test('database API defines authorization middleware before protected routes are registered', () => {
   const definitions = [
     'const getBearerToken =',
-    'const safeTokenEquals =',
     'const authenticateToken =',
-    'const requireRoles =',
-    'const authorizeAdminRegistration ='
+    'const requireRoles ='
   ];
-  const firstProtectedRoute = databaseApi.indexOf("app.post('/register', authorizeAdminRegistration");
+  const protectedRegistrationRoute = "app.post('/register', authenticateToken, requireRoles('system')";
+  const firstProtectedRoute = databaseApi.indexOf(protectedRegistrationRoute);
 
-  assert.ok(firstProtectedRoute > 0, 'Expected the protected registration route');
+  assert.ok(
+    firstProtectedRoute > 0,
+    'Expected registration to require an authenticated system user'
+  );
   for (const definition of definitions) {
     const position = databaseApi.indexOf(definition);
     assert.ok(position >= 0, `Expected ${definition} to be defined`);
