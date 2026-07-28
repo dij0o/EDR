@@ -1,6 +1,5 @@
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
-import { viteCommonjs } from "@originjs/vite-plugin-commonjs"
 import { fileURLToPath } from "node:url"
 
 export default defineConfig({
@@ -10,8 +9,6 @@ export default defineConfig({
   },
   plugins: [
     react(),
-    // for dicom-parser
-    viteCommonjs(),
   ],
   // seems like only required in dev mode
   optimizeDeps: {

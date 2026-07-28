@@ -20,24 +20,29 @@
     "@mui/material": "^5.16.1",
     "@mui/x-charts": "^7.10.0",
     "@mui/x-date-pickers": "^7.10.0",
-    "@originjs/vite-plugin-commonjs": "^1.0.3",
-    "axios": "^1.7.9",
+    "axios": "1.18.1",
     "dayjs": "^1.11.11",
     "dicomweb-client": "^0.10.4",
     "firebase": "^12.2.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.24.1",
+    "react-router-dom": "6.30.4",
     "react-select": "^5.8.2"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
+    "@vitejs/plugin-react": "4.7.0",
     "eslint": "^8.57.0",
     "eslint-plugin-react": "^7.34.2",
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.7",
-    "vite": "^5.3.1"
+    "vite": "6.4.3"
+  },
+  "overrides": {
+    "@babel/runtime": "7.28.4",
+    "brace-expansion": "5.0.8",
+    "js-yaml": "3.15.0",
+    "uuid": "11.1.1"
   }
 }
