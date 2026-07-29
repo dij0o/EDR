@@ -1,9 +1,11 @@
-import { SafeAreaView, View, Text } from 'react-native'
+import { SafeAreaView, View, Text, TouchableOpacity } from 'react-native'
+import { useRouter } from 'expo-router'
 import { Brief, Information, PageHeader } from '../../components'
 import { useUser } from '../../Context/UserContext'
 
 const Settings = () => {
-  const { user } = useUser()
+  const { user, logout } = useUser()
+  const router = useRouter()
 
   return (
     <SafeAreaView accessibilityLabel="Patient account information">
@@ -19,6 +21,13 @@ const Settings = () => {
                 id={user.emiratesID || user.blockchainID || 'Not available'}
               />
               <Information data={user} />
+              <TouchableOpacity
+                accessibilityRole="button"
+                className="rounded-xl bg-red-700 p-4"
+                onPress={async () => { await logout(); router.replace('/sign-in') }}
+              >
+                <Text className="text-center font-semibold text-white">Log out</Text>
+              </TouchableOpacity>
             </>
           )}
         </View>

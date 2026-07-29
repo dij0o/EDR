@@ -11,11 +11,13 @@ import Info from './assets/Pages/Info.jsx';
 import Login from './assets/Pages/Login.jsx';
 import Clinics from './assets/Pages/Clinics.jsx';
 import ChangePassword from './assets/Pages/ChangePassword.jsx';
+import Sessions from './assets/Pages/Sessions.jsx';
 import Navbar from "./assets/Sections/Navbar.jsx"
 import Topbar from "./assets/Sections/Topbar.jsx"
 import { getStoredUser, getStoredUserRole } from "./assets/utils/auth.js";
 import ProtectedRoute from "./assets/components/ProtectedRoute.jsx";
 import { syncWebPushIfPermitted } from "./config/firebaseMessaging.js";
+import { loadCurrentSession, refreshWebSession } from "./assets/config/api.js";
 
 const Patient = lazy(() => import('./assets/Pages/Patient.jsx'));
 
@@ -36,6 +38,13 @@ function App() {
     window.addEventListener('edr-session-expired', refreshSession);
     const timer = window.setInterval(refreshSession, 30000);
     return () => { window.removeEventListener('edr-session-expired', refreshSession); window.clearInterval(timer); };
+  }, []);
+  useEffect(() => {
+    loadCurrentSession().catch(() => {});
+    const refreshTimer = window.setInterval(() => {
+      if (getStoredUser()) refreshWebSession().catch(() => setSessionTick((value) => value + 1));
+    }, 8 * 60 * 1000);
+    return () => window.clearInterval(refreshTimer);
   }, []);
   useEffect(() => {
     if (!role) return;
@@ -62,6 +71,7 @@ function App() {
           <Route path="/" element={<Login/>} /> 
           <Route path="/login" element={<Login/>} />
           <Route path="/change-password" element={<ProtectedRoute roles={['system','admin','doctor','patient']}><ChangePassword/></ProtectedRoute>} />
+          <Route path="/sessions" element={<ProtectedRoute roles={['system','admin','doctor','patient']}><Sessions/></ProtectedRoute>} />
           <Route path="/clinics" element={<ProtectedRoute roles={['system']}><Clinics/></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute roles={['admin','doctor']}><Home/></ProtectedRoute>} />
           <Route path="/appointments" element={<ProtectedRoute roles={['admin','doctor','patient']}><Appointments/></ProtectedRoute>} />

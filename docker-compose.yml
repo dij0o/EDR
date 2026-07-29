@@ -31,8 +31,14 @@ services:
       mysql:
         condition: service_healthy
     environment:
+      NODE_ENV: production
       PORT: 8081
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:?set JWT_PUBLIC_KEY_BASE64 in .env}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-RS256}
+      JWT_ISSUER: ${JWT_ISSUER:-bc-dentistry-auth}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-bc-dentistry-api}
+      REFRESH_TOKEN_PEPPER: ${REFRESH_TOKEN_PEPPER:?set REFRESH_TOKEN_PEPPER in .env}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
       FABRIC_CHANNEL: ${FABRIC_CHANNEL:-mychannel}
       FABRIC_CHAINCODE: ${FABRIC_CHAINCODE:-basic}
@@ -82,6 +88,7 @@ services:
       blockchain-api:
         condition: service_healthy
     environment:
+      NODE_ENV: production
       PORT: 8080
       DB_HOST: mysql
       DB_PORT: 3306
@@ -89,7 +96,20 @@ services:
       DB_USER: ${DB_USER:-root}
       DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      JWT_PRIVATE_KEY_BASE64: ${JWT_PRIVATE_KEY_BASE64:?set JWT_PRIVATE_KEY_BASE64 in .env}
+      JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:?set JWT_PUBLIC_KEY_BASE64 in .env}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-RS256}
+      JWT_ACTIVE_KID: ${JWT_ACTIVE_KID:-primary}
+      JWT_ISSUER: ${JWT_ISSUER:-bc-dentistry-auth}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-bc-dentistry-api}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-10m}
+      WEB_SESSION_IDLE_TTL: ${WEB_SESSION_IDLE_TTL:-30m}
+      WEB_SESSION_ABSOLUTE_TTL: ${WEB_SESSION_ABSOLUTE_TTL:-8h}
+      MOBILE_SESSION_IDLE_TTL: ${MOBILE_SESSION_IDLE_TTL:-7d}
+      MOBILE_SESSION_ABSOLUTE_TTL: ${MOBILE_SESSION_ABSOLUTE_TTL:-30d}
+      SESSION_RETENTION_DAYS: ${SESSION_RETENTION_DAYS:-90}
+      REFRESH_TOKEN_PEPPER: ${REFRESH_TOKEN_PEPPER:?set REFRESH_TOKEN_PEPPER in .env}
+      SESSION_METADATA_PEPPER: ${SESSION_METADATA_PEPPER:-}
       ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:-}
       BLOCKCHAIN_API_URL: http://blockchain-api:8081
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}

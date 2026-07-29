@@ -6,8 +6,8 @@ const cors = require('cors');
 const { Gateway, Wallets } = require('fabric-network');
 const path = require('path');
 const fs = require('fs');
-const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const { createSessionAuthenticator, verifySessionSchema } = require('./sessionAuth');
 const { fabricIdentityForUser } = require('./fabricIdentity');
 const { sha256File, verifyFileIntegrity } = require('./radiographicIntegrity');
 const {
@@ -35,8 +35,13 @@ const parseCorsOrigin = (value) => {
 
 app.use(cors({
     origin: parseCorsOrigin(process.env.CORS_ORIGIN),
+    credentials: true,
     optionsSuccessStatus: 200
 }));
+
+if (process.env.NODE_ENV === 'production' && (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === '*')) {
+    throw new Error('Production CORS_ORIGIN must be an explicit allow-list');
+}
 
 const ccpPath = path.resolve(__dirname, process.env.FABRIC_CONNECTION_PROFILE || './connection/connection-org1.json');
 const walletPath = path.resolve(__dirname, process.env.FABRIC_WALLET_PATH || './wallet');
@@ -44,7 +49,6 @@ const fabricChannel = process.env.FABRIC_CHANNEL || 'mychannel';
 const fabricChaincode = process.env.FABRIC_CHAINCODE || 'basic';
 const discoveryEnabled = process.env.FABRIC_DISCOVERY_ENABLED !== 'false';
 const discoveryAsLocalhost = process.env.FABRIC_DISCOVERY_AS_LOCALHOST !== 'false';
-const SECRET_KEY = process.env.JWT_SECRET;
 const radiographicStorageRoot = path.resolve(__dirname, process.env.RADIOGRAPHIC_STORAGE_ROOT || './data/radiographic-files');
 const radiographicMaxFileBytes = Number(process.env.RADIOGRAPHIC_MAX_FILE_BYTES || 536870912);
 
@@ -65,27 +69,7 @@ const normalizeRole = (role) => {
 const isRole = (req, role) => normalizeRole(req.user?.role) === normalizeRole(role);
 const sendApiError = (res, status, code, message) => res.status(status).json({ success: false, error: { code, message } });
 
-const authenticateToken = (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) {
-        return sendApiError(res, 401, 'AUTH_REQUIRED', 'Access denied');
-    }
-
-    if (!SECRET_KEY) {
-        return sendApiError(res, 500, 'AUTH_CONFIGURATION_ERROR', 'JWT secret is not configured');
-    }
-
-    jwt.verify(token, SECRET_KEY, (err, user) => {
-        if (err) {
-            return sendApiError(res, 403, 'INVALID_TOKEN', 'Invalid token');
-        }
-
-        req.user = user;
-        next();
-    });
-};
+const authenticateToken = createSessionAuthenticator(sendApiError);
 
 const requireRoles = (...allowedRoles) => {
     const allowed = allowedRoles.map(normalizeRole);
@@ -212,20 +196,18 @@ const requirePatientSelfBody = (fieldName) => (req, res, next) => {
 console.log('Connection profile path:', ccpPath);
 console.log('Fabric wallet path:', walletPath);
 
-if (!SECRET_KEY) {
-    console.warn('JWT_SECRET is not configured. Protected blockchain endpoints will return a configuration error.');
-}
-
 let connectionProfile;
 
 app.get('/health', async (req, res) => {
     const profileReady = fs.existsSync(ccpPath);
     const walletReady = fs.existsSync(walletPath)
         && fs.readdirSync(walletPath).some((entry) => entry.endsWith('.id'));
-    return res.status(profileReady && walletReady ? 200 : 503).json({
-        status: profileReady && walletReady ? 'ok' : 'not-ready',
+    const sessionSchemaReady = await verifySessionSchema().catch(() => false);
+    return res.status(profileReady && walletReady && sessionSchemaReady ? 200 : 503).json({
+        status: profileReady && walletReady && sessionSchemaReady ? 'ok' : 'not-ready',
         service: 'blockchain-api',
-        fabric: { profileReady, walletReady, channel: fabricChannel, chaincode: fabricChaincode }
+        fabric: { profileReady, walletReady, channel: fabricChannel, chaincode: fabricChaincode },
+        sessionSchema: sessionSchemaReady,
     });
 });
 

@@ -1,5 +1,14 @@
-export const DATABASE_API_URL = process.env.EXPO_PUBLIC_DATABASE_API_URL || 'http://openuae.fortiddns.com:28080';
-export const BLOCKCHAIN_API_URL = process.env.EXPO_PUBLIC_BLOCKCHAIN_API_URL || 'http://openuae.fortiddns.com:28081';
+const requiredHttpsUrl = (name, value) => {
+    if (!value) throw new Error(`${name} is required`);
+    const url = value.replace(/\/+$/, '');
+    if (!/^https:\/\//i.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(url)) {
+        throw new Error(`${name} must use HTTPS outside local development`);
+    }
+    return url;
+};
+
+export const DATABASE_API_URL = requiredHttpsUrl('EXPO_PUBLIC_DATABASE_API_URL', process.env.EXPO_PUBLIC_DATABASE_API_URL);
+export const BLOCKCHAIN_API_URL = requiredHttpsUrl('EXPO_PUBLIC_BLOCKCHAIN_API_URL', process.env.EXPO_PUBLIC_BLOCKCHAIN_API_URL);
 
 const stripTrailingSlash = (value) => value.replace(/\/+$/, '');
 

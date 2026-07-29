@@ -13,11 +13,16 @@ test('all clinical application routes use the protected route boundary', () => {
   assert.doesNotMatch(app, /path="\/signup"/);
 });
 
-test('session validity requires an unexpired JWT and supports explicit clearing', () => {
+test('web session uses HttpOnly-cookie APIs and never stores a bearer token', () => {
   const auth = read('src/assets/utils/auth.js');
-  assert.match(auth, /payload\.exp \* 1000 <= Date\.now\(\)/);
   assert.match(auth, /clearSession/);
-  assert.match(read('src/assets/Sections/Topbar.jsx'), /Log out/);
+  assert.doesNotMatch(auth, /localStorage\.(getItem|setItem)\(['"]token/);
+  const api = read('src/assets/config/api.js');
+  assert.match(api, /\/auth\/refresh/);
+  assert.match(api, /\/auth\/me/);
+  const topbar = read('src/assets/Sections/Topbar.jsx');
+  assert.match(topbar, /\/auth\/logout/);
+  assert.match(topbar, /Log out/);
 });
 
 test('doctor patient list and patient detail use scoped Database API routes', () => {

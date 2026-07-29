@@ -1,5 +1,8 @@
 # Blockchain-Based Electronic Dental Record (EDR) Sharing & Management System
 
+Secure authentication/session migration and deployment instructions are in
+[`docs/SECURE_SESSION_DEPLOYMENT.md`](docs/SECURE_SESSION_DEPLOYMENT.md).
+
 > **University of Sharjah - OpenUAE Research & Development Group**  
 > Built on **Hyperledger Fabric 2.5** · **Node.js** · **React.js** · **Expo (React Native)** · **MySQL**
 

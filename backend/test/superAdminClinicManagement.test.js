@@ -19,7 +19,9 @@ test('clinic creation is system-only and atomically requires one admin', () => {
 test('first-login password change is enforced', () => {
   assert.match(server, /PASSWORD_CHANGE_REQUIRED/);
   assert.match(server, /app\.post\('\/change-password', authenticateToken/);
-  assert.match(server, /Must_Change_Password = 0/);
+  assert.match(server, /Must_Change_Password\s*=\s*0/);
+  assert.match(server, /Security_Version\s*=\s*\?/);
+  assert.match(server, /Revocation_Reason='password changed'/);
 });
 
 test('clinic lifecycle is database-only and does not provision Fabric organizations', () => {

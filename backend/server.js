@@ -2,14 +2,15 @@ const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-
 require('dotenv').config();
+const {
+    ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, hash: hashSessionSecret,
+    sqlDate, sessionTtls, signAccessToken, verifyAccessToken, createSession,
+    setWebSessionCookies, clearWebSessionCookies, parseCookies, base64UrlSecret,
+} = require('./sessionService');
 
 const app = express();
-const SECRET_KEY = process.env.JWT_SECRET;
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '2h';
 const BLOCKCHAIN_API_URL = process.env.BLOCKCHAIN_API_URL?.replace(/\/+$/, '');
 const PATIENT_ROLE_ID = 4;
 const DOCTOR_ROLE_ID = 3;
@@ -95,7 +96,7 @@ const callBlockchain = async (req, path, method, body) => {
     }
     const response = await fetch(`${BLOCKCHAIN_API_URL}${path}`, {
         method,
-        headers: { 'Content-Type': 'application/json', Authorization: req.headers.authorization },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${req.accessToken || getBearerToken(req) || ''}` },
         body: body === undefined ? undefined : JSON.stringify(body)
     });
     const payload = await response.json().catch(() => ({}));
@@ -125,11 +126,14 @@ const parseCorsOrigin = (value) => {
 
 const corsOptions = {
     origin: parseCorsOrigin(process.env.CORS_ORIGIN),
+    credentials: true,
     optionsSuccessStatus: 200
 };
+const allowedWebOrigins = Array.isArray(corsOptions.origin) ? corsOptions.origin : [corsOptions.origin].filter(Boolean);
+const hasAllowedWebOrigin = (req) => allowedWebOrigins.includes(req.get('origin'));
 
-if (!SECRET_KEY) {
-    console.warn('JWT_SECRET is not configured. Login and protected endpoints will return a configuration error.');
+if (process.env.NODE_ENV === 'production' && (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === '*')) {
+    throw new Error('Production CORS_ORIGIN must be an explicit allow-list');
 }
 
 if (!BLOCKCHAIN_API_URL) {
@@ -171,18 +175,60 @@ app.get('/', (req, res) => {
     return res.json("from backend side");
 });
 
+const sessionRetentionDays = Math.max(1, Number(process.env.SESSION_RETENTION_DAYS || 90));
+setInterval(async () => {
+    try {
+        await query(`DELETE FROM Auth_Session_Event
+            WHERE Occurred_At < DATE_SUB(NOW(3), INTERVAL ? DAY)`, [sessionRetentionDays]);
+        await query(`DELETE FROM Auth_Refresh_Token
+            WHERE Expires_At < DATE_SUB(NOW(3), INTERVAL ? DAY)`, [sessionRetentionDays]);
+        await query(`DELETE FROM Auth_Session
+            WHERE Absolute_Expires_At < DATE_SUB(NOW(3), INTERVAL ? DAY)`, [sessionRetentionDays]);
+    } catch (error) {
+        console.warn('Session cleanup skipped:', error.message);
+    }
+}, 6 * 60 * 60 * 1000).unref();
+
 app.get('/health', (req, res) => {
-    db.query('SELECT 1 AS ready', (error) => {
+    db.query(`SELECT (
+        (SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()
+            AND TABLE_NAME IN ('Auth_Session','Auth_Refresh_Token','Auth_Session_Event','Schema_Migration'))=4
+        AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='User'
+            AND COLUMN_NAME IN ('Security_Version','Sessions_Invalid_Before'))=2
+        AND EXISTS (SELECT 1 FROM Schema_Migration WHERE Migration_ID='2026-07-29-secure-auth-sessions')
+    ) AS ready`, (error, rows) => {
         if (error) {
-            return res.status(503).json({ status: 'not-ready', service: 'database-api', database: false });
+            return res.status(503).json({ status: 'not-ready', service: 'database-api', database: false, sessionSchema: false });
         }
-        return res.json({ status: 'ok', service: 'database-api', database: true });
+        const sessionSchema = Boolean(rows[0]?.ready);
+        return res.status(sessionSchema ? 200 : 503).json({
+            status: sessionSchema ? 'ok' : 'not-ready', service: 'database-api', database: true, sessionSchema,
+        });
     });
 });
 
+const authRateBuckets = new Map();
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, bucket] of authRateBuckets) if (bucket.resetAt <= now) authRateBuckets.delete(key);
+}, 15 * 60 * 1000).unref();
+const authRateLimit = (name, limit, windowMs) => (req, res, next) => {
+    const key = `${name}:${req.ip}:${String(req.body?.email || '').trim().toLowerCase()}`;
+    const now = Date.now();
+    const bucket = authRateBuckets.get(key);
+    if (!bucket || bucket.resetAt <= now) {
+        authRateBuckets.set(key, { count: 1, resetAt: now + windowMs });
+        return next();
+    }
+    bucket.count += 1;
+    if (bucket.count > limit) {
+        res.set('Retry-After', String(Math.ceil((bucket.resetAt - now) / 1000)));
+        return sendApiError(res, 429, 'AUTH_RATE_LIMITED', 'Too many authentication attempts');
+    }
+    return next();
+};
 
-
-app.post('/login', async (req, res) => {
+app.post('/login', authRateLimit('login', 10, 15 * 60 * 1000), async (req, res) => {
     const { email, password } = req.body;
 
     // Input check
@@ -195,7 +241,7 @@ app.post('/login', async (req, res) => {
     const sql = `
         SELECT 
             User.ID, User.First_Name, User.Last_Name, User.Email, User.Password, 
-            UserRole.Name AS Role_Name, User.Must_Change_Password, User.IsActive,
+            UserRole.Name AS Role_Name, User.Must_Change_Password, User.Security_Version, User.IsActive,
             Organization.IsActive AS Clinic_IsActive,
             COALESCE(Admin.Organization_ID, NULL) AS Organization_ID,
             COALESCE(Doctor.Works_At, NULL) AS WorksAt,
@@ -244,14 +290,9 @@ app.post('/login', async (req, res) => {
             worksAt: user.WorksAt || null,
             specialty: user.Specialty || null,
             blockchainID: user.BlockchainID || null,
-            mustChangePassword: Boolean(user.Must_Change_Password)
+            mustChangePassword: Boolean(user.Must_Change_Password),
+            securityVersion: Number(user.Security_Version || 1)
         };
-
-        if (!SECRET_KEY) {
-            return res.status(500).json({ error: 'JWT secret is not configured' });
-        }
-
-        const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: JWT_EXPIRES_IN });
 
         // User data to return
         const userData = {
@@ -265,8 +306,34 @@ app.post('/login', async (req, res) => {
             blockchainID: user.BlockchainID || null,
             mustChangePassword: Boolean(user.Must_Change_Password)
         };
-
-        res.status(200).json({ token, user: userData });
+        let connection;
+        try {
+            connection = await db.promise().getConnection();
+            await connection.beginTransaction();
+            const session = await createSession(connection, tokenPayload, {
+                clientType: req.body.clientType || 'web',
+                deviceLabel: req.body.deviceLabel,
+                ip: req.ip,
+                userAgent: req.get('user-agent'),
+            });
+            await connection.commit();
+            res.set('Cache-Control', 'no-store');
+            if ((req.body.clientType || 'web') === 'web') {
+                setWebSessionCookies(res, session);
+                return res.status(200).json({ user: userData, csrfToken: session.csrfToken });
+            }
+            return res.status(200).json({
+                token: session.accessToken,
+                refreshToken: session.refreshToken,
+                user: userData,
+            });
+        } catch (sessionError) {
+            if (connection) await connection.rollback().catch(() => {});
+            console.error('Session creation failed:', sessionError);
+            return sendApiError(res, sessionError.statusCode || 500, sessionError.code || 'SESSION_CREATE_FAILED', 'Unable to create a secure session');
+        } finally {
+            if (connection) connection.release();
+        }
     });
 });
 
@@ -278,22 +345,56 @@ const getBearerToken = (req) => {
     return /^Bearer$/i.test(scheme) ? token : null;
 };
 
-const authenticateToken = (req, res, next) => {
-    const token = getBearerToken(req);
+const getAccessToken = (req) => {
+    const bearer = getBearerToken(req);
+    if (bearer) return { token: bearer, mode: 'bearer' };
+    const token = parseCookies(req.headers.cookie || '')[ACCESS_COOKIE];
+    return token ? { token, mode: 'cookie' } : { token: null, mode: null };
+};
 
-    if (!token) return sendApiError(res, 401, 'AUTH_REQUIRED', 'Access denied');
-    if (!SECRET_KEY) {
-        return sendApiError(res, 500, 'AUTH_CONFIGURATION_ERROR', 'JWT secret is not configured');
-    }
-
-    jwt.verify(token, SECRET_KEY, (err, user) => {
-        if (err) return sendApiError(res, 403, 'INVALID_TOKEN', 'Invalid token');
-        if (user.mustChangePassword && req.path !== '/change-password') {
+const authenticateToken = async (req, res, next) => {
+    const credentials = getAccessToken(req);
+    if (!credentials.token) return sendApiError(res, 401, 'AUTH_REQUIRED', 'Access denied');
+    try {
+        const user = verifyAccessToken(credentials.token);
+        const rows = await query(`SELECT s.Session_ID, s.Security_Version, s.Csrf_Token_Hash, s.Idle_Expires_At, s.Absolute_Expires_At,
+            s.Revoked_At, u.IsActive, u.Security_Version AS User_Security_Version,
+            u.Sessions_Invalid_Before, ur.Name AS Current_Role, COALESCE(o.IsActive,1) AS Clinic_IsActive
+            FROM Auth_Session s JOIN User u ON u.ID=s.User_ID JOIN UserRole ur ON ur.Role_ID=u.Role_ID
+            LEFT JOIN Admin a ON a.User_ID=u.ID LEFT JOIN Organization o ON o.Organization_ID=a.Organization_ID
+            WHERE s.Session_ID=? AND s.User_ID=? LIMIT 1`, [user.sid, user.id]);
+        const session = rows[0];
+        const now = Date.now();
+        if (!session || session.Revoked_At || !session.IsActive || !session.Clinic_IsActive
+            || new Date(session.Idle_Expires_At).getTime() <= now || new Date(session.Absolute_Expires_At).getTime() <= now
+            || Number(session.Security_Version) !== Number(session.User_Security_Version)
+            || Number(user.securityVersion) !== Number(session.User_Security_Version)
+            || (session.Sessions_Invalid_Before && user.iat < Math.floor(new Date(session.Sessions_Invalid_Before).getTime() / 1000))) {
+            return sendApiError(res, 401, 'SESSION_REVOKED', 'Session is no longer active');
+        }
+        if (normalizeRole(session.Current_Role) !== normalizeRole(user.role)) {
+            return sendApiError(res, 401, 'SESSION_STALE', 'Session claims are no longer current');
+        }
+        req.authMode = credentials.mode;
+        req.accessToken = credentials.token;
+        res.set('Cache-Control', 'private, no-store');
+        if (credentials.mode === 'cookie' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+            if (!hasAllowedWebOrigin(req)) {
+                return sendApiError(res, 403, 'ORIGIN_VALIDATION_FAILED', 'Request origin is not permitted');
+            }
+            const csrf = req.get('x-csrf-token');
+            if (!csrf || hashSessionSecret(csrf) !== session.Csrf_Token_Hash) {
+                return sendApiError(res, 403, 'CSRF_VALIDATION_FAILED', 'CSRF validation failed');
+            }
+        }
+        if (user.mustChangePassword && !['/change-password', '/auth/logout', '/auth/me'].includes(req.path)) {
             return sendApiError(res, 403, 'PASSWORD_CHANGE_REQUIRED', 'Password change is required before continuing');
         }
         req.user = user;
         next();
-    });
+    } catch (error) {
+        return sendApiError(res, error.statusCode || 403, error.code || 'INVALID_TOKEN', 'Invalid or expired session');
+    }
 };
 
 const requireRoles = (...allowedRoles) => {
@@ -307,6 +408,174 @@ const requireRoles = (...allowedRoles) => {
         next();
     };
 };
+
+const loadSessionUser = async (connection, sessionID) => {
+    const [rows] = await connection.query(`SELECT u.ID, u.IsActive, u.Must_Change_Password, u.Security_Version,
+        ur.Name AS Role_Name, COALESCE(a.Organization_ID,NULL) AS Organization_ID,
+        COALESCE(d.Works_At,NULL) AS WorksAt, COALESCE(d.Specialty,NULL) AS Specialty,
+        COALESCE(d.Blockchain_ID,p.Blockchain_ID,NULL) AS BlockchainID,
+        COALESCE(o.IsActive,1) AS Clinic_IsActive
+        FROM Auth_Session s JOIN User u ON u.ID=s.User_ID JOIN UserRole ur ON ur.Role_ID=u.Role_ID
+        LEFT JOIN Admin a ON a.User_ID=u.ID LEFT JOIN Organization o ON o.Organization_ID=a.Organization_ID
+        LEFT JOIN Doctor d ON d.ID=u.ID LEFT JOIN Patient p ON p.ID=u.ID
+        WHERE s.Session_ID=? LIMIT 1`, [sessionID]);
+    if (!rows.length || !rows[0].IsActive || !rows[0].Clinic_IsActive) return null;
+    const row = rows[0];
+    return {
+        id: row.ID, role: normalizeRole(row.Role_Name), organizationId: row.Organization_ID || null,
+        worksAt: row.WorksAt || null, specialty: row.Specialty || null, blockchainID: row.BlockchainID || null,
+        mustChangePassword: Boolean(row.Must_Change_Password), securityVersion: Number(row.Security_Version || 1),
+    };
+};
+
+app.post('/auth/refresh', authRateLimit('refresh', 60, 5 * 60 * 1000), async (req, res) => {
+    const cookies = parseCookies(req.headers.cookie || '');
+    const webToken = cookies[REFRESH_COOKIE];
+    const webCsrf = req.get('x-csrf-token');
+    const refreshToken = webToken || req.body?.refreshToken;
+    if (!refreshToken) return sendApiError(res, 401, 'REFRESH_REQUIRED', 'Refresh token is required');
+    if (webToken) {
+        if (!hasAllowedWebOrigin(req)) return sendApiError(res, 403, 'ORIGIN_VALIDATION_FAILED', 'Request origin is not permitted');
+        if (!webCsrf || webCsrf !== cookies[CSRF_COOKIE]) return sendApiError(res, 403, 'CSRF_VALIDATION_FAILED', 'CSRF validation failed');
+    }
+    let connection;
+    try {
+        connection = await db.promise().getConnection(); await connection.beginTransaction();
+        const [tokens] = await connection.query(`SELECT rt.*, rt.Revoked_At AS Token_Revoked_At,
+            s.Client_Type, s.Idle_Expires_At, s.Absolute_Expires_At,
+            s.Revoked_At AS Session_Revoked_At, s.Security_Version, s.Csrf_Token_Hash
+            FROM Auth_Refresh_Token rt JOIN Auth_Session s ON s.Session_ID=rt.Session_ID
+            WHERE rt.Token_Hash=? FOR UPDATE`, [hashSessionSecret(refreshToken)]);
+        const current = tokens[0];
+        if (!current) throw Object.assign(new Error('Invalid refresh token'), { statusCode: 401, code: 'INVALID_REFRESH_TOKEN' });
+        if (webToken && hashSessionSecret(webCsrf) !== current.Csrf_Token_Hash) {
+            throw Object.assign(new Error('CSRF validation failed'), { statusCode: 403, code: 'CSRF_VALIDATION_FAILED' });
+        }
+        if (current.Used_At) {
+            await connection.query(`UPDATE Auth_Session SET Revoked_At=NOW(3),Revocation_Reason='refresh token reuse detected'
+                WHERE Session_ID=? AND Revoked_At IS NULL`, [current.Session_ID]);
+            await connection.query('UPDATE Auth_Refresh_Token SET Revoked_At=COALESCE(Revoked_At,NOW(3)) WHERE Session_ID=?', [current.Session_ID]);
+            await connection.query(`INSERT INTO Auth_Session_Event (Session_ID,User_ID,Event_Type,Details)
+                SELECT Session_ID,User_ID,'REFRESH_REUSE_DETECTED',JSON_OBJECT('tokenId',?) FROM Auth_Session WHERE Session_ID=?`,
+            [current.Token_ID, current.Session_ID]);
+            await connection.commit();
+            return sendApiError(res, 401, 'REFRESH_TOKEN_REUSE', 'Session revoked because refresh-token reuse was detected');
+        }
+        const now = Date.now();
+        if (current.Token_Revoked_At || current.Session_Revoked_At || new Date(current.Expires_At).getTime() <= now
+            || new Date(current.Idle_Expires_At).getTime() <= now || new Date(current.Absolute_Expires_At).getTime() <= now) {
+            throw Object.assign(new Error('Refresh session expired or revoked'), { statusCode: 401, code: 'SESSION_REVOKED' });
+        }
+        const user = await loadSessionUser(connection, current.Session_ID);
+        if (!user || Number(user.securityVersion) !== Number(current.Security_Version)) {
+            throw Object.assign(new Error('Session claims are stale'), { statusCode: 401, code: 'SESSION_STALE' });
+        }
+        const replacementID = crypto.randomUUID();
+        const replacement = base64UrlSecret();
+        const ttl = sessionTtls(current.Client_Type);
+        const absolute = new Date(current.Absolute_Expires_At);
+        const idle = new Date(Math.min(now + ttl.idle, absolute.getTime()));
+        await connection.query('UPDATE Auth_Refresh_Token SET Used_At=NOW(3),Replaced_By_Token_ID=? WHERE Token_ID=?', [replacementID, current.Token_ID]);
+        await connection.query(`INSERT INTO Auth_Refresh_Token
+            (Token_ID,Session_ID,Token_Hash,Parent_Token_ID,Expires_At) VALUES (?,?,?,?,?)`,
+        [replacementID, current.Session_ID, hashSessionSecret(replacement), current.Token_ID, sqlDate(absolute)]);
+        const csrfToken = current.Client_Type === 'web' ? base64UrlSecret() : null;
+        await connection.query(`UPDATE Auth_Session SET Last_Seen_At=NOW(3),Idle_Expires_At=?,Last_IP_Hash=?,
+            Csrf_Token_Hash=COALESCE(?,Csrf_Token_Hash) WHERE Session_ID=?`,
+        [sqlDate(idle), req.ip ? hashSessionSecret(req.ip) : null, csrfToken ? hashSessionSecret(csrfToken) : null, current.Session_ID]);
+        await connection.query(`INSERT INTO Auth_Session_Event (Session_ID,User_ID,Event_Type)
+            SELECT Session_ID,User_ID,'SESSION_REFRESHED' FROM Auth_Session WHERE Session_ID=?`, [current.Session_ID]);
+        const session = {
+            accessToken: signAccessToken(user, current.Session_ID), refreshToken: replacement,
+            csrfToken, refreshExpires: absolute,
+        };
+        await connection.commit();
+        res.set('Cache-Control', 'no-store');
+        if (current.Client_Type === 'web') {
+            setWebSessionCookies(res, session);
+            return res.json({ csrfToken });
+        }
+        return res.json({ token: session.accessToken, refreshToken: replacement });
+    } catch (error) {
+        if (connection) await connection.rollback().catch(() => {});
+        return sendApiError(res, error.statusCode || 500, error.code || 'REFRESH_FAILED', error.statusCode ? error.message : 'Unable to refresh session');
+    } finally { if (connection) connection.release(); }
+});
+
+app.post('/auth/logout', async (req, res) => {
+    const cookies = parseCookies(req.headers.cookie || '');
+    const webRefresh = cookies[REFRESH_COOKIE];
+    if (webRefresh) {
+        if (!hasAllowedWebOrigin(req)) return sendApiError(res, 403, 'ORIGIN_VALIDATION_FAILED', 'Request origin is not permitted');
+        const csrf = req.get('x-csrf-token');
+        if (!csrf || csrf !== cookies[CSRF_COOKIE]) return sendApiError(res, 403, 'CSRF_VALIDATION_FAILED', 'CSRF validation failed');
+    }
+    let sessionID = null;
+    const access = getAccessToken(req).token;
+    if (access) {
+        try { sessionID = verifyAccessToken(access).sid; } catch { /* refresh token fallback handles expired access */ }
+    }
+    const refreshToken = webRefresh || req.body?.refreshToken;
+    if (!sessionID && refreshToken) {
+        const rows = await query('SELECT Session_ID FROM Auth_Refresh_Token WHERE Token_Hash=? LIMIT 1', [hashSessionSecret(refreshToken)]);
+        sessionID = rows[0]?.Session_ID || null;
+    }
+    if (sessionID) {
+        await query(`UPDATE Auth_Session SET Revoked_At=COALESCE(Revoked_At,NOW(3)),Revocation_Reason=COALESCE(Revocation_Reason,'user logout')
+            WHERE Session_ID=?`, [sessionID]);
+        await query('UPDATE Auth_Refresh_Token SET Revoked_At=COALESCE(Revoked_At,NOW(3)) WHERE Session_ID=?', [sessionID]);
+        await query(`INSERT INTO Auth_Session_Event (Session_ID,User_ID,Event_Type)
+            SELECT Session_ID,User_ID,'SESSION_LOGOUT' FROM Auth_Session WHERE Session_ID=?`, [sessionID]);
+    }
+    clearWebSessionCookies(res);
+    return res.status(204).end();
+});
+
+app.get('/auth/me', authenticateToken, async (req, res) => {
+    const rows = await query('SELECT First_Name,Last_Name,Email FROM User WHERE ID=? LIMIT 1', [req.user.id]);
+    if (!rows.length) return sendApiError(res, 404, 'USER_NOT_FOUND', 'User not found');
+    return res.json({ success: true, data: { id: req.user.id, name: `${rows[0].First_Name} ${rows[0].Last_Name}`, email: rows[0].Email,
+        role: normalizeRole(req.user.role), organizationId: req.user.organizationId || null, blockchainID: req.user.blockchainID || null,
+        mustChangePassword: Boolean(req.user.mustChangePassword) } });
+});
+
+app.post('/auth/logout-all', authenticateToken, async (req, res) => {
+    const currentPassword = req.body?.currentPassword;
+    const rows = await query('SELECT Password FROM User WHERE ID=? AND IsActive=1 LIMIT 1', [req.user.id]);
+    if (!currentPassword || !rows.length || !(await bcrypt.compare(currentPassword, rows[0].Password))) {
+        return sendApiError(res, 401, 'RECENT_AUTH_REQUIRED', 'Current password is required');
+    }
+    await query(`UPDATE User SET Security_Version=Security_Version+1,Sessions_Invalid_Before=NOW(3) WHERE ID=?`, [req.user.id]);
+    await query(`UPDATE Auth_Session SET Revoked_At=COALESCE(Revoked_At,NOW(3)),Revocation_Reason=COALESCE(Revocation_Reason,'user logout all')
+        WHERE User_ID=?`, [req.user.id]);
+    await query(`INSERT INTO Auth_Session_Event (Session_ID,User_ID,Event_Type)
+        VALUES (NULL,?,'LOGOUT_ALL')`, [req.user.id]);
+    clearWebSessionCookies(res);
+    return res.status(204).end();
+});
+
+app.get('/auth/sessions', authenticateToken, async (req, res) => {
+    const rows = await query(`SELECT Session_ID,Client_Type,Device_Label,Created_At,Last_Seen_At,Idle_Expires_At,Absolute_Expires_At
+        FROM Auth_Session WHERE User_ID=? AND Revoked_At IS NULL AND Idle_Expires_At>NOW(3) AND Absolute_Expires_At>NOW(3)
+        ORDER BY Last_Seen_At DESC`, [req.user.id]);
+    return res.json({ success: true, data: rows.map((row) => ({
+        sessionId: row.Session_ID, clientType: row.Client_Type, deviceLabel: row.Device_Label,
+        createdAt: row.Created_At, lastSeenAt: row.Last_Seen_At, idleExpiresAt: row.Idle_Expires_At,
+        absoluteExpiresAt: row.Absolute_Expires_At, current: row.Session_ID === req.user.sid,
+    })) });
+});
+
+app.delete('/auth/sessions/:sessionId', authenticateToken, async (req, res) => {
+    const result = await query(`UPDATE Auth_Session SET Revoked_At=COALESCE(Revoked_At,NOW(3)),
+        Revocation_Reason=COALESCE(Revocation_Reason,'user device revocation') WHERE Session_ID=? AND User_ID=?`,
+    [req.params.sessionId, req.user.id]);
+    if (!result.affectedRows) return sendApiError(res, 404, 'SESSION_NOT_FOUND', 'Session not found');
+    await query('UPDATE Auth_Refresh_Token SET Revoked_At=COALESCE(Revoked_At,NOW(3)) WHERE Session_ID=?', [req.params.sessionId]);
+    await query(`INSERT INTO Auth_Session_Event (Session_ID,User_ID,Event_Type)
+        VALUES (?,?,?)`, [req.params.sessionId, req.user.id, req.params.sessionId === req.user.sid ? 'CURRENT_SESSION_REVOKED' : 'SESSION_REVOKED']);
+    if (req.params.sessionId === req.user.sid) clearWebSessionCookies(res);
+    return res.status(204).end();
+});
 
 app.post('/register', authenticateToken, requireRoles('system'), async (req, res) => {
     const { firstName, lastName, username, contactNumber, password, organizationId } = req.body;
@@ -402,24 +671,62 @@ app.post('/change-password', authenticateToken, async (req, res) => {
     if (!currentPassword || !validatePassword(newPassword)) {
         return sendApiError(res, 400, 'INVALID_PASSWORD', 'New password must be at least 12 characters and include uppercase, lowercase, number, and symbol');
     }
+    let connection;
     try {
-        const rows = await query('SELECT Password, First_Name, Last_Name, Email, Role_ID FROM User WHERE ID = ? AND IsActive = 1', [req.user.id]);
+        connection = await db.promise().getConnection();
+        await connection.beginTransaction();
+        const [rows] = await connection.query('SELECT Password, First_Name, Last_Name, Email, Role_ID, Security_Version FROM User WHERE ID = ? AND IsActive = 1 FOR UPDATE', [req.user.id]);
         if (!rows.length || !(await bcrypt.compare(currentPassword, rows[0].Password))) {
+            await connection.rollback();
             return sendApiError(res, 401, 'INVALID_CURRENT_PASSWORD', 'Current password is incorrect');
         }
         if (await bcrypt.compare(newPassword, rows[0].Password)) {
+            await connection.rollback();
             return sendApiError(res, 400, 'PASSWORD_REUSE', 'New password must differ from the current password');
         }
         const passwordHash = await bcrypt.hash(newPassword, 10);
-        await query('UPDATE User SET Password = ?, Must_Change_Password = 0 WHERE ID = ?', [passwordHash, req.user.id]);
-        const tokenPayload = { ...req.user, mustChangePassword: false };
-        delete tokenPayload.iat; delete tokenPayload.exp;
-        const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: JWT_EXPIRES_IN });
-        return res.json({ success: true, token, user: { id: req.user.id, name: `${rows[0].First_Name} ${rows[0].Last_Name}`, email: rows[0].Email, role: normalizeRole(req.user.role), organizationId: req.user.organizationId || null, mustChangePassword: false } });
+        const securityVersion = Number(rows[0].Security_Version || 1) + 1;
+        await connection.query(`UPDATE User SET Password=?,Must_Change_Password=0,Security_Version=?,
+            Sessions_Invalid_Before=NOW(3) WHERE ID=?`, [passwordHash, securityVersion, req.user.id]);
+        await connection.query(`UPDATE Auth_Session SET Revoked_At=NOW(3),Revocation_Reason='password changed'
+            WHERE User_ID=? AND Session_ID<>? AND Revoked_At IS NULL`, [req.user.id, req.user.sid]);
+        await connection.query(`UPDATE Auth_Refresh_Token rt JOIN Auth_Session s ON s.Session_ID=rt.Session_ID
+            SET rt.Revoked_At=COALESCE(rt.Revoked_At,NOW(3)) WHERE s.User_ID=?`, [req.user.id]);
+        const [sessions] = await connection.query('SELECT Client_Type,Absolute_Expires_At FROM Auth_Session WHERE Session_ID=? AND User_ID=? FOR UPDATE', [req.user.sid, req.user.id]);
+        if (!sessions.length) throw Object.assign(new Error('Current session not found'), { code: 'SESSION_REVOKED', statusCode: 401 });
+        const refreshToken = base64UrlSecret();
+        const csrfToken = sessions[0].Client_Type === 'web' ? base64UrlSecret() : null;
+        await connection.query(`UPDATE Auth_Session SET Security_Version=?,Last_Seen_At=NOW(3),
+            Csrf_Token_Hash=? WHERE Session_ID=?`, [securityVersion, csrfToken ? hashSessionSecret(csrfToken) : null, req.user.sid]);
+        await connection.query(`INSERT INTO Auth_Refresh_Token
+            (Token_ID,Session_ID,Token_Hash,Expires_At) VALUES (?,?,?,?)`,
+        [crypto.randomUUID(), req.user.sid, hashSessionSecret(refreshToken), sessions[0].Absolute_Expires_At]);
+        await connection.query(`INSERT INTO Auth_Session_Event (Session_ID,User_ID,Event_Type)
+            VALUES (?,?,?)`, [req.user.sid, req.user.id, 'PASSWORD_CHANGED']);
+        const tokenPayload = {
+            id: req.user.id, role: normalizeRole(req.user.role), organizationId: req.user.organizationId || null,
+            worksAt: req.user.worksAt || null, specialty: req.user.specialty || null,
+            blockchainID: req.user.blockchainID || null, mustChangePassword: false, securityVersion,
+        };
+        const session = {
+            accessToken: signAccessToken(tokenPayload, req.user.sid), refreshToken, csrfToken,
+            refreshExpires: new Date(sessions[0].Absolute_Expires_At),
+        };
+        await connection.commit();
+        res.set('Cache-Control', 'no-store');
+        const user = { id: req.user.id, name: `${rows[0].First_Name} ${rows[0].Last_Name}`, email: rows[0].Email,
+            role: normalizeRole(req.user.role), organizationId: req.user.organizationId || null,
+            blockchainID: req.user.blockchainID || null, mustChangePassword: false };
+        if (sessions[0].Client_Type === 'web') {
+            setWebSessionCookies(res, session);
+            return res.json({ success: true, user, csrfToken });
+        }
+        return res.json({ success: true, token: session.accessToken, refreshToken, user });
     } catch (error) {
+        if (connection) await connection.rollback().catch(() => {});
         console.error(error);
-        return sendApiError(res, 500, 'PASSWORD_CHANGE_FAILED', 'Unable to change password');
-    }
+        return sendApiError(res, error.statusCode || 500, error.code || 'PASSWORD_CHANGE_FAILED', error.statusCode ? error.message : 'Unable to change password');
+    } finally { if (connection) connection.release(); }
 });
 
 const normalizeClinic = (row) => ({
@@ -472,6 +779,15 @@ app.patch('/clinics/:id', authenticateToken, requireRoles('system'), async (req,
         const result = await query(`UPDATE Organization SET Name=?, Address=?, Description=?, Coordinates=?, Type=?, IsActive=?, Modified_Date=NOW() WHERE Organization_ID=?`,
             [name, address, description || null, coordinates || null, type || 'Dental Clinic', isActive ? 1 : 0, clinicID]);
         if (!result.affectedRows) return sendApiError(res, 404, 'CLINIC_NOT_FOUND', 'Clinic not found');
+        if (!isActive) {
+            await query(`UPDATE Auth_Session s JOIN User u ON u.ID=s.User_ID
+                LEFT JOIN Admin a ON a.User_ID=u.ID LEFT JOIN Doctor d ON d.ID=u.ID LEFT JOIN Patient p ON p.ID=u.ID
+                SET s.Revoked_At=COALESCE(s.Revoked_At,NOW(3)),s.Revocation_Reason=COALESCE(s.Revocation_Reason,'clinic deactivated')
+                WHERE COALESCE(a.Organization_ID,d.Clinic_ID,p.Clinic_ID)=?`, [clinicID]);
+            await query(`UPDATE User u LEFT JOIN Admin a ON a.User_ID=u.ID LEFT JOIN Doctor d ON d.ID=u.ID LEFT JOIN Patient p ON p.ID=u.ID
+                SET u.Security_Version=u.Security_Version+1,u.Sessions_Invalid_Before=NOW(3)
+                WHERE COALESCE(a.Organization_ID,d.Clinic_ID,p.Clinic_ID)=?`, [clinicID]);
+        }
         return res.json({ success: true });
     } catch (error) { console.error(error); return sendApiError(res, 500, 'CLINIC_UPDATE_FAILED', 'Unable to update clinic'); }
 });

@@ -1062,6 +1062,8 @@ CREATE TABLE `User` (
   `Created_Date` date DEFAULT NULL,
   `IsActive` tinyint(1) DEFAULT NULL,
   `Must_Change_Password` tinyint(1) NOT NULL DEFAULT '0',
+  `Security_Version` int unsigned NOT NULL DEFAULT '1',
+  `Sessions_Invalid_Before` datetime(3) DEFAULT NULL,
   `Last_Login_Date` date DEFAULT NULL,
   PRIMARY KEY (`ID`),
   KEY `Role_ID` (`Role_ID`),
@@ -1075,9 +1077,80 @@ CREATE TABLE `User` (
 
 LOCK TABLES `User` WRITE;
 /*!40000 ALTER TABLE `User` DISABLE KEYS */;
-INSERT INTO `User` VALUES (9,'Admin2','User2','$2b$10$v5lsbuAYwdZQzZ/hN.FVL.6lYJwnZLBjfD6sW66/H8GqMXFtncwGK','admin2@gmail.com','1234567890',2,'2025-02-03',1,0,'2025-07-17'),(10,'Admin1','User1','$2b$10$WEDbeiz3VjsRUcgYiKhw..2oTKmGE/lxeMNV2Haqx05MlASU7/hI2','admin1@gmail.com','1234567890',2,'2025-02-03',1,0,'2025-07-17'),(15,'Alice','Wong','$2b$10$VDdk6Dc75k7jJp.bNsDjM.scicJoNlBJGqdzAs2b0Layd5sN1so3G','doctor1@example.com','0509876543',3,'2025-02-03',1,0,'2025-07-17'),(16,'Bob','Smith','$2b$10$tg8rV6u4PeIxDKy.TcoB.eIHsV3TLABYxSs3ZgPR9CHPVgFs4M42a','doctor2@example.com','0509871234',3,'2025-02-03',1,0,'2025-06-17'),(17,'John','Doe','$2b$10$ZJP0KFBm9N.CjOCvJX6pQOKV.3fyqyd2kyu1irqsjjEy9MZBSFgl6','john.doe@example.com','0501234567',4,'2025-03-26',1,0,'2025-05-08'),(18,'Jane','Doe','$2b$10$JKimR5gHhcYtI50k0FvDveM7dEsqq6s7gbmlTOh2sahbhTOabsveG','jane.doe@example.com','0507654321',4,'2025-03-26',1,0,NULL),(19,'Mark','Lee','$2b$10$jTozqpdqC0uSi1DNcT8VG.CY/bdUqhIvafgoN.wXJ8wkRSTjJhkz.','mark.lee@example.com','0502468135',4,'2025-03-26',1,0,NULL);
+INSERT INTO `User` VALUES (9,'Admin2','User2','$2b$10$v5lsbuAYwdZQzZ/hN.FVL.6lYJwnZLBjfD6sW66/H8GqMXFtncwGK','admin2@gmail.com','1234567890',2,'2025-02-03',1,0,1,NULL,'2025-07-17'),(10,'Admin1','User1','$2b$10$WEDbeiz3VjsRUcgYiKhw..2oTKmGE/lxeMNV2Haqx05MlASU7/hI2','admin1@gmail.com','1234567890',2,'2025-02-03',1,0,1,NULL,'2025-07-17'),(15,'Alice','Wong','$2b$10$VDdk6Dc75k7jJp.bNsDjM.scicJoNlBJGqdzAs2b0Layd5sN1so3G','doctor1@example.com','0509876543',3,'2025-02-03',1,0,1,NULL,'2025-07-17'),(16,'Bob','Smith','$2b$10$tg8rV6u4PeIxDKy.TcoB.eIHsV3TLABYxSs3ZgPR9CHPVgFs4M42a','doctor2@example.com','0509871234',3,'2025-02-03',1,0,1,NULL,'2025-06-17'),(17,'John','Doe','$2b$10$ZJP0KFBm9N.CjOCvJX6pQOKV.3fyqyd2kyu1irqsjjEy9MZBSFgl6','john.doe@example.com','0501234567',4,'2025-03-26',1,0,1,NULL,'2025-05-08'),(18,'Jane','Doe','$2b$10$JKimR5gHhcYtI50k0FvDveM7dEsqq6s7gbmlTOh2sahbhTOabsveG','jane.doe@example.com','0507654321',4,'2025-03-26',1,0,1,NULL,NULL),(19,'Mark','Lee','$2b$10$jTozqpdqC0uSi1DNcT8VG.CY/bdUqhIvafgoN.wXJ8wkRSTjJhkz.','mark.lee@example.com','0502468135',4,'2025-03-26',1,0,1,NULL,NULL);
 /*!40000 ALTER TABLE `User` ENABLE KEYS */;
 UNLOCK TABLES;
+
+--
+-- Table structure for secure authentication sessions
+--
+
+DROP TABLE IF EXISTS `Auth_Session_Event`;
+DROP TABLE IF EXISTS `Auth_Refresh_Token`;
+DROP TABLE IF EXISTS `Auth_Session`;
+CREATE TABLE `Auth_Session` (
+  `Session_ID` char(36) NOT NULL,
+  `User_ID` int NOT NULL,
+  `Client_Type` enum('web','ios','android') NOT NULL,
+  `Device_Label` varchar(255) DEFAULT NULL,
+  `Token_Family_ID` char(36) NOT NULL,
+  `Security_Version` int unsigned NOT NULL,
+  `Csrf_Token_Hash` char(64) DEFAULT NULL,
+  `Created_At` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `Last_Seen_At` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `Idle_Expires_At` datetime(3) NOT NULL,
+  `Absolute_Expires_At` datetime(3) NOT NULL,
+  `Revoked_At` datetime(3) DEFAULT NULL,
+  `Revocation_Reason` varchar(255) DEFAULT NULL,
+  `Created_IP_Hash` char(64) DEFAULT NULL,
+  `Last_IP_Hash` char(64) DEFAULT NULL,
+  `User_Agent_Hash` char(64) DEFAULT NULL,
+  PRIMARY KEY (`Session_ID`),
+  UNIQUE KEY `uq_auth_session_family` (`Token_Family_ID`),
+  KEY `idx_auth_session_user_active` (`User_ID`,`Revoked_At`,`Absolute_Expires_At`),
+  KEY `idx_auth_session_cleanup` (`Absolute_Expires_At`,`Revoked_At`),
+  CONSTRAINT `fk_auth_session_user` FOREIGN KEY (`User_ID`) REFERENCES `User` (`ID`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `Auth_Refresh_Token` (
+  `Token_ID` char(36) NOT NULL,
+  `Session_ID` char(36) NOT NULL,
+  `Token_Hash` char(64) NOT NULL,
+  `Parent_Token_ID` char(36) DEFAULT NULL,
+  `Replaced_By_Token_ID` char(36) DEFAULT NULL,
+  `Issued_At` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `Expires_At` datetime(3) NOT NULL,
+  `Used_At` datetime(3) DEFAULT NULL,
+  `Revoked_At` datetime(3) DEFAULT NULL,
+  PRIMARY KEY (`Token_ID`),
+  UNIQUE KEY `uq_auth_refresh_hash` (`Token_Hash`),
+  KEY `idx_auth_refresh_session` (`Session_ID`,`Revoked_At`,`Expires_At`),
+  KEY `idx_auth_refresh_cleanup` (`Expires_At`,`Revoked_At`),
+  CONSTRAINT `fk_auth_refresh_session` FOREIGN KEY (`Session_ID`) REFERENCES `Auth_Session` (`Session_ID`) ON DELETE CASCADE,
+  CONSTRAINT `fk_auth_refresh_parent` FOREIGN KEY (`Parent_Token_ID`) REFERENCES `Auth_Refresh_Token` (`Token_ID`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `Auth_Session_Event` (
+  `Event_ID` bigint NOT NULL AUTO_INCREMENT,
+  `Session_ID` char(36) DEFAULT NULL,
+  `User_ID` int NOT NULL,
+  `Event_Type` varchar(50) NOT NULL,
+  `Occurred_At` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `Details` json DEFAULT NULL,
+  PRIMARY KEY (`Event_ID`),
+  KEY `idx_auth_event_user_time` (`User_ID`,`Occurred_At`),
+  KEY `idx_auth_event_session_time` (`Session_ID`,`Occurred_At`),
+  CONSTRAINT `fk_auth_event_session` FOREIGN KEY (`Session_ID`) REFERENCES `Auth_Session` (`Session_ID`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `Schema_Migration` (
+  `Migration_ID` varchar(100) NOT NULL,
+  `Applied_At` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `Checksum_SHA256` char(64) DEFAULT NULL,
+  PRIMARY KEY (`Migration_ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO `Schema_Migration` (`Migration_ID`) VALUES ('2026-07-29-secure-auth-sessions');
 
 --
 -- Table structure for table `UserRole`

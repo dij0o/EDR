@@ -21,13 +21,14 @@ const LoginSection = () => {
             const response = await axios.post(databaseUrl('/login'), {
                 email,
                 password,
-            });
+                clientType: 'web',
+                deviceLabel: navigator.userAgent,
+            }, { withCredentials: true });
     
-            const { token, user } = response.data;
+            const { user } = response.data;
     
-            // Store the token and user details in localStorage
-            localStorage.setItem('token', token);
-            localStorage.setItem('user', JSON.stringify(user));
+            sessionStorage.setItem('user', JSON.stringify(user));
+            window.dispatchEvent(new Event('edr-session-changed'));
             setUserRole(user.role?.toLowerCase() || null);
     
             const role = user.role?.toLowerCase();

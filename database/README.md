@@ -15,6 +15,23 @@ container is created (i.e. when the data volume is empty).
 - `dump.sql` - full schema and seed/test data for the current `mydatabase`
   setup. This is the file Docker Compose imports on first run.
 
+## Secure session schema
+
+Fresh installations receive the secure session schema directly from
+`dump.sql`.
+
+Existing installations retain their current MySQL volume and run the
+repeat-safe upgrade:
+
+```bash
+./scripts/apply-secure-auth-migration.sh
+```
+
+Back up the production database first. The upgrade preserves existing users
+and clinical data, records its version in `Schema_Migration`, and may safely be
+run again. Do not start the updated APIs until it prints
+`SECURE_AUTH_SCHEMA_OK`.
+
 The older separate `schema.sql` / `seed.sql` files are not present in this
 handover. If those are needed, generate them from a running database using the
 commands below.

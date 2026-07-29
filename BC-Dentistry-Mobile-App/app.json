@@ -25,6 +25,13 @@
     "plugins": [
       "expo-router",
       [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true,
+          "faceIDPermission": "Allow BC Dentistry to protect your signed-in session."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",

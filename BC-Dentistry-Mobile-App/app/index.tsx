@@ -2,27 +2,23 @@ import { useEffect } from "react";
 import { useRouter } from "expo-router";
 
 import { Text, View, Image, SafeAreaView } from "react-native";
-import { Link } from "expo-router";
-
 import { icons, Images } from "../constants"
+import { useUser } from "../Context/UserContext";
 
 import "../global.css";
 
 export default function Index() {
   const route = useRouter()
+  const { status } = useUser()
 
 
   useEffect(() => {
+    if (status === "restoring" || status === "refreshing") return
     const timer = setTimeout(()=>{
-      route.push('/(auth)/sign-in')
-      // route.push('/(tabs)/requests')
-      // route.push('/documents')
-    }, 3000)
-
-
-
+      route.replace(status === "authenticated" ? '/(tabs)/home' : '/(auth)/sign-in')
+    }, 500)
     return () => clearTimeout(timer)
-  }, [])
+  }, [status])
   
 
   return (

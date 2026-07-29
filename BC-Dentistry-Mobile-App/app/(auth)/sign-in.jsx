@@ -1,6 +1,5 @@
 import { View, Text, SafeAreaView, ScrollView, Image, TouchableOpacity, Alert } from 'react-native';
 import React, { useState } from 'react';
-import axios from 'axios';
 import { Link, useRouter } from 'expo-router';
 
 import { icons, Images } from "../../constants";
@@ -8,10 +7,9 @@ import CustomInput from '../CustomInput';
 import CustomButton from '../CustomButton';
 
 import { useUser } from '../../Context/UserContext';
-import { databaseUrl } from '../../utils/api';
 
 const SignIn = () => {
-  const { setUser, setToken } = useUser(); // no need to use user here
+  const { signIn } = useUser();
   const router = useRouter();
 
   const [form, setForm] = useState({ email: "", password: "" });
@@ -30,16 +28,7 @@ const SignIn = () => {
     setIsLoading(true);
 
     try {
-      const response = await axios.post(databaseUrl('/login'), { email, password });
-      const { token, user } = response.data;
-
-      if (user?.role?.toLowerCase() !== 'patient') {
-        Alert.alert("Patient account required", "Please sign in with a patient account to use the mobile app.");
-        return;
-      }
-
-      setToken(token);
-      setUser(user);
+      await signIn(email, password);
       router.replace('/home'); // Navigate to home
     } catch (error) {
       Alert.alert("Login failed", error.response?.data?.error || error.message || "Something went wrong.");
