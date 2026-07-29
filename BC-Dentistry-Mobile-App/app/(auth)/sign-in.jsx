@@ -1,5 +1,5 @@
-import { View, Text, SafeAreaView, ScrollView, Image, TouchableOpacity, Alert } from 'react-native';
-import React, { useState, useEffect } from 'react';
+import { View, Text, SafeAreaView, ScrollView, Image, Alert } from 'react-native';
+import React, { useState } from 'react';
 import axios from 'axios';
 import { Link, useRouter } from 'expo-router';
 
@@ -8,35 +8,15 @@ import CustomInput from '../CustomInput';
 import CustomButton from '../CustomButton';
 
 import { useUser } from '../../Context/UserContext';
-import { blockchainUrl } from '../../config/api';
+import { databaseUrl } from '../../utils/api';
 
 const SignIn = () => {
-<<<<<<< Updated upstream
-  const { setUser } = useUser(); // no need to use user here
-=======
   const { setSession } = useUser();
->>>>>>> Stashed changes
   const router = useRouter();
 
   const [form, setForm] = useState({ email: "", password: "" });
-  const [usersData, setUsersData] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Fetch all users on load
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const response = await axios.get(blockchainUrl('/getAllPatients'));
-        const filteredUsers = response.data?.filter(user => user.firstName);
-        setUsersData(filteredUsers);
-      } catch (error) {
-        console.log("Error fetching users:", error);
-      }
-    };
-
-    fetchUsers();
-  }, []);
 
   const handleSignIn = async () => {
     const { email, password } = form;
@@ -50,28 +30,18 @@ const SignIn = () => {
     setIsLoading(true);
 
     try {
-      // Simulate login (optional: verify with /login if needed)
-      const foundUser = usersData.find(
-        user => user.email.trim().toLowerCase() === email.trim().toLowerCase()
-      );
+      const response = await axios.post(databaseUrl('/login'), { email, password });
+      const { token, user } = response.data;
 
-      if (foundUser) {
-        setUser(foundUser); // Set the user in context
-        router.replace('/home'); // Navigate to home
-      } else {
-        Alert.alert(
-          "No account found",
-          "Email does not exist. Contact the clinic to check your account credentials."
-        );
+      if (user?.role?.toLowerCase() !== 'patient') {
+        Alert.alert("Patient account required", "Please sign in with a patient account to use the mobile app.");
+        return;
       }
 
-<<<<<<< Updated upstream
-=======
       await setSession({ accessToken: token, user });
-      router.replace('/(tabs)/home'); // Navigate to home
->>>>>>> Stashed changes
+      router.replace('/(tabs)/home');
     } catch (error) {
-      Alert.alert("Error", error.message || "Something went wrong.");
+      Alert.alert("Login failed", error.response?.data?.error || error.message || "Something went wrong.");
     } finally {
       setTimeout(() => {
         setIsLoading(false);

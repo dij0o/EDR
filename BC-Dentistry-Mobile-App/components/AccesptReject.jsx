@@ -33,79 +33,74 @@
 import { View, Text, Alert, Animated } from 'react-native';
 import React, { useState } from 'react';
 import axios from 'axios';
-<<<<<<< Updated upstream
-import { CustomButton } from './index';
-import { blockchainUrl } from '../config/api';
-=======
 import CustomButton from './CustomButton';
 import { authHeaders, blockchainUrl } from '../utils/api';
 import { useUser } from '../Context/UserContext';
->>>>>>> Stashed changes
 
 const AccesptReject = ({ requestID, patientID, updateStatus, setCardStatus, requestLoadingStatus, setrequestLoadingFunc, expandCardFunc }) => {
     const [loading, setLoading] = useState(false);
 
     const handleAccept = async () => {
-      setLoading(true);
-      console.log('Accept');
-      
-      try {
-          setrequestLoadingFunc(true)
-          const response = await axios.post(blockchainUrl('/provideConsent'), {
-              patientID,
-              requestID,
+        setLoading(true);
+        console.log('Accept');
+
+        try {
+            setrequestLoadingFunc(true)
+            const response = await axios.post(blockchainUrl('/provideConsent'), {
+                patientID,
+                requestID,
             });
             console.log("Consent Granted:", response.data);
             Alert.alert("Success", "Request accepted successfully!");
             updateStatus("CONSENT_GRANTED"); // 🔥 UI will update dynamically
         } catch (error) {
-            setTimeout(()=>{
+            setTimeout(() => {
                 console.error("Error Accepting Request:", error.response?.data || error.message);
                 //   Alert.alert("Error", "Failed to accept request.");
-                
+
             }, 5000)
         } finally {
-            setTimeout(()=>{
+            setTimeout(() => {
                 setrequestLoadingFunc(false)
                 expandCardFunc()
             }, 5000)
             setLoading(false);
             setCardStatus(false)
-            
+
         }
     };
-    
+
     const handleReject = async () => {
         setLoading(true);
         console.log('Reject');
         try {
             setrequestLoadingFunc(true)
             const response = await axios.post(blockchainUrl('/rejectRequest'), {
-              patientID,
-              requestID,
-              rejectionReason: "Not authorized", // You can modify this
+                patientID,
+                requestID,
+                rejectionReason: "Not authorized", // You can modify this
             });
             console.log("Request Rejected:", response.data);
             Alert.alert("Success", "Request rejected successfully!");
             updateStatus("REQUEST_REJECTED"); // 🔥 UI will update dynamically
         } catch (error) {
-            setTimeout(()=>{
+            setTimeout(() => {
                 console.error("Error Accepting Request:", error.response?.data || error.message);
                 //   Alert.alert("Error", "Failed to accept request.");
                 // Alert.alert("Error", "Failed to reject request.");
-                
+
             }, 5000)
             // console.error("Error Rejecting Request:", error.response?.data || error.message);
-      } finally {
-            setTimeout(()=>{
+        } finally {
+            setTimeout(() => {
                 setrequestLoadingFunc(false)
                 expandCardFunc()
             }, 5000)
             setLoading(false);
             setCardStatus(false)
-      }
-  };
-  
+        }
+    };
+
 
     return (
         <View className="flex flex-row gap-x-4">

@@ -4,12 +4,6 @@ import { sessionService } from "../services/sessionService";
 const UserContext = createContext();
 
 export const UserProvider = ({ children }) => {
-<<<<<<< Updated upstream
-    const [ user, setUser ] = useState("")
-
-    return (
-        <UserContext.Provider value={{user, setUser}}>
-=======
     const [sessionState, setSessionState] = useState(sessionService.getState());
 
     useEffect(() => {
@@ -32,16 +26,9 @@ export const UserProvider = ({ children }) => {
 
     return (
         <UserContext.Provider value={value}>
->>>>>>> Stashed changes
             {children}
         </UserContext.Provider>
     );
 };
 
-<<<<<<< Updated upstream
-
-
-export const useUser = () => useContext(UserContext)
-=======
 export const useUser = () => useContext(UserContext);
->>>>>>> Stashed changes

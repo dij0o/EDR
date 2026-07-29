@@ -33,7 +33,7 @@ const UserBar = () => {
 
         <View className="">
           <Text className="leading- m-0 text-gray-900 font-light text-xl">Hello,</Text>
-          <Text className="leading- m-0 text-gray-900 font-bold text-3xl">{`${user.name}`}!</Text>
+          <Text className="leading- m-0 text-gray-900 font-bold text-3xl">{`${user?.name || user?.firstName || 'Patient'}`}!</Text>
         </View>
 
 

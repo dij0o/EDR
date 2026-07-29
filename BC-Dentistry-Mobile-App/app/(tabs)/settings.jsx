@@ -1,347 +1,43 @@
-import { SafeAreaView, View, Text } from 'react-native'
-import { Brief, Information, PageHeader } from '../../components'
-
-
-const sample = [{
-  "address": "123 Main Street, Dubai",
-  "clinicIDs": [
-    2
-  ],
-  "contactNumber": "0501234567",
-  "createdDate": "2025-03-13T07:07:01.374Z",
-  "dateOfBirth": "1980-01-01",
-  "dentalChart": [
-    {
-      "Audit_Date": "2024-10-04",
-      "Category": "Restorative",
-      "Code": "R123",
-      "Created_Date": "2024-10-01",
-      "Diagnoses": "Cavity",
-      "Discipline": "General Dentistry",
-      "Doctor_ID": 101,
-      "Estimate": 200,
-      "ID": 1,
-      "Notes": "Small cavity on molar 1, requires filling.",
-      "Phase": "1",
-      "Pre_Auth": "approved",
-      "Site": "1",
-      "Status": "E",
-      "Sub_Category": "Filling",
-      "Suf": "MODBL"
-    },
-    {
-      "Audit_Date": "2024-10-04",
-      "Category": "Restorative",
-      "Code": "R123",
-      "Created_Date": "2024-10-01",
-      "Diagnoses": "Cavity",
-      "Discipline": "General Dentistry",
-      "Doctor_ID": 101,
-      "Estimate": 200,
-      "ID": 1,
-      "Notes": "Small cavity on molar 2, requires filling.",
-      "Phase": "1",
-      "Pre_Auth": "approved",
-      "Site": "2",
-      "Status": "E",
-      "Sub_Category": "Filling",
-      "Suf": "MODBL"
-    },
-    {
-      "Audit_Date": "2024-10-04",
-      "Category": "Restorative",
-      "Code": "R123",
-      "Created_Date": "2024-10-01",
-      "Diagnoses": "Cavity",
-      "Discipline": "General Dentistry",
-      "Doctor_ID": 101,
-      "Estimate": 200,
-      "ID": 1,
-      "Notes": "Small cavity on molar 3, requires filling.",
-      "Phase": "1",
-      "Pre_Auth": "approved",
-      "Site": "3",
-      "Status": "E",
-      "Sub_Category": "Filling",
-      "Suf": "MODBL"
-    },
-    {
-      "Audit_Date": "2024-10-04",
-      "Category": "Restorative",
-      "Code": "R123",
-      "Created_Date": "2024-10-01",
-      "Diagnoses": "Cavity",
-      "Discipline": "General Dentistry",
-      "Doctor_ID": 101,
-      "Estimate": 200,
-      "ID": 1,
-      "Notes": "Small cavity on molar 4, requires filling.",
-      "Phase": "1",
-      "Pre_Auth": "approved",
-      "Site": "4",
-      "Status": "E",
-      "Sub_Category": "Filling",
-      "Suf": "MODBL"
-    },
-    {
-      "Audit_Date": "2024-10-04",
-      "Category": "Restorative",
-      "Code": "R123",
-      "Created_Date": "2024-10-01",
-      "Diagnoses": "Cavity",
-      "Discipline": "General Dentistry",
-      "Doctor_ID": 101,
-      "Estimate": 200,
-      "ID": 1,
-      "Notes": "Small cavity on molar 5, requires filling.",
-      "Phase": "1",
-      "Pre_Auth": "approved",
-      "Site": "5",
-      "Status": "E",
-      "Sub_Category": "Filling",
-      "Suf": "MODBL"
-    },
-    {
-      "Audit_Date": "2024-10-04",
-      "Category": "Restorative",
-      "Code": "R123",
-      "Created_Date": "2024-10-01",
-      "Diagnoses": "Cavity",
-      "Discipline": "General Dentistry",
-      "Doctor_ID": 101,
-      "Estimate": 200,
-      "ID": 1,
-      "Notes": "Small cavity on molar 6, requires filling.",
-      "Phase": "1",
-      "Pre_Auth": "approved",
-      "Site": "6",
-      "Status": "E",
-      "Sub_Category": "Filling",
-      "Suf": "MODBL"
-    },
-    {
-      "Audit_Date": "2024-10-04",
-      "Category": "Restorative",
-      "Code": "R123",
-      "Created_Date": "2024-10-01",
-      "Diagnoses": "Cavity",
-      "Discipline": "General Dentistry",
-      "Doctor_ID": 101,
-      "Estimate": 200,
-      "ID": 1,
-      "Notes": "Small cavity on molar 7, requires filling.",
-      "Phase": "1",
-      "Pre_Auth": "approved",
-      "Site": "7",
-      "Status": "C",
-      "Sub_Category": "Filling",
-      "Suf": "MODBL"
-    },
-    {
-      "Audit_Date": "2024-10-04",
-      "Category": "Restorative",
-      "Code": "R123",
-      "Created_Date": "2024-10-01",
-      "Diagnoses": "Cavity",
-      "Discipline": "General Dentistry",
-      "Doctor_ID": 101,
-      "Estimate": 200,
-      "ID": 1,
-      "Notes": "Small cavity on molar 8, requires filling.",
-      "Phase": "1",
-      "Pre_Auth": "approved",
-      "Site": "8",
-      "Status": "C",
-      "Sub_Category": "Filling",
-      "Suf": "MODBL"
-    },
-    {
-      "Audit_Date": "2024-10-04",
-      "Category": "Restorative",
-      "Code": "R123",
-      "Created_Date": "2024-10-01",
-      "Diagnoses": "Cavity",
-      "Discipline": "General Dentistry",
-      "Doctor_ID": 101,
-      "Estimate": 200,
-      "ID": 1,
-      "Notes": "Small cavity on molar 9, requires filling.",
-      "Phase": "1",
-      "Pre_Auth": "approved",
-      "Site": "9",
-      "Status": "C",
-      "Sub_Category": "Filling",
-      "Suf": "MODBL"
-    },
-    {
-      "Audit_Date": "2024-10-04",
-      "Category": "Restorative",
-      "Code": "R123",
-      "Created_Date": "2024-10-01",
-      "Diagnoses": "Cavity",
-      "Discipline": "General Dentistry",
-      "Doctor_ID": 101,
-      "Estimate": 200,
-      "ID": 1,
-      "Notes": "Small cavity on molar 10, requires filling.",
-      "Phase": "10",
-      "Pre_Auth": "approved",
-      "Site": "9",
-      "Status": "C",
-      "Sub_Category": "Filling",
-      "Suf": "MODBL"
-    },
-    {
-      "Audit_Date": "2024-10-04",
-      "Category": "Restorative",
-      "Code": "R123",
-      "Created_Date": "2024-10-01",
-      "Diagnoses": "Cavity",
-      "Discipline": "General Dentistry",
-      "Doctor_ID": 101,
-      "Estimate": 200,
-      "ID": 1,
-      "Notes": "Small cavity on molar 11, requires filling.",
-      "Phase": "1",
-      "Pre_Auth": "approved",
-      "Site": "11",
-      "Status": "C",
-      "Sub_Category": "Filling",
-      "Suf": "MODBL"
-    },
-    {
-      "Audit_Date": "2024-10-04",
-      "Category": "Restorative",
-      "Code": "R123",
-      "Created_Date": "2024-10-01",
-      "Diagnoses": "Cavity",
-      "Discipline": "General Dentistry",
-      "Doctor_ID": 101,
-      "Estimate": 200,
-      "ID": 1,
-      "Notes": "Small cavity on molar 12, requires filling.",
-      "Phase": "1",
-      "Pre_Auth": "approved",
-      "Site": "12",
-      "Status": "C",
-      "Sub_Category": "Filling",
-      "Suf": "MODBL"
-    },
-    {
-      "Audit_Date": "2024-10-04",
-      "Category": "Restorative",
-      "Code": "R123",
-      "Created_Date": "2024-10-01",
-      "Diagnoses": "Cavity",
-      "Discipline": "General Dentistry",
-      "Doctor_ID": 101,
-      "Estimate": 200,
-      "ID": 1,
-      "Notes": "Small cavity on molar 13, requires filling.",
-      "Phase": "1",
-      "Pre_Auth": "approved",
-      "Site": "13",
-      "Status": "C",
-      "Sub_Category": "Filling",
-      "Suf": "MODBL"
-    },
-    {
-      "Audit_Date": "2024-10-04",
-      "Category": "Restorative",
-      "Code": "R123",
-      "Created_Date": "2024-10-01",
-      "Diagnoses": "Cavity",
-      "Discipline": "General Dentistry",
-      "Doctor_ID": 101,
-      "Estimate": 200,
-      "ID": 1,
-      "Notes": "Small cavity on molar 14, requires filling.",
-      "Phase": "1",
-      "Pre_Auth": "approved",
-      "Site": "14",
-      "Status": "C",
-      "Sub_Category": "Filling",
-      "Suf": "MODBL"
-    }
-  ],
-  "docType": "patient",
-  "doctors": [
-    "Doctor2"
-  ],
-  "email": "john.doe@example.com",
-  "emiratesID": "1234567890",
-  "firstName": "John",
-  "gender": "Male",
-  "lastName": "Doe",
-  "medicalRecords": [
-    {
-      "allergies": [
-        {
-          "allergyId": "A001",
-          "description": "Allergic reaction to peanuts, causing potential anaphylaxis.",
-          "name": "Peanuts"
-        }
-      ],
-      "medications": [
-        {
-          "doses": "81 mg daily",
-          "drugName": "Aspirin",
-          "frequency": 5,
-          "intakeTime": "Morning",
-          "medicationId": "11111113",
-          "strength": "81",
-          "type": "Antiplatelet"
-        }
-      ]
-    }
-  ],
-  "patientID": "Patient1",
-  "role": "patient",
-  "sharedWith": [
-    "Doctor2",
-    "Doctor1"
-  ]
-}]
-
-
+import { SafeAreaView, View, Text, ScrollView, Alert } from 'react-native'
+import React from 'react'
+import { Brief, Information, PageHeader, CustomButton } from '../../components'
 import { useUser } from '../../Context/UserContext'
 
+const Settings = () => {
+  const { user, signOut } = useUser()
 
-import React, { useEffect } from 'react'
-
-const settings = () => {
-
-  const { user } = useUser()
-
-
-
-  useEffect(() => {
-    console.log('====================================');
-    console.log(user);
-    console.log('==================================== from settings page');
-    
-  }, [])
-
-
-
+  const handleLogout = () => {
+    Alert.alert("Log out", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Log out", style: "destructive", onPress: () => signOut() },
+    ]);
+  };
 
   return (
-    <SafeAreaView>
-      <View className='flex flex-col items-center'>
-        
-        <PageHeader headerText={'Info'} />
+    <SafeAreaView className="bg-white flex-1">
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        <View className="flex flex-col items-center">
+          <PageHeader headerText={'Info'} />
+          <View className="w-full px-6 flex flex-col gap-y-6">
+            <Brief
+              name={`${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Patient'}
+              id={user?.emiratesID || user?.blockchainID || 'N/A'}
+            />
+            
+            <Information data={user} />
 
-
-        <View className='bg-white-off p-6 flex flex-col gap-y-8'>
-          <Brief name={`${user?.firstName} ${user?.lastName}`} id={user.emiratesID} />
-          
-          <Information data={user} />
-           
+            <CustomButton
+              text="Log out"
+              handleClick={handleLogout}
+              classes="w-full mt-4"
+              containerClasses="bg-red-600 p-4 rounded-xl items-center justify-center"
+              textClasses="text-white font-bold text-lg text-center"
+            />
+          </View>
         </View>
-
-      </View>
+      </ScrollView>
     </SafeAreaView>
   )
 }
 
-export default settings
+export default Settings
