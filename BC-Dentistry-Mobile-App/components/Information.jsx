@@ -1,7 +1,8 @@
 import { View, Text, ScrollView } from 'react-native'
 import React from 'react'
 
-import { MedicalInfo, PersonalInfo } from './index'
+import MedicalInfo from './MedicalInfo'
+import PersonalInfo from './PersonalInfo'
 
 const Information = ({data}) => {
   return (

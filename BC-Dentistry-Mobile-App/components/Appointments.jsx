@@ -1,5 +1,13 @@
+<<<<<<< Updated upstream
 import { View, Text, ScrollView } from 'react-native'
 import React, { useEffect } from 'react'
+=======
+import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import Appointment from './Appointment';
+import { useUser } from '../Context/UserContext';
+import { authHeaders, databaseUrl } from '../utils/api';
+>>>>>>> Stashed changes
 
 import { Appointment } from './index'
 

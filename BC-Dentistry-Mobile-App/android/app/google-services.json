@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "690143508131",
+    "project_id": "bc-dentistry",
+    "storage_bucket": "bc-dentistry.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:690143508131:android:561dd4ed5373a18ad77116",
+        "android_client_info": {
+          "package_name": "com.edr.bcdentistry"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDzHnY6gvjipIRIQPDdAMnE7xJYlzpm5yA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -11,12 +11,15 @@ const UserBar = () => {
 
   const { user } = useUser()
 
+  console.log(icons?.Logo);
+
+
   useEffect(() => {
 
     console.log('----the is the user----');
     console.log(user?.email);
     console.log('----the is the user----');
-    
+
 
   }, [])
 
@@ -30,7 +33,7 @@ const UserBar = () => {
 
         <View className="">
           <Text className="leading- m-0 text-gray-900 font-light text-xl">Hello,</Text>
-          <Text className="leading- m-0 text-gray-900 font-bold text-3xl">{`${user.firstName}, ${user.lastName}`} !</Text>
+          <Text className="leading- m-0 text-gray-900 font-bold text-3xl">{`${user.name}`}!</Text>
         </View>
 
 
@@ -39,7 +42,7 @@ const UserBar = () => {
 
 
       <View>
-        <Image source={icons.Bell} resizeMode='contain' className="w-6 h-6"/>
+        <Image source={icons.Bell} resizeMode='contain' className="w-6 h-6" />
       </View>
 
     </View>

@@ -2,25 +2,31 @@ import { View, Text } from 'react-native'
 import React from 'react'
 import Field from './Field';
 
-const MedicalInfo = ({mdata}) => {
-  console.log('sssssssss====================================');
-  console.log(mdata?.medicalRecords);
-  console.log('sssssss====================================');
+const MedicalInfo = ({ mdata }) => {
+  const record = mdata?.medicalRecords?.[0] ?? null;
+  const allergy = record?.allergies?.[0] ?? null;
+  const medication = record?.medications?.[0] ?? null;
+
   return (
     <View>
       <Text className="text-2xl font-bold bg-gray-200 rounded-lg p-3">Medical Info</Text>
       <View className='mb-4 p-2 gap-5'>
-        <View className='flex flex-row gap-x-8'>
-          <Field fieldTitle={'Allergies'} fieldText={mdata.medicalRecords[0].allergies[0].name} />
-          <Field fieldTitle={'Allergies Description'} fieldText={mdata.medicalRecords[0].allergies[0].description} textClasses={'text-xl'} />
-        </View>
+        {!record ? (
+          <Text className="text-gray-500 italic">No medical records available.</Text>
+        ) : (
+          <>
+            <View className='flex flex-row gap-x-8'>
+              <Field fieldTitle={'Allergies'} fieldText={allergy?.name ?? 'Not provided'} />
+              <Field fieldTitle={'Allergies Description'} fieldText={allergy?.description ?? 'Not provided'} textClasses={'text-xl'} />
+            </View>
 
-
-        <View className='flex flex-row gap-x-8'>
-          <Field fieldTitle={'Medication'} fieldText={mdata.medicalRecords[0].medications[0].drugName} />
-          <Field fieldTitle={'Doses'} fieldText={mdata.medicalRecords[0].medications[0].doses} textClasses={'text-xl'} />
-          <Field fieldTitle={'Strength'} fieldText={mdata.medicalRecords[0].medications[0].strength} textClasses={'text-xl'} />
-        </View>
+            <View className='flex flex-row gap-x-8'>
+              <Field fieldTitle={'Medication'} fieldText={medication?.drugName ?? 'Not provided'} />
+              <Field fieldTitle={'Doses'} fieldText={medication?.doses ?? 'Not provided'} textClasses={'text-xl'} />
+              <Field fieldTitle={'Strength'} fieldText={medication?.strength ?? 'Not provided'} textClasses={'text-xl'} />
+            </View>
+          </>
+        )}
       </View>
     </View>
   )

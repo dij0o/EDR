@@ -1,7 +1,7 @@
 import { View, Text, Image, Pressable } from 'react-native'
 import React from 'react'
 
-import { CustomExpandable } from "./index"
+import CustomExpandable from "./CustomExpandable"
 import { icons } from '../constants'
 
 import { useRouter, Link } from 'expo-router'

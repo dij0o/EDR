@@ -11,7 +11,11 @@ import { useUser } from '../../Context/UserContext';
 import { blockchainUrl } from '../../config/api';
 
 const SignIn = () => {
+<<<<<<< Updated upstream
   const { setUser } = useUser(); // no need to use user here
+=======
+  const { setSession } = useUser();
+>>>>>>> Stashed changes
   const router = useRouter();
 
   const [form, setForm] = useState({ email: "", password: "" });
@@ -61,6 +65,11 @@ const SignIn = () => {
         );
       }
 
+<<<<<<< Updated upstream
+=======
+      await setSession({ accessToken: token, user });
+      router.replace('/(tabs)/home'); // Navigate to home
+>>>>>>> Stashed changes
     } catch (error) {
       Alert.alert("Error", error.message || "Something went wrong.");
     } finally {

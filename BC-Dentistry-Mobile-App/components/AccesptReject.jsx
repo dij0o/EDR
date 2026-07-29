@@ -33,8 +33,14 @@
 import { View, Text, Alert, Animated } from 'react-native';
 import React, { useState } from 'react';
 import axios from 'axios';
+<<<<<<< Updated upstream
 import { CustomButton } from './index';
 import { blockchainUrl } from '../config/api';
+=======
+import CustomButton from './CustomButton';
+import { authHeaders, blockchainUrl } from '../utils/api';
+import { useUser } from '../Context/UserContext';
+>>>>>>> Stashed changes
 
 const AccesptReject = ({ requestID, patientID, updateStatus, setCardStatus, requestLoadingStatus, setrequestLoadingFunc, expandCardFunc }) => {
     const [loading, setLoading] = useState(false);

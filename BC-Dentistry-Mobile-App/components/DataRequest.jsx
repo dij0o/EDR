@@ -1,7 +1,10 @@
 import { View, Text, TouchableOpacity, Animated } from 'react-native'
 import React, { useRef, useState, useEffect } from 'react'
 
-import { CustomButton, DataRequestElement, AccesptReject, StatusUpdateLoading } from './index'
+import CustomButton from './CustomButton';
+import DataRequestElement from './DataRequestElement';
+import AccesptReject from './AccesptReject';
+import StatusUpdateLoading from './StatusUpdateLoading';
 
 
 

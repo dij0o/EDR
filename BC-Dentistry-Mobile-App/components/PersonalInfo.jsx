@@ -1,6 +1,10 @@
 import { View, Text } from 'react-native'
+<<<<<<< Updated upstream
 import React from 'react'
 import {Field} from './index'
+=======
+import Field from './Field'
+>>>>>>> Stashed changes
 
 const sample = [{
     "address": "123 Main Street, Dubai",
