@@ -1,22 +1,12 @@
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import React, { useEffect, useState } from 'react';
-import { useUser } from '../Context/UserContext';
-import { authHeaders, databaseUrl } from '../utils/api';
-
 import { Appointment } from './index'
-
-
 import { appointmentsData } from "../data"
 
-
 const Appointments = ({ status }) => {
-
-
     useEffect(() => {
         console.log(appointmentsData.filter((a) => String(a.status).toLowerCase() == String(status).toLowerCase()));
     }, [status])
-
-
 
     return (
         <ScrollView className="h-[42vh]">
@@ -33,8 +23,6 @@ const Appointments = ({ status }) => {
                         )
                     })
                 }
-
-
             </View>
         </ScrollView>
     )

@@ -154,7 +154,6 @@ const appointmentsData = [
     }
   ];
   
-  console.log(dataRequests);
   
 
 

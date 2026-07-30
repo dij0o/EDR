@@ -1,4 +1,5 @@
 import { tokenStorage } from './tokenStorage';
+import apiClient, { databaseUrl, setSessionHandlers } from './apiClient';
 
 class SessionService {
   constructor() {
@@ -35,10 +36,22 @@ class SessionService {
 
     try {
       const { accessToken, refreshToken, user } = await tokenStorage.getSession();
-      if (accessToken && user) {
+      if (accessToken) {
         this.accessToken = accessToken;
         this.refreshToken = refreshToken;
         this.user = user;
+
+        // Validate session server-side via GET /auth/me
+        try {
+          const response = await apiClient.get(databaseUrl('/auth/me'));
+          if (response.data?.user || response.data) {
+            this.user = response.data.user || response.data;
+          }
+        } catch (authError) {
+          // If 401 refresh failed, apiClient's interceptor already triggered clearSession().
+          // If network/offline error, log warning and preserve local session.
+          console.warn('[SessionService] /auth/me validation warning:', authError.message || authError);
+        }
       } else {
         await tokenStorage.clearSession();
         this.accessToken = null;
@@ -46,8 +59,11 @@ class SessionService {
         this.user = null;
       }
     } catch (error) {
-      console.error('[SessionService] Failed to restore session:', error);
+      console.error('[SessionService] Failed to read stored session:', error);
       await tokenStorage.clearSession();
+      this.accessToken = null;
+      this.refreshToken = null;
+      this.user = null;
     } finally {
       this.isLoading = false;
       this.notify();
@@ -69,6 +85,14 @@ class SessionService {
   }
 
   async clearSession() {
+    if (this.accessToken) {
+      try {
+        await apiClient.post(databaseUrl('/auth/logout'), {});
+      } catch (error) {
+        console.warn('[SessionService] Server-side logout call failed:', error.message || error);
+      }
+    }
+
     this.accessToken = null;
     this.refreshToken = null;
     this.user = null;
@@ -78,3 +102,9 @@ class SessionService {
 }
 
 export const sessionService = new SessionService();
+
+// Register handlers with apiClient to avoid circular dependency
+setSessionHandlers({
+  onExpired: () => sessionService.clearSession(),
+  onUpdated: (data) => sessionService.setSession(data),
+});

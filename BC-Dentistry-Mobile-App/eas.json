@@ -6,13 +6,22 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_DATABASE_API_URL": "https://edr.bizcenter.tech/api/database"
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_DATABASE_API_URL": "https://edr.bizcenter.tech/api/database"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_DATABASE_API_URL": "https://edr.bizcenter.tech/api/database"
+      }
     }
   },
   "submit": {

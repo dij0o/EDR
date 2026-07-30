@@ -1,42 +1,31 @@
 import { View, Text, SafeAreaView, ScrollView } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 
 import { RequestsHeader, DataRequest, NoRequests } from '../../components';
-import { blockchainUrl } from '../../config/api';
-
+import apiClient, { blockchainUrl, getPatientBlockchainID } from '../../services/apiClient';
 import { useUser } from '../../Context/UserContext';
 
-
 const Requests = () => {
-
-    const { user } = useUser()
-
-
-    // useEffect(() => {
-    //     console.log('====================================');
-    //     console.log(user);
-    //     console.log('====================================');
-    // }, [])
-
-
-
-
-
-    const [requests, setRequests] = useState([]); // Store API response
+    const { user } = useUser();
+    const [requests, setRequests] = useState([]);
     const [loading, setLoading] = useState(true);
+
+    const patientID = getPatientBlockchainID(user);
 
     useEffect(() => {
         const fetchRequests = async () => {
+            if (!patientID) {
+                setLoading(false);
+                return;
+            }
+
             try {
-                const response = await axios.get(blockchainUrl('/getAllRequestsForPatient/Patient1'));
-                // console.log("Fetched Requests:", response.data);
-                
-                if (response.data.length > 0) {
+                const response = await apiClient.get(blockchainUrl(`/getAllRequestsForPatient/${patientID}`));
+                if (response.data?.length > 0) {
                     setRequests(response.data.filter((request) => request.status == 'PENDING_PATIENT_CONSENT'));
                 } else {
-                    console.warn("No pending requests found.");
+                    setRequests([]);
                 }
             } catch (error) {
                 console.error("API Error:", error.response?.data || error.message);
@@ -46,38 +35,25 @@ const Requests = () => {
         };
 
         fetchRequests();
-    }, []);
+    }, [patientID]);
 
     return (
         <View>
             <StatusBar style='light' />
-
-            {/* Requests Header */}
             <RequestsHeader requests={requests} />
-
             <ScrollView className='px-8 flex flex-col gap-y-8 h-[60vh]'>
-
                 <View className="flex flex-col gap-6 py-10">
-                    {/* <DataRequest
-                        key={101}  // Use API ID
-                        type={"on-chain"}  
-                        from={"Ali"}
-                        to={"Ahmad"}
-                        status={'PENDING_PATIENT_CONSENT'}
-                        id={'017a2f8212e23b45eadf4a519460434b40a23eee754a48b5e0625bba9dc5c086'}
-                        about={ "N/A"}
-                        date={ "N/A"}
-                        time={ "N/A"}
-                    /> */}
                     {loading ? (
-                        <Text>Loading requests...</Text>
+                        <Text className="text-center text-gray-500">Loading requests...</Text>
+                    ) : !patientID ? (
+                        <NoRequests text={"Unable to load your data. Patient account ID is missing."} />
                     ) : requests.length === 0 ? (
                         <NoRequests text={"All done, you don't have any pending requests!"} />
                     ) : (
                         requests.filter((request) => request.status == 'PENDING_PATIENT_CONSENT').map((request) => (
                             <DataRequest
-                                key={request.requestID}  // Use API ID
-                                type={request.type || "on-chain"}  
+                                key={request.requestID}
+                                type={request.type || "on-chain"}
                                 from={request.doctorID}
                                 to={request.patientID}
                                 status={request.status}
@@ -89,7 +65,6 @@ const Requests = () => {
                         ))
                     )}
                 </View>
-
             </ScrollView>
         </View>
     );

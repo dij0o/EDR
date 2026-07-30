@@ -1,14 +1,14 @@
-import { View, Text, SafeAreaView, ScrollView, Image, Alert } from 'react-native';
+import { View, Text, SafeAreaView, ScrollView, Image, Alert, Platform } from 'react-native';
 import React, { useState } from 'react';
-import axios from 'axios';
 import { Link, useRouter } from 'expo-router';
+import * as Device from 'expo-device';
 
 import { icons, Images } from "../../constants";
 import CustomInput from '../CustomInput';
 import CustomButton from '../CustomButton';
 
 import { useUser } from '../../Context/UserContext';
-import { databaseUrl } from '../../utils/api';
+import apiClient, { databaseUrl } from '../../services/apiClient';
 
 const SignIn = () => {
   const { setSession } = useUser();
@@ -30,15 +30,24 @@ const SignIn = () => {
     setIsLoading(true);
 
     try {
-      const response = await axios.post(databaseUrl('/login'), { email, password });
-      const { token, user } = response.data;
+      const clientType = Platform.OS === 'ios' ? 'ios' : 'android';
+      const deviceLabel = `${Device.modelName || Device.deviceName || 'Mobile Device'} (${Platform.OS})`;
+
+      const response = await apiClient.post(
+        databaseUrl('/login'),
+        { email, password, clientType, deviceLabel },
+        { skipAuth: true }
+      );
+
+      const { token, accessToken, refreshToken, user } = response.data;
+      const finalToken = token || accessToken;
 
       if (user?.role?.toLowerCase() !== 'patient') {
         Alert.alert("Patient account required", "Please sign in with a patient account to use the mobile app.");
         return;
       }
 
-      await setSession({ accessToken: token, user });
+      await setSession({ accessToken: finalToken, refreshToken, user });
       router.replace('/(tabs)/home');
     } catch (error) {
       Alert.alert("Login failed", error.response?.data?.error || error.message || "Something went wrong.");

@@ -47,6 +47,14 @@ async function deleteItem(key) {
 }
 
 export const tokenStorage = {
+  async getAccessToken() {
+    return getItem(KEYS.ACCESS_TOKEN);
+  },
+
+  async getRefreshToken() {
+    return getItem(KEYS.REFRESH_TOKEN);
+  },
+
   async saveSession({ accessToken, refreshToken, user }) {
     if (accessToken) await setItem(KEYS.ACCESS_TOKEN, accessToken);
     if (refreshToken) await setItem(KEYS.REFRESH_TOKEN, refreshToken);

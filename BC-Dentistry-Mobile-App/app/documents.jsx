@@ -1,81 +1,77 @@
 import { View, Text, SafeAreaView, ScrollView } from 'react-native'
 import { useEffect, useState } from 'react';
 import React from 'react'
-import axios from 'axios';
 import { NoRequests, Document } from '../components';
-import { blockchainUrl } from '../config/api';
-
-
+import apiClient, { blockchainUrl, getPatientBlockchainID } from '../services/apiClient';
+import { useUser } from '../Context/UserContext';
 
 const documents = () => {
+    const { user } = useUser();
     const [ documents, setDocuments ] = useState([])
-    const [ loading, setIsLoading ] = useState(false)
+    const [ loading, setIsLoading ] = useState(true)
 
-    
+    const patientID = getPatientBlockchainID(user);
 
     useEffect(() => {
         const fetchDoucments = async () => {
+            if (!patientID) {
+                setIsLoading(false);
+                return;
+            }
+
             try{
                 setIsLoading(true)
-                const response = await axios.get(blockchainUrl('/getAllRequestsForPatient/Patient1'));
-
+                const response = await apiClient.get(blockchainUrl(`/getAllRequestsForPatient/${patientID}`));
                 const uploadedDocuments = await response.data?.filter((data) => {data.documents})
                 uploadedDocuments == undefined ? setDocuments([]) : setDocuments(uploadedDocuments)
-                console.log(documents);
-                
             }catch(error){
                 console.error("API error", error.message)
             }
-
             finally{
                 setIsLoading(false)
             }
         }
 
         fetchDoucments()
-
-    }, [])
+    }, [patientID])
 
   return (
     <SafeAreaView>
         <View className='flex flex-col gap-4 p-6'>
-        {
-            // documents.length == 0 && <NoRequests text={"You havn't uploaded any documents "} />
-        }
-        {
-            // documents.length > 0 &&
-            <>
-                <Document
-                    key={1}
-                    title='Terms & Conditions policies'
-                    type={'pdf'}
-                    size={'1.2 MB'}
-                    content={''}
-                />
-                <Document
-                    key={2}
-                    title='Sharing data Consent'
-                    type={'pdf'}
-                    size={'1.2 MB'}
-                    content={''}
-                />
-                <Document
-                    key={4}
-                    title='DICOM Image'
-                    type={'dicom'}
-                    size={'1.2 MB'}
-                    content={''}
-                />
-                <Document
-                    key={3}
-                    title='Personal Photo'
-                    type={'jpeg'}
-                    size={'1.2 MB'}
-                    content={''}
-                />
-            </>
-        }
-
+            {!patientID ? (
+                <NoRequests text={"Unable to load your data. Patient account ID is missing."} />
+            ) : (
+                <>
+                    <Document
+                        key={1}
+                        title='Terms & Conditions policies'
+                        type={'pdf'}
+                        size={'1.2 MB'}
+                        content={''}
+                    />
+                    <Document
+                        key={2}
+                        title='Sharing data Consent'
+                        type={'pdf'}
+                        size={'1.2 MB'}
+                        content={''}
+                    />
+                    <Document
+                        key={4}
+                        title='DICOM Image'
+                        type={'dicom'}
+                        size={'1.2 MB'}
+                        content={''}
+                    />
+                    <Document
+                        key={3}
+                        title='Personal Photo'
+                        type={'jpeg'}
+                        size={'1.2 MB'}
+                        content={''}
+                    />
+                </>
+            )}
         </View>
     </SafeAreaView>
   )
