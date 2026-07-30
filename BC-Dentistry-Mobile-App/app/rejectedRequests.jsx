@@ -5,7 +5,7 @@ import { DataRequest, NoRequests } from '../components'
 import apiClient, { blockchainUrl, getPatientBlockchainID } from '../services/apiClient';
 import { useUser } from '../Context/UserContext';
 
-const rejectedRequests = () => {
+const RejectedRequests = () => {
   const { user } = useUser();
   const [reqests, setRequests] = useState([])
   const [isLoading, setIsLoading] = useState(true)
@@ -46,10 +46,10 @@ const rejectedRequests = () => {
                   <View><Text>it is loading</Text></View>
                 ) : !patientID ? (
                   <NoRequests text={"Unable to load your data. Patient account ID is missing."} />
-                ) : reqests.filter((request) => request.status == 'REJECTED').length === 0 ? (
-                  <NoRequests text={"You didn't reject any data requests."} />
+                ) : reqests.filter((request) => request.status === 'REQUEST_REJECTED' || request.status === 'REJECTED').length === 0 ? (
+                  <NoRequests text={"No rejected requests found."} />
                 ) : (
-                  reqests.filter((request) => request.status == 'REJECTED').map((request) => {
+                  reqests.filter((request) => request.status === 'REQUEST_REJECTED' || request.status === 'REJECTED').map((request) => {
                     return (
                       <DataRequest
                           key={request.requestID}
@@ -74,4 +74,4 @@ const rejectedRequests = () => {
   )
 }
 
-export default rejectedRequests
+export default RejectedRequests;

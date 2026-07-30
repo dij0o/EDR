@@ -1,15 +1,12 @@
 import { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as Notifications from 'expo-notifications';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 
 import { UserProvider, useUser } from "../Context/UserContext"
 import { logFcmToken } from '../utils/getFcmToken';
 import { logExpoPushToken } from '../utils/getExpoPushToken';
-import { Platform } from 'react-native';
 
-// Must be called at module scope (not inside a component) so it's registered
-// before any notification arrives — enables foreground notification banners.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -27,7 +24,7 @@ function InitialLayout() {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
-    const inProtectedGroup = segments[0] === '(tabs)' || ['proceedRequests', 'rejectedRequests', 'documents', 'patients'].includes(segments[0]);
+    const inProtectedGroup = segments[0] === '(tabs)' || ['proceedRequests', 'rejectedRequests', 'documents', 'notifications', 'auditHistory', 'patients'].includes(segments[0]);
     const isRootIndex = segments[0] === undefined || segments[0] === 'index';
 
     if (!isAuthenticated && (inProtectedGroup || isRootIndex)) {
@@ -51,6 +48,8 @@ function InitialLayout() {
       <Stack.Screen name="proceedRequests" options={{ headerShown: true, headerTitle: 'Approved Requests', headerBackTitle: 'Info' }} />
       <Stack.Screen name="rejectedRequests" options={{ headerShown: true, headerTitle: 'Rejected Requests', headerBackTitle: 'Info' }} />
       <Stack.Screen name="documents" options={{ headerShown: true, headerTitle: 'Documents', headerBackTitle: 'docs' }} />
+      <Stack.Screen name="notifications" options={{ headerShown: true, headerTitle: 'Notifications', headerBackTitle: 'Home' }} />
+      <Stack.Screen name="auditHistory" options={{ headerShown: true, headerTitle: 'Access Audit History', headerBackTitle: 'Info' }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
@@ -60,10 +59,8 @@ function InitialLayout() {
 export default function RootLayout() {
   useEffect(() => {
     if (Platform.OS === 'android') {
-      // Android: raw FCM token — tested via Firebase Console (Phase 1)
       logFcmToken();
     } else if (Platform.OS === 'ios') {
-      // iOS: Expo push token — uses Expo Push Service → APNs (Phase 1b)
       logExpoPushToken();
     }
   }, []);
@@ -72,5 +69,5 @@ export default function RootLayout() {
     <UserProvider>
       <InitialLayout />
     </UserProvider>
-  ) 
+  );
 }

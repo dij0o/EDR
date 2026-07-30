@@ -141,7 +141,7 @@ apiClient.interceptors.response.use(
   }
 );
 
-export const createAbortController = () => new AbortController();
+export const createAbortController = () => (typeof AbortController !== 'undefined' ? new AbortController() : null);
 export const getPatientBlockchainID = (user) => user?.blockchainID || null;
 
 export default apiClient;

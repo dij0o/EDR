@@ -1,47 +1,74 @@
-import { View, Text, SafeAreaView, ScrollView } from 'react-native';
+import { View, Text, SafeAreaView, ScrollView, RefreshControl } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 
 import { RequestsHeader, DataRequest, NoRequests } from '../../components';
-import apiClient, { blockchainUrl, getPatientBlockchainID } from '../../services/apiClient';
+import apiClient, { databaseUrl, blockchainUrl, getPatientBlockchainID } from '../../services/apiClient';
 import { useUser } from '../../Context/UserContext';
 
 const Requests = () => {
     const { user } = useUser();
     const [requests, setRequests] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
 
     const patientID = getPatientBlockchainID(user);
 
-    useEffect(() => {
-        const fetchRequests = async () => {
-            if (!patientID) {
-                setLoading(false);
-                return;
-            }
+    const fetchRequests = useCallback(async () => {
+        if (!patientID) {
+            setLoading(false);
+            return;
+        }
 
-            try {
-                const response = await apiClient.get(blockchainUrl(`/getAllRequestsForPatient/${patientID}`));
-                if (response.data?.length > 0) {
-                    setRequests(response.data.filter((request) => request.status == 'PENDING_PATIENT_CONSENT'));
-                } else {
-                    setRequests([]);
-                }
-            } catch (error) {
-                console.error("API Error:", error.response?.data || error.message);
-            } finally {
-                setLoading(false);
-            }
-        };
+        try {
+            const response = await apiClient.get(databaseUrl(`/getAllRequestsForPatient/${patientID}`));
+            const list = Array.isArray(response.data?.data)
+                ? response.data.data
+                : Array.isArray(response.data)
+                ? response.data
+                : [];
 
-        fetchRequests();
+            if (list.length > 0) {
+                setRequests(list.filter((request) => request.status === 'PENDING_PATIENT_CONSENT'));
+            } else {
+                setRequests([]);
+            }
+        } catch (error) {
+            console.error("API Error:", error.response?.data || error.message);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
     }, [patientID]);
 
+    useFocusEffect(
+        useCallback(() => {
+            fetchRequests();
+        }, [fetchRequests])
+    );
+
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        fetchRequests();
+    }, [fetchRequests]);
+
+    const handleStatusChange = (requestId, newStatus) => {
+        if (newStatus !== 'PENDING_PATIENT_CONSENT') {
+            setRequests((prev) => prev.filter((r) => r.requestID !== requestId));
+        }
+    };
+
     return (
-        <View>
+        <View className="flex-1 bg-white">
             <StatusBar style='light' />
             <RequestsHeader requests={requests} />
-            <ScrollView className='px-8 flex flex-col gap-y-8 h-[60vh]'>
+            <ScrollView
+                className='px-8 flex flex-col gap-y-8 h-[60vh]'
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1E3A8A']} tintColor="#1E3A8A" />
+                }
+            >
                 <View className="flex flex-col gap-6 py-10">
                     {loading ? (
                         <Text className="text-center text-gray-500">Loading requests...</Text>
@@ -50,7 +77,7 @@ const Requests = () => {
                     ) : requests.length === 0 ? (
                         <NoRequests text={"All done, you don't have any pending requests!"} />
                     ) : (
-                        requests.filter((request) => request.status == 'PENDING_PATIENT_CONSENT').map((request) => (
+                        requests.filter((request) => request.status === 'PENDING_PATIENT_CONSENT').map((request) => (
                             <DataRequest
                                 key={request.requestID}
                                 type={request.type || "on-chain"}
@@ -61,6 +88,7 @@ const Requests = () => {
                                 about={request.about || "N/A"}
                                 date={request.date || "N/A"}
                                 time={request.time || "N/A"}
+                                onStatusChange={handleStatusChange}
                             />
                         ))
                     )}

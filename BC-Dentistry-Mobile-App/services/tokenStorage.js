@@ -7,13 +7,10 @@ const KEYS = {
   USER_DATA: 'edr_user_data',
 };
 
-// NOTE: The localStorage fallback for Web is provided for browser development compatibility only.
-// It DOES NOT provide equivalent security to native SecureStore (Keychain on iOS / Keystore on Android).
-// Web localStorage is accessible via XSS and is not encrypted at rest.
 async function getItem(key) {
   try {
     if (Platform.OS === 'web') {
-      return localStorage.getItem(key);
+      return typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
     }
     return await SecureStore.getItemAsync(key);
   } catch (error) {
@@ -25,7 +22,7 @@ async function getItem(key) {
 async function setItem(key, value) {
   try {
     if (Platform.OS === 'web') {
-      localStorage.setItem(key, value);
+      if (typeof localStorage !== 'undefined') localStorage.setItem(key, value);
       return;
     }
     await SecureStore.setItemAsync(key, value);
@@ -37,7 +34,7 @@ async function setItem(key, value) {
 async function deleteItem(key) {
   try {
     if (Platform.OS === 'web') {
-      localStorage.removeItem(key);
+      if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
       return;
     }
     await SecureStore.deleteItemAsync(key);
@@ -69,7 +66,7 @@ export const tokenStorage = {
     if (rawUser) {
       try {
         user = JSON.parse(rawUser);
-      } catch (e) {
+      } catch (_err) {
         user = null;
       }
     }

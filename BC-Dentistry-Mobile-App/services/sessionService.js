@@ -44,8 +44,9 @@ class SessionService {
         // Validate session server-side via GET /auth/me
         try {
           const response = await apiClient.get(databaseUrl('/auth/me'));
-          if (response.data?.user || response.data) {
-            this.user = response.data.user || response.data;
+          const userPayload = response.data?.data || response.data?.user || response.data;
+          if (userPayload) {
+            this.user = userPayload;
           }
         } catch (authError) {
           // If 401 refresh failed, apiClient's interceptor already triggered clearSession().

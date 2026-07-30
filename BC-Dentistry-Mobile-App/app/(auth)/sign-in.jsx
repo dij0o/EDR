@@ -3,9 +3,8 @@ import React, { useState } from 'react';
 import { Link, useRouter } from 'expo-router';
 import * as Device from 'expo-device';
 
-import { icons, Images } from "../../constants";
-import CustomInput from '../CustomInput';
-import CustomButton from '../CustomButton';
+import { icons, Images } from '../../constants';
+import { CustomInput, CustomButton } from '../../components';
 
 import { useUser } from '../../Context/UserContext';
 import apiClient, { databaseUrl } from '../../services/apiClient';
@@ -39,7 +38,8 @@ const SignIn = () => {
         { skipAuth: true }
       );
 
-      const { token, accessToken, refreshToken, user } = response.data;
+      const payload = response.data?.data || response.data;
+      const { token, accessToken, refreshToken, user } = payload;
       const finalToken = token || accessToken;
 
       if (user?.role?.toLowerCase() !== 'patient') {
@@ -66,20 +66,20 @@ const SignIn = () => {
       <ScrollView>
         <View className="flex min-h-full px-8 py-16">
           <View className="flex gap-4 mb-10">
-            <Image source={icons.Logo} resizeMode='cover' className="w-16 h-16"/>
+            <Image source={icons.Logo} resizeMode='cover' className="w-16 h-16" />
             <Text className="text-white text-3xl font-bold">BC Dentistry</Text>
           </View>
 
           <View className="flex flex-col gap-y-8">
-            <CustomInput 
-              handleChange={(text) => setForm({ ...form, email: text })} 
+            <CustomInput
+              handleChange={(text) => setForm({ ...form, email: text })}
               type="email-address"
               value={form.email}
               label='Email'
               placeHolder="user@example.com"
             />
-            <CustomInput 
-              handleChange={(text) => setForm({ ...form, password: text })} 
+            <CustomInput
+              handleChange={(text) => setForm({ ...form, password: text })}
               type="password"
               value={form.password}
               label='Password'
@@ -87,23 +87,23 @@ const SignIn = () => {
             />
           </View>
 
-          <CustomButton 
-            text={isSubmitting ? 'Logging in...' : 'Login'} 
-            handleClick={handleSignIn} 
-            style='mt-12' 
+          <CustomButton
+            text={isSubmitting ? 'Logging in...' : 'Login'}
+            handleClick={handleSignIn}
+            style='mt-12'
             disabled={isSubmitting}
           />
 
-          <View className="mt-4">
-            <Text className='text-gray-400 text-sm'>
-              Don't have an account? <Link href="/sign-up" className='underline'>Sign up</Link> here
+          <View className="mt-4 px-2">
+            <Text className="text-gray-400 text-xs text-center leading-4">
+              Need an account? Contact your registered dental clinic for patient onboarding credentials.
             </Text>
           </View>
         </View>
 
         {isLoading && (
           <View className="w-60 h-52 flex flex-col gap-3 absolute top-60 left-[22vw] items-center justify-center bg-gray-800 p-4 rounded-xl shadow-lg shadow-black/20">
-            <Image source={icons.Loading} resizeMode='contain' className='w-14 h-14'  />
+            <Image source={icons.Loading} resizeMode='contain' className='w-14 h-14' />
             <Text className="text-center text-white text-2xl">Loading ⏳</Text>
           </View>
         )}

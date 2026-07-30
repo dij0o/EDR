@@ -225,6 +225,8 @@ PODS:
     - ExpoModulesCore
   - ExpoDevice (7.0.3):
     - ExpoModulesCore
+  - ExpoFileSystem (18.0.12):
+    - ExpoModulesCore
   - ExpoFont (13.0.4):
     - ExpoModulesCore
   - ExpoHaptics (14.0.1):
@@ -257,6 +259,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - Yoga
   - ExpoSecureStore (14.0.1):
+    - ExpoModulesCore
+  - ExpoSharing (13.0.1):
     - ExpoModulesCore
   - ExpoSplashScreen (0.29.24):
     - ExpoModulesCore
@@ -2084,12 +2088,14 @@ DEPENDENCIES:
   - ExpoAsset (from `../node_modules/expo-asset/ios`)
   - ExpoBlur (from `../node_modules/expo-blur/ios`)
   - ExpoDevice (from `../node_modules/expo-device/ios`)
+  - ExpoFileSystem (from `../node_modules/expo-file-system/ios`)
   - ExpoFont (from `../node_modules/expo-font/ios`)
   - ExpoHaptics (from `../node_modules/expo-haptics/ios`)
   - ExpoHead (from `../node_modules/expo-router/ios`)
   - ExpoLinking (from `../node_modules/expo-linking/ios`)
   - ExpoModulesCore (from `../node_modules/expo-modules-core`)
   - ExpoSecureStore (from `../node_modules/expo-secure-store/ios`)
+  - ExpoSharing (from `../node_modules/expo-sharing/ios`)
   - ExpoSplashScreen (from `../node_modules/expo-splash-screen/ios`)
   - ExpoSymbols (from `../node_modules/expo-symbols/ios`)
   - ExpoSystemUI (from `../node_modules/expo-system-ui/ios`)
@@ -2200,6 +2206,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-blur/ios"
   ExpoDevice:
     :path: "../node_modules/expo-device/ios"
+  ExpoFileSystem:
+    :path: "../node_modules/expo-file-system/ios"
   ExpoFont:
     :path: "../node_modules/expo-font/ios"
   ExpoHaptics:
@@ -2212,6 +2220,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-modules-core"
   ExpoSecureStore:
     :path: "../node_modules/expo-secure-store/ios"
+  ExpoSharing:
+    :path: "../node_modules/expo-sharing/ios"
   ExpoSplashScreen:
     :path: "../node_modules/expo-splash-screen/ios"
   ExpoSymbols:
@@ -2374,12 +2384,14 @@ SPEC CHECKSUMS:
   ExpoAsset: 0687fe05f5d051c4a34dd1f9440bd00858413cfe
   ExpoBlur: 567af66164e3043a9a30069594aed1ddf0a88d97
   ExpoDevice: cf7419343b6e060209aaadd596defb1b6320597f
+  ExpoFileSystem: c8c19bf80d914c83dda3beb8569d7fb603be0970
   ExpoFont: 773955186469acc5108ff569712a2d243857475f
   ExpoHaptics: e01cce0741d68c281853118eb0267f88d42c6b7a
   ExpoHead: f3e37901afeb4b1412d1dd8c4fb957bd69087ddf
   ExpoLinking: 0381341519ca7180a3a057d20edb1cf6a908aaf4
   ExpoModulesCore: dd965804a882f1dbb6036fceea4d912461aeaa0d
   ExpoSecureStore: d006eea5e316283099d46f80a6b10055b89a6008
+  ExpoSharing: c4540ef2e6615a92e05d2bddf019e1f58f27119e
   ExpoSplashScreen: 0e176e85073dfb9686c100c7f9637975d00608dd
   ExpoSymbols: b9f255ce49868d46a73f30e12859efeb8117bcad
   ExpoSystemUI: fb8213e39d19e0861320fa69eb60cad7a839c080
