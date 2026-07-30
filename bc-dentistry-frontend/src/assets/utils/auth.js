@@ -1,3 +1,7 @@
+const sessionChannel = typeof BroadcastChannel === 'function'
+    ? new BroadcastChannel('edr-session')
+    : null;
+
 export const getStoredUser = () => {
     const storedUser = sessionStorage.getItem("user");
 
@@ -36,4 +40,3 @@ sessionChannel?.addEventListener('message', (event) => {
         window.dispatchEvent(new Event('edr-session-expired'));
     }
 });
-const sessionChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('edr-session') : null;

@@ -18,6 +18,15 @@ test('web uses cookies, CSRF, refresh, me, and server logout without bearer stor
   assert.doesNotMatch(`${api}\n${login}\n${auth}`, /localStorage\.(getItem|setItem)\(['"]token/);
 });
 
+test('web session channel initializes before use and production HTML is self-hosted', () => {
+  const auth = read('src/assets/utils/auth.js');
+  const html = read('index.html');
+  const declaration = auth.indexOf('const sessionChannel');
+  const listener = auth.indexOf("sessionChannel?.addEventListener");
+  assert.ok(declaration >= 0 && listener > declaration, 'sessionChannel must be initialized before listener registration');
+  assert.doesNotMatch(html, /https?:\/\/(cdn\.tailwindcss\.com|cdn\.jsdelivr\.net|fonts\.googleapis\.com)/);
+});
+
 test('mobile uses SecureStore, serialized rotation, restoration, and real logout', () => {
   const context = read('../BC-Dentistry-Mobile-App/Context/UserContext.jsx');
   const settings = read('../BC-Dentistry-Mobile-App/app/(tabs)/settings.jsx');
