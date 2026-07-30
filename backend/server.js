@@ -820,11 +820,11 @@ app.get('/clinic-admins', authenticateToken, requireRoles('admin', 'system'), as
     if (!requestedClinic || (normalizeRole(req.user.role) === 'admin' && requestedClinic !== Number(req.user.organizationId))) return sendApiError(res, 403, 'CLINIC_SCOPE_DENIED', 'Clinic scope is not permitted');
     try {
         const rows = await query(`SELECT User.ID, User.First_Name, User.Last_Name, User.Email, User.Contact_Number, User.IsActive,
-            User.Must_Change_Password, User.Modified_Date,
+            User.Must_Change_Password,
             Admin.Organization_ID FROM Admin JOIN User ON User.ID=Admin.User_ID WHERE Admin.Organization_ID=? ORDER BY User.Last_Name`, [requestedClinic]);
         return res.json({ success: true, data: rows.map((row) => ({ id: row.ID, firstName: row.First_Name, lastName: row.Last_Name,
             email: row.Email, contactNumber: row.Contact_Number, clinicID: row.Organization_ID, isActive: Boolean(row.IsActive),
-            mustChangePassword: Boolean(row.Must_Change_Password), modifiedDate: row.Modified_Date })) });
+            mustChangePassword: Boolean(row.Must_Change_Password) })) });
     } catch (error) { console.error(error); return sendApiError(res, 500, 'ADMIN_LIST_FAILED', 'Unable to load clinic admins'); }
 });
 
@@ -865,7 +865,7 @@ app.patch('/clinics/:clinicID/admin', authenticateToken, requireRoles('system'),
         if (!admins.length) throw Object.assign(new Error('Clinic administrator not found'), { statusCode: 404 });
         const [duplicate] = await connection.query('SELECT ID FROM User WHERE Email=? AND ID<>? LIMIT 1', [req.body.email, admins[0].ID]);
         if (duplicate.length) throw Object.assign(new Error('Email is already in use'), { statusCode: 409 });
-        await connection.query(`UPDATE User SET First_Name=?,Last_Name=?,Email=?,Contact_Number=?,Modified_Date=NOW()
+        await connection.query(`UPDATE User SET First_Name=?,Last_Name=?,Email=?,Contact_Number=?
             WHERE ID=?`, [req.body.firstName, req.body.lastName, req.body.email, req.body.contactNumber, admins[0].ID]);
         await recordClinicAdminEvent(connection, req, 'CLINIC_ADMIN_UPDATED', {
             clinicID, adminID: admins[0].ID, previousEmail: admins[0].Email, email: req.body.email,
@@ -891,7 +891,7 @@ app.post('/clinics/:clinicID/admin/reset-password', authenticateToken, requireRo
         if (!admins.length) throw Object.assign(new Error('Clinic administrator not found'), { statusCode: 404 });
         const passwordHash = await bcrypt.hash(req.body.password, 10);
         await connection.query(`UPDATE User SET Password=?,Must_Change_Password=1,Security_Version=Security_Version+1,
-            Sessions_Invalid_Before=NOW(3),Modified_Date=NOW() WHERE ID=?`, [passwordHash, admins[0].ID]);
+            Sessions_Invalid_Before=NOW(3) WHERE ID=?`, [passwordHash, admins[0].ID]);
         await revokeManagedAdminSessions(connection, admins[0].ID, 'password reset by system administrator');
         await recordClinicAdminEvent(connection, req, 'CLINIC_ADMIN_PASSWORD_RESET', { clinicID, adminID: admins[0].ID });
         await connection.commit();
@@ -924,7 +924,7 @@ app.post('/clinics/:clinicID/admin/transfer', authenticateToken, requireRoles('s
         await connection.query('UPDATE Admin SET User_ID=? WHERE Organization_ID=? AND User_ID=?',
             [created.insertId, clinicID, current[0].ID]);
         await connection.query(`UPDATE User SET IsActive=0,Security_Version=Security_Version+1,
-            Sessions_Invalid_Before=NOW(3),Modified_Date=NOW() WHERE ID=?`, [current[0].ID]);
+            Sessions_Invalid_Before=NOW(3) WHERE ID=?`, [current[0].ID]);
         await revokeManagedAdminSessions(connection, current[0].ID, 'clinic ownership transferred');
         await recordClinicAdminEvent(connection, req, 'CLINIC_ADMIN_TRANSFERRED', {
             clinicID, previousAdminID: current[0].ID, previousEmail: current[0].Email,
