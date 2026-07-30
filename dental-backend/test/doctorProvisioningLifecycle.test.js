@@ -55,4 +55,5 @@ test('patient assignment validates clinic and updates both ledger relationship d
     assert.match(chaincode, /doctor\.patients\.push\(patientID\)/);
     assert.match(chaincode, /patient\.doctors\.push\(doctorID\)/);
     assert.match(chaincode, /patient\.dataHash = dataHash\.toLowerCase\(\)/);
+    assert.match(assignment, /\/patient-metadata\/\$\{encodeURIComponent\(req\.params\.id\)\}/);
 });

@@ -973,8 +973,6 @@ app.post('/patients', authenticateToken, requireRoles('admin'), async (req, res)
             await callBlockchain(req, '/assignPatientToDoctor', 'POST', {
                 patientID,
                 doctorID,
-                dataHash,
-                modifiedDate: new Date().toISOString(),
             });
         }
         await connection.commit();
@@ -1071,11 +1069,16 @@ app.post('/patients/:id/assign', authenticateToken, requireRoles('admin'), async
         const doctors = [...new Set([...(current.doctors || []), String(req.body.doctorID)])];
         await connection.query('UPDATE Patient SET Doctors=?, Modified_Date=NOW() WHERE ID=?', [JSON.stringify(doctors), rows[0].ID]);
         const updated = { ...current, doctors };
+        const dataHash = patientHash(updated);
+        await callBlockchain(req, `/patient-metadata/${encodeURIComponent(req.params.id)}`, 'PUT', {
+            clinicID: Number(current.clinicID),
+            doctors,
+            offChainRef: `mysql:Patient/${rows[0].ID}`,
+            dataHash,
+        });
         await callBlockchain(req, '/assignPatientToDoctor', 'POST', {
             patientID: req.params.id,
             doctorID: req.body.doctorID,
-            dataHash: patientHash(updated),
-            modifiedDate: new Date().toISOString(),
         });
         await connection.commit();
         return res.json({ success: true, data: { patientID: req.params.id, doctors }, message: 'Patient assigned to doctor' });
