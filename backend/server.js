@@ -973,6 +973,8 @@ app.post('/patients', authenticateToken, requireRoles('admin'), async (req, res)
             await callBlockchain(req, '/assignPatientToDoctor', 'POST', {
                 patientID,
                 doctorID,
+                dataHash,
+                modifiedDate: new Date().toISOString(),
             });
         }
         await connection.commit();
@@ -1079,6 +1081,8 @@ app.post('/patients/:id/assign', authenticateToken, requireRoles('admin'), async
         await callBlockchain(req, '/assignPatientToDoctor', 'POST', {
             patientID: req.params.id,
             doctorID: req.body.doctorID,
+            dataHash,
+            modifiedDate: new Date().toISOString(),
         });
         await connection.commit();
         return res.json({ success: true, data: { patientID: req.params.id, doctors }, message: 'Patient assigned to doctor' });

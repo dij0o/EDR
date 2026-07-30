@@ -1142,7 +1142,7 @@ class DentalRecordSharing extends Contract {
 
 
     // Admin: Assign a Patient to a Doctor
-    async assignPatientToDoctor(ctx, patientID, doctorID, dataHash = '', modifiedDate = '') {
+    async assignPatientToDoctor(ctx, patientID, doctorID, dataHash, modifiedDate) {
         this._requireRole(ctx, 'admin');
         const patientJSON = await ctx.stub.getState(patientID);
         if (!patientJSON || patientJSON.length === 0) {

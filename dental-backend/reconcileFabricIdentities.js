@@ -83,6 +83,8 @@ const main = async () => {
                             'assignPatientToDoctor',
                             String(assignment.patientID),
                             String(assignment.doctorID),
+                            '',
+                            '',
                         );
                         assignments += 1;
                     } catch (error) {
