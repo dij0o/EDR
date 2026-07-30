@@ -58,6 +58,7 @@ test('Fabric credentials remain external mounts with a container-safe profile', 
     assert.match(compose, /FABRIC_DISCOVERY_AS_LOCALHOST: "false"/);
     assert.match(prepare, /host\.docker\.internal/);
     assert.match(prepare, /localhost\|127\\\.0\\\.0\\\.1/);
+    assert.match(prepare, /https\?/);
 });
 
 test('APIs and Nginx define runtime health checks', () => {
