@@ -33,3 +33,17 @@ test('inactive clinics prevent their clinic admin from logging in', () => {
   assert.match(server, /Organization\.IsActive AS Clinic_IsActive/);
   assert.match(server, /Clinic is inactive/);
 });
+
+test('clinic administrator lifecycle is system-only, transactional, and revokes transferred ownership', () => {
+  for (const route of [
+    "app.patch('/clinics/:clinicID/admin'",
+    "app.post('/clinics/:clinicID/admin/reset-password'",
+    "app.post('/clinics/:clinicID/admin/transfer'",
+    "app.get('/clinics/:clinicID/admin-history'",
+  ]) assert.ok(server.includes(route), `missing ${route}`);
+  assert.match(server, /CLINIC_ADMIN_TRANSFERRED/);
+  assert.match(server, /clinic ownership transferred/);
+  assert.match(server, /UPDATE Admin SET User_ID=\?/);
+  assert.match(server, /UPDATE User SET IsActive=0,Security_Version=Security_Version\+1/);
+  assert.match(server, /await connection\.rollback\(\)\.catch/);
+});

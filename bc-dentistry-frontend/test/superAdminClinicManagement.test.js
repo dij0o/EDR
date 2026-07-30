@@ -20,3 +20,13 @@ test('clinic form requires the clinic and exactly one initial admin payload', ()
   assert.match(clinics, /Create clinic and admin/);
   assert.doesNotMatch(clinics, /Add another admin/);
 });
+
+test('clinic page manages the current admin and supports guarded ownership transfer', () => {
+  assert.match(clinics, /Manage admin/);
+  assert.match(clinics, /Save administrator/);
+  assert.match(clinics, /Reset password and revoke sessions/);
+  assert.match(clinics, /Transfer ownership/);
+  assert.match(clinics, /transferConfirmed/);
+  assert.match(clinics, /current administrator will be deactivated and immediately signed out/);
+  assert.match(clinics, /admin-history/);
+});
