@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 import { RequestsHeader, DataRequest, NoRequests } from '../../components';
-import { authHeaders, blockchainUrl, getPatientBlockchainID } from '../../utils/api';
+import { authHeaders, databaseUrl, getPatientBlockchainID } from '../../utils/api';
 
 import { useUser } from '../../Context/UserContext';
 
@@ -37,7 +37,7 @@ const Requests = () => {
             }
 
             try {
-                const response = await axios.get(blockchainUrl(`/getAllRequestsForPatient/${patientID}`), {
+                const response = await axios.get(databaseUrl(`/getAllRequestsForPatient/${patientID}`), {
                     headers: authHeaders(token),
                 });
                 // console.log("Fetched Requests:", response.data);

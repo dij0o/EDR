@@ -1142,7 +1142,7 @@ class DentalRecordSharing extends Contract {
 
 
     // Admin: Assign a Patient to a Doctor
-    async assignPatientToDoctor(ctx, patientID, doctorID) {
+    async assignPatientToDoctor(ctx, patientID, doctorID, dataHash = '', modifiedDate = '') {
         this._requireRole(ctx, 'admin');
         const patientJSON = await ctx.stub.getState(patientID);
         if (!patientJSON || patientJSON.length === 0) {
@@ -1156,6 +1156,8 @@ class DentalRecordSharing extends Contract {
     
         const patient = JSON.parse(patientJSON.toString());
         const doctor = JSON.parse(doctorJSON.toString());
+        doctor.patients = Array.isArray(doctor.patients) ? doctor.patients : [];
+        patient.doctors = Array.isArray(patient.doctors) ? patient.doctors : [];
     
         // ✅ Ensure at least one shared clinic between the doctor and patient
         const doctorClinicID = parseInt(doctor.clinicID);
@@ -1172,8 +1174,16 @@ class DentalRecordSharing extends Contract {
     
         if (!patient.doctors.includes(doctorID)) {
             patient.doctors.push(doctorID);
-            await ctx.stub.putState(patientID, Buffer.from(JSON.stringify(patient)));
         }
+
+        if (dataHash) {
+            if (!/^[a-f0-9]{64}$/i.test(dataHash)) {
+                throw new Error('Patient dataHash must be a SHA-256 hex digest');
+            }
+            patient.dataHash = dataHash.toLowerCase();
+        }
+        patient.modifiedDate = modifiedDate || patient.modifiedDate || patient.createdDate || '';
+        await ctx.stub.putState(patientID, Buffer.from(stringify(sortKeysRecursive(patient))));
     
         return { success: true, message: `Patient ${patientID} assigned to Doctor ${doctorID}` };
     }

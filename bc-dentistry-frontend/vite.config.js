@@ -6,7 +6,6 @@ export default defineConfig({
   server: {
     proxy: {
       "/api/database": { target: "http://localhost:8080", changeOrigin: true, rewrite: (path) => path.replace(/^\/api\/database/, "") },
-      "/api/blockchain": { target: "http://localhost:8081", changeOrigin: true, rewrite: (path) => path.replace(/^\/api\/blockchain/, "") },
     },
   },
   resolve: { alias: { fs: fileURLToPath(new URL("./src/shims/node-runtime-unavailable.js", import.meta.url)), path: fileURLToPath(new URL("./src/shims/node-runtime-unavailable.js", import.meta.url)) } },

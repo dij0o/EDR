@@ -2,7 +2,7 @@ import Alarm from "../images/icons/notifications.png";
 import UserType from "./UserType";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { authHeaders, blockchainUrl, jsonHeaders } from "../config/api";
+import { authHeaders, databaseUrl, jsonHeaders } from "../config/api";
 import {
     enableWebPush,
     getPushBackendStatus,
@@ -45,7 +45,7 @@ const Notifications = () => {
     const loadNotifications = useCallback(async ({ quiet = false } = {}) => {
         if (!quiet) setLoading(true);
         try {
-            const response = await fetch(blockchainUrl("/notifications?status=ALL"), { headers: authHeaders() });
+            const response = await fetch(databaseUrl("/notifications?status=ALL"), { headers: authHeaders() });
             const payload = await response.json();
             if (!response.ok) throw new Error(payload?.error?.message || "Unable to load notifications.");
             setNotifications(payload.data || payload || []);
@@ -103,7 +103,7 @@ const Notifications = () => {
 
     const markRead = async (notification) => {
         if (notification.status !== "UNREAD") return notification;
-        const response = await fetch(blockchainUrl(`/notifications/${encodeURIComponent(notification.notificationID)}/read`), {
+        const response = await fetch(databaseUrl(`/notifications/${encodeURIComponent(notification.notificationID)}/read`), {
             method: "POST",
             headers: jsonHeaders(),
         });

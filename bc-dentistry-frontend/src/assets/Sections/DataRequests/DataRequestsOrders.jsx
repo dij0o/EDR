@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import UpcomingDataRequest from './UpcomingDataRequest';
-import { authHeaders, blockchainUrl, jsonHeaders } from '../../config/api.js';
+import { authHeaders, databaseUrl, jsonHeaders } from '../../config/api.js';
 import { getStoredUser } from '../../utils/auth.js';
 import ActionDialog from '../../components/ActionDialog.jsx';
 
@@ -19,7 +19,7 @@ const DataRequestsOrders = ({ onChanged }) => {
             if (!adminClinicID) return;
 
             try {
-                const response = await fetch(blockchainUrl(`/getRequestsForAdmin/${adminClinicID}`), {
+                const response = await fetch(databaseUrl(`/getRequestsForAdmin/${adminClinicID}`), {
                     headers: authHeaders(),
                 });
                 const data = await response.json();
@@ -49,7 +49,7 @@ const DataRequestsOrders = ({ onChanged }) => {
 
     const handleApproveRequest = async (requestID) => {
         try {
-            const response = await fetch(blockchainUrl('/approveRequest'), {
+            const response = await fetch(databaseUrl('/approveRequest'), {
                 method: 'POST',
                 headers: jsonHeaders(),
                 body: JSON.stringify({ adminID, requestID, adminClinicID }),
@@ -74,7 +74,7 @@ const DataRequestsOrders = ({ onChanged }) => {
         if (!rejectionReason.trim()) return setFeedback({ error: 'Enter a rejection reason.', notice: '' });
         setBusy(true); setFeedback({ error: '', notice: '' });
         try {
-            const response = await fetch(blockchainUrl('/admin/rejectRequest'), {
+            const response = await fetch(databaseUrl('/admin/rejectRequest'), {
                 method: 'POST',
                 headers: jsonHeaders(),
                 body: JSON.stringify({ adminID, requestID, adminClinicID, rejectionReason }),

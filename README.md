@@ -111,6 +111,12 @@ BC-Dentistry-EDR/
 
 ## 3. System Architecture
 
+> **Security boundary:** web and mobile call only the public Database/Application API. The
+> Blockchain API is a private Fabric adapter with no published host port or browser/mobile
+> URL. It accepts business requests only from the Application API using
+> `BLOCKCHAIN_INTERNAL_TOKEN` in addition to the forwarded verified user session. See
+> [`docs/PHASE11_DEPLOYMENT.md`](docs/PHASE11_DEPLOYMENT.md) for the canonical topology.
+
 ```
 ┌────────────────────────────────────────────────────────────────────┐
 │                      USER INTERACTION LAYER                         │
@@ -372,9 +378,10 @@ npm install
 node enrollAdmin.js
 npm run fabric:register-identities
 
-# Start the Blockchain API
+# Start the private Blockchain API for local service-to-service development.
+# Set the same BLOCKCHAIN_INTERNAL_TOKEN in backend/.env and dental-backend/.env.
 node index.js
-# Listening at http://localhost:8081
+# Do not configure this address in web or mobile.
 ```
 
 ---
@@ -439,7 +446,7 @@ cd bc-dentistry-frontend
 
 # Copy environment config (first run only)
 cp .env.example .env
-# Edit .env if your APIs run on different hosts/ports
+# Configure only the public Application API URL
 
 # Install dependencies (first run only)
 npm install
@@ -506,7 +513,7 @@ peer chaincode invoke -o localhost:7050 --ordererTLSHostnameOverride orderer.exa
   -c '{"function":"InitLedger","Args":[]}'
 
 ###############################################################################
-# TERMINAL 2 — Blockchain API  (http://localhost:8081)
+# TERMINAL 2 — private Blockchain API (Application API access only)
 ###############################################################################
 cd dental-backend
 mkdir -p connection wallet
@@ -710,6 +717,7 @@ Copy each `.env.example` to `.env` and fill in real values. Never commit `.env` 
 
 ```env
 PORT=8081
+BLOCKCHAIN_INTERNAL_TOKEN=CHANGE_ME_WITH_AN_INDEPENDENT_LONG_RANDOM_VALUE
 FABRIC_CHANNEL=mychannel
 FABRIC_CHAINCODE=basic
 FABRIC_CONNECTION_PROFILE=./connection/connection-org1.json
@@ -720,7 +728,6 @@ FABRIC_DOCTOR_IDS=Doctor1,Doctor2
 FABRIC_PATIENT_IDS=Patient1,Patient2,Patient3
 JWT_SECRET=CHANGE_ME   # node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 JWT_EXPIRES_IN=8h
-CORS_ORIGIN=http://localhost:5174
 ```
 
 The Blockchain API selects a Fabric wallet identity from verified JWT claims:
@@ -731,6 +738,8 @@ The Blockchain API selects a Fabric wallet identity from verified JWT claims:
 
 ```env
 PORT=8080
+BLOCKCHAIN_API_URL=http://blockchain-api:8081
+BLOCKCHAIN_INTERNAL_TOKEN=CHANGE_ME_WITH_THE_SAME_PRIVATE_SERVICE_VALUE
 DB_HOST=localhost          # use 'mysql' when running via docker-compose
 DB_PORT=3306
 DB_NAME=mydatabase
@@ -754,16 +763,14 @@ The bootstrap command is single-use. The temporary password must be changed on t
 ### `bc-dentistry-frontend/.env`
 
 ```env
-VITE_BLOCKCHAIN_API_URL=http://localhost:8081
-VITE_DATABASE_API_URL=http://localhost:8080
+VITE_DATABASE_API_URL=/api/database
 ```
 
 ### `BC-Dentistry-Mobile-App/.env`
 
 ```env
 # Use your machine's LAN IP for physical device testing (not localhost)
-API_BASE_URL=http://192.168.x.x:8080
-BLOCKCHAIN_API_URL=http://192.168.x.x:8081
+EXPO_PUBLIC_DATABASE_API_URL=https://edr.example.com/api/database
 ```
 
 ---
@@ -831,8 +838,7 @@ docker logs edr-mysql
 ip addr show | grep "inet " | grep -v 127.0.0.1
 
 # Update BC-Dentistry-Mobile-App/.env
-API_BASE_URL=http://<your-lan-ip>:8080
-BLOCKCHAIN_API_URL=http://<your-lan-ip>:8081
+EXPO_PUBLIC_DATABASE_API_URL=https://<your-dev-host>/api/database
 
 npx expo start --clear
 ```
@@ -851,9 +857,9 @@ Both org peer addresses must be included:
 ### CORS error in browser
 
 ```bash
-# In dental-backend/.env add:
+# In the public backend/.env add the exact web origin:
 CORS_ORIGIN=http://localhost:5174
-# Restart: Ctrl+C then node index.js
+# Restart the Application API. Do not enable CORS on dental-backend.
 ```
 
 ---
@@ -888,7 +894,7 @@ CORS_ORIGIN=http://localhost:5174
 *University of Sharjah — College of Computing and Informatics*
 # SRS Section 5 API
 
-The Blockchain API on port `8081` exposes the SRS routes below. All require `Authorization: Bearer <JWT>` and map verified claims to role-, actor-, and clinic-bound Fabric wallet identities.
+The private Blockchain API implements the SRS operations below for the Application API. It is not publicly routed. Calls require both private application-service authentication and a verified end-user session, which is mapped to role-, actor-, and clinic-bound Fabric wallet identities.
 
 | SRS route | Role |
 |---|---|

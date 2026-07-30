@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Alert, View } from 'react-native';
 import axios from 'axios';
 import { CustomButton } from './index';
-import { authHeaders, blockchainUrl } from '../utils/api';
+import { authHeaders, databaseUrl } from '../utils/api';
 import { useUser } from '../Context/UserContext';
 
 const AccesptReject = ({ requestID, patientID, updateStatus, setCardStatus, setrequestLoadingFunc, expandCardFunc }) => {
@@ -25,7 +25,7 @@ const AccesptReject = ({ requestID, patientID, updateStatus, setCardStatus, setr
         setLoading(true);
         setrequestLoadingFunc(true);
         try {
-            await axios.post(blockchainUrl('/grantConsent'), { patientID, requestID }, { headers: authHeaders(token) });
+            await axios.post(databaseUrl('/grantConsent'), { patientID, requestID }, { headers: authHeaders(token) });
             Alert.alert('Success', 'Request accepted successfully!');
             updateStatus('CONSENT_GRANTED');
         } catch (error) {
@@ -45,7 +45,7 @@ const AccesptReject = ({ requestID, patientID, updateStatus, setCardStatus, setr
         setrequestLoadingFunc(true);
         try {
             await axios.post(
-                blockchainUrl('/patient/rejectRequest'),
+                databaseUrl('/patient/rejectRequest'),
                 { patientID, requestID, rejectionReason: 'Not authorized' },
                 { headers: authHeaders(token) }
             );

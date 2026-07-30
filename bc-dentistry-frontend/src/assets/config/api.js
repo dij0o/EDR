@@ -13,18 +13,12 @@ export const DATABASE_API_URL = normalizeBaseUrl(
     "/api/database"
 );
 
-export const BLOCKCHAIN_API_URL = normalizeBaseUrl(
-    import.meta.env.VITE_BLOCKCHAIN_API_URL,
-    "/api/blockchain"
-);
-
 const buildUrl = (baseUrl, path) => {
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     return `${baseUrl}${normalizedPath}`;
 };
 
 export const databaseUrl = (path) => buildUrl(DATABASE_API_URL, path);
-export const blockchainUrl = (path) => buildUrl(BLOCKCHAIN_API_URL, path);
 
 axios.defaults.withCredentials = true;
 const nativeFetch = window.fetch.bind(window);

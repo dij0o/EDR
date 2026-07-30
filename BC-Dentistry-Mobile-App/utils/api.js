@@ -8,8 +8,6 @@ const requiredHttpsUrl = (name, value) => {
 };
 
 export const DATABASE_API_URL = requiredHttpsUrl('EXPO_PUBLIC_DATABASE_API_URL', process.env.EXPO_PUBLIC_DATABASE_API_URL);
-export const BLOCKCHAIN_API_URL = requiredHttpsUrl('EXPO_PUBLIC_BLOCKCHAIN_API_URL', process.env.EXPO_PUBLIC_BLOCKCHAIN_API_URL);
-
 const stripTrailingSlash = (value) => value.replace(/\/+$/, '');
 
 const buildUrl = (baseUrl, path) => {
@@ -18,7 +16,6 @@ const buildUrl = (baseUrl, path) => {
 };
 
 export const databaseUrl = (path) => buildUrl(DATABASE_API_URL, path);
-export const blockchainUrl = (path) => buildUrl(BLOCKCHAIN_API_URL, path);
 
 export const authHeaders = (token, headers = {}) => {
     return token ? { ...headers, Authorization: `Bearer ${token}` } : { ...headers };

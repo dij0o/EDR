@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import DataRequest from "../Sections/DataRequests/DataRequest.jsx";
 import DataRequestsOrders from "../Sections/DataRequests/DataRequestsOrders.jsx";
-import { authHeaders, blockchainUrl } from "../config/api.js";
+import { authHeaders, databaseUrl } from "../config/api.js";
 import { getStoredUser } from "../utils/auth.js";
 import { useSearchParams } from "react-router-dom";
 
@@ -37,7 +37,7 @@ const DataRequests = () => {
             if (!adminClinicID) return;
 
             try {
-                const response = await fetch(blockchainUrl(`/getRequestsForAdmin/${adminClinicID}`), {
+                const response = await fetch(databaseUrl(`/getRequestsForAdmin/${adminClinicID}`), {
                     headers: authHeaders(),
                 });
                 const data = await response.json();
@@ -68,7 +68,7 @@ const DataRequests = () => {
             return;
         }
         try {
-            const response = await fetch(blockchainUrl(`/audit/clinical-access/${encodeURIComponent(auditPatientID)}`), {
+            const response = await fetch(databaseUrl(`/audit/clinical-access/${encodeURIComponent(auditPatientID)}`), {
                 headers: authHeaders(),
             });
             const payload = await response.json();

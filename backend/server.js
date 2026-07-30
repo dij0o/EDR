@@ -12,6 +12,7 @@ const {
 
 const app = express();
 const BLOCKCHAIN_API_URL = process.env.BLOCKCHAIN_API_URL?.replace(/\/+$/, '');
+const BLOCKCHAIN_INTERNAL_TOKEN = process.env.BLOCKCHAIN_INTERNAL_TOKEN;
 const PATIENT_ROLE_ID = 4;
 const DOCTOR_ROLE_ID = 3;
 const ADMIN_ROLE_ID = 2;
@@ -88,17 +89,29 @@ const validateClinicalPayload = (recordType, payload) => {
     if (missing.length) { const error = new Error(`Missing required clinical fields: ${missing.join(', ')}`); error.statusCode = 400; throw error; }
 };
 
-const callBlockchain = async (req, path, method, body) => {
+const blockchainHeaders = (req, contentType = 'application/json', extraHeaders = {}) => ({
+    ...(contentType ? { 'Content-Type': contentType } : {}),
+    Authorization: `Bearer ${req.accessToken || getBearerToken(req) || ''}`,
+    'X-EDR-Internal-Token': BLOCKCHAIN_INTERNAL_TOKEN || '',
+    'X-Correlation-ID': req.get('x-correlation-id') || crypto.randomUUID(),
+    ...extraHeaders,
+});
+
+const callBlockchainResponse = async (req, path, method = 'GET', body, contentType = 'application/json', extraHeaders = {}) => {
     if (!BLOCKCHAIN_API_URL) {
         const error = new Error('Blockchain API URL is not configured');
         error.statusCode = 503;
         throw error;
     }
-    const response = await fetch(`${BLOCKCHAIN_API_URL}${path}`, {
+    return fetch(`${BLOCKCHAIN_API_URL}${path}`, {
         method,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${req.accessToken || getBearerToken(req) || ''}` },
-        body: body === undefined ? undefined : JSON.stringify(body)
+        headers: blockchainHeaders(req, contentType, extraHeaders),
+        body: body === undefined ? undefined : (Buffer.isBuffer(body) ? body : JSON.stringify(body)),
     });
+};
+
+const callBlockchain = async (req, path, method, body) => {
+    const response = await callBlockchainResponse(req, path, method, body);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
         const error = new Error(payload?.error?.message || payload?.error || 'Blockchain operation failed');
@@ -107,6 +120,13 @@ const callBlockchain = async (req, path, method, body) => {
     }
     return payload.data ?? payload;
 };
+
+const provisionFabricIdentity = (req, role, actorID, clinicID) => callBlockchain(
+    req,
+    '/internal/identities',
+    'POST',
+    { role, actorID, clinicID },
+);
 
 const requireAdminClinic = (req, clinicID) => {
     if (Number(req.user.organizationId) !== Number(clinicID)) {
@@ -138,6 +158,9 @@ if (process.env.NODE_ENV === 'production' && (!process.env.CORS_ORIGIN || proces
 
 if (!BLOCKCHAIN_API_URL) {
     console.warn('BLOCKCHAIN_API_URL is not configured. /syncOnChainPatients will return a configuration error.');
+}
+if (process.env.NODE_ENV === 'production' && !BLOCKCHAIN_INTERNAL_TOKEN) {
+    throw new Error('BLOCKCHAIN_INTERNAL_TOKEN is required in production');
 }
 
 app.use(cors(corsOptions));
@@ -834,6 +857,7 @@ app.post('/doctors', authenticateToken, requireRoles('admin'), async (req, res) 
         await connection.query(`INSERT INTO Doctor
             (ID,Works_At,Specialty,Blockchain_ID,License_Number,Emirates_ID,Clinic_ID,Modified_Date) VALUES (?,?,?,?,?,?,?,NOW())`,
             [userResult.insertId, req.body.worksAt, req.body.speciality, doctorID, req.body.licenseNumber, req.body.emiratesID, clinicID]);
+        await provisionFabricIdentity(req, 'doctor', doctorID, clinicID);
         await callBlockchain(req, '/addDoctor', 'POST', { ...req.body, doctorID, clinicID, patients: [] });
         await connection.commit();
         return res.status(201).json({ success: true, data: { ...req.body, password: undefined, doctorID, clinicID }, message: 'Doctor created consistently in MySQL and Fabric' });
@@ -940,10 +964,19 @@ app.post('/patients', authenticateToken, requireRoles('admin'), async (req, res)
         ]);
         const patient = { ...req.body, patientID, password: undefined };
         const dataHash = patientHash(patient);
+        await provisionFabricIdentity(req, 'patient', patientID, Number(req.body.clinicID));
         await callBlockchain(req, '/patient-metadata', 'POST', {
             patientID, clinicID: Number(req.body.clinicID), doctors: req.body.doctors || [],
             offChainRef: `mysql:Patient/${userResult.insertId}`, dataHash
         });
+        for (const doctorID of req.body.doctors || []) {
+            await callBlockchain(req, '/assignPatientToDoctor', 'POST', {
+                patientID,
+                doctorID,
+                dataHash,
+                modifiedDate: new Date().toISOString(),
+            });
+        }
         await connection.commit();
         return res.status(201).json({ success: true, data: { ...patient, dataHash }, message: 'Patient created in MySQL and referenced on-chain' });
     } catch (error) {
@@ -1027,11 +1060,22 @@ app.post('/patients/:id/assign', authenticateToken, requireRoles('admin'), async
         const [rows] = await connection.query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID = ? FOR UPDATE`, [req.params.id]);
         if (!rows.length) { const error = new Error('Patient not found'); error.statusCode = 404; throw error; }
         const current = normalizePatient(rows[0]); requireAdminClinic(req, current.clinicID);
+        const [doctorRows] = await connection.query('SELECT Blockchain_ID, Clinic_ID FROM Doctor WHERE Blockchain_ID=? FOR UPDATE', [req.body.doctorID]);
+        if (!doctorRows.length) { const error = new Error('Doctor not found'); error.statusCode = 404; throw error; }
+        requireAdminClinic(req, doctorRows[0].Clinic_ID);
+        if (Number(doctorRows[0].Clinic_ID) !== Number(current.clinicID)) {
+            const error = new Error('Doctor and patient must belong to the same clinic');
+            error.statusCode = 403;
+            throw error;
+        }
         const doctors = [...new Set([...(current.doctors || []), String(req.body.doctorID)])];
         await connection.query('UPDATE Patient SET Doctors=?, Modified_Date=NOW() WHERE ID=?', [JSON.stringify(doctors), rows[0].ID]);
         const updated = { ...current, doctors };
-        await callBlockchain(req, `/patient-metadata/${encodeURIComponent(req.params.id)}`, 'PUT', {
-            clinicID: Number(current.clinicID), doctors, offChainRef: `mysql:Patient/${rows[0].ID}`, dataHash: patientHash(updated)
+        await callBlockchain(req, '/assignPatientToDoctor', 'POST', {
+            patientID: req.params.id,
+            doctorID: req.body.doctorID,
+            dataHash: patientHash(updated),
+            modifiedDate: new Date().toISOString(),
         });
         await connection.commit();
         return res.json({ success: true, data: { patientID: req.params.id, doctors }, message: 'Patient assigned to doctor' });
@@ -1093,6 +1137,122 @@ app.get(['/patients/:id/clinical-records/:recordType', '/getMedicalRecords/:id',
         const records = rows.map((row) => ({ ...byID.get(row.Record_ID), payload: typeof row.Payload === 'string' ? JSON.parse(row.Payload) : row.Payload, dataHash: row.Data_Hash, createdAt: row.Created_Date }));
         return res.json({ success: true, data: records });
     } catch (error) { return sendApiError(res, error.statusCode || 500, 'CLINICAL_RECORD_READ_FAILED', error.message); }
+});
+
+const relayBlockchainJson = async (req, res, path, method = 'GET', body) => {
+    try {
+        const response = await callBlockchainResponse(req, path, method, body);
+        const payload = await response.json().catch(() => ({
+            success: false,
+            error: { code: 'BLOCKCHAIN_INVALID_RESPONSE', message: 'Blockchain service returned an invalid response' },
+        }));
+        return res.status(response.status).json(payload);
+    } catch (error) {
+        return sendApiError(res, error.statusCode || 503, 'BLOCKCHAIN_SERVICE_UNAVAILABLE', error.message);
+    }
+};
+
+// Public clients use only this application API. These facade routes sanitize
+// actor scope before calling the private blockchain service.
+app.get('/getRequestsForAdmin/:clinicID', authenticateToken, requireRoles('admin'), (req, res) =>
+    relayBlockchainJson(req, res, `/getRequestsForAdmin/${encodeURIComponent(req.user.organizationId)}`));
+
+app.post('/approveRequest', authenticateToken, requireRoles('admin'), (req, res) =>
+    relayBlockchainJson(req, res, '/approveRequest', 'POST', {
+        ...req.body,
+        adminID: req.user.blockchainID || req.user.id,
+        adminClinicID: req.user.organizationId,
+    }));
+
+app.post('/admin/rejectRequest', authenticateToken, requireRoles('admin'), (req, res) =>
+    relayBlockchainJson(req, res, '/admin/rejectRequest', 'POST', {
+        ...req.body,
+        adminID: req.user.blockchainID || req.user.id,
+        adminClinicID: req.user.organizationId,
+    }));
+
+app.post('/requestAccess', authenticateToken, requireRoles('doctor'), (req, res) =>
+    relayBlockchainJson(req, res, '/requestAccess', 'POST', {
+        ...req.body,
+        doctorID: req.user.blockchainID,
+    }));
+
+app.get('/getAllRequestsForPatient/:patientID', authenticateToken, requireRoles('patient'), (req, res) =>
+    relayBlockchainJson(req, res, `/getAllRequestsForPatient/${encodeURIComponent(req.user.blockchainID)}`));
+
+app.post('/grantConsent', authenticateToken, requireRoles('patient'), (req, res) =>
+    relayBlockchainJson(req, res, '/grantConsent', 'POST', { ...req.body, patientID: req.user.blockchainID }));
+
+app.post('/patient/rejectRequest', authenticateToken, requireRoles('patient'), (req, res) =>
+    relayBlockchainJson(req, res, '/patient/rejectRequest', 'POST', { ...req.body, patientID: req.user.blockchainID }));
+
+app.post('/patient/revokeConsent', authenticateToken, requireRoles('patient'), (req, res) =>
+    relayBlockchainJson(req, res, '/patient/revokeConsent', 'POST', { ...req.body, patientID: req.user.blockchainID }));
+
+app.get(['/audit/clinical-access/:patientID', '/getAccessAuditLogs/:patientID'], authenticateToken, requireRoles('admin', 'patient'), (req, res) =>
+    relayBlockchainJson(req, res, `/audit/clinical-access/${encodeURIComponent(req.params.patientID)}`));
+
+app.get('/notifications', authenticateToken, requireRoles('admin', 'doctor', 'patient'), (req, res) => {
+    const status = req.query.status ? `?status=${encodeURIComponent(req.query.status)}` : '';
+    return relayBlockchainJson(req, res, `/notifications${status}`);
+});
+
+app.post('/notifications/:notificationID/read', authenticateToken, requireRoles('admin', 'doctor', 'patient'), (req, res) =>
+    relayBlockchainJson(req, res, `/notifications/${encodeURIComponent(req.params.notificationID)}/read`, 'POST', req.body));
+
+app.get('/push/config', authenticateToken, requireRoles('admin', 'doctor', 'patient'), (req, res) =>
+    relayBlockchainJson(req, res, '/push/config'));
+app.get('/push/subscriptions', authenticateToken, requireRoles('admin', 'doctor', 'patient'), (req, res) =>
+    relayBlockchainJson(req, res, '/push/subscriptions'));
+app.post('/push/subscriptions', authenticateToken, requireRoles('admin', 'doctor', 'patient'), (req, res) =>
+    relayBlockchainJson(req, res, '/push/subscriptions', 'POST', req.body));
+app.delete('/push/subscriptions', authenticateToken, requireRoles('admin', 'doctor', 'patient'), (req, res) =>
+    relayBlockchainJson(req, res, '/push/subscriptions', 'DELETE', req.body));
+app.delete('/push/subscriptions/:subscriptionID', authenticateToken, requireRoles('admin', 'doctor', 'patient'), (req, res) =>
+    relayBlockchainJson(req, res, `/push/subscriptions/${encodeURIComponent(req.params.subscriptionID)}`, 'DELETE'));
+
+app.get('/patients/:patientID/radiographic-files', authenticateToken, requireRoles('admin', 'doctor', 'patient'), (req, res) =>
+    relayBlockchainJson(req, res, `/patients/${encodeURIComponent(req.params.patientID)}/radiographic-files`));
+
+app.get('/radiographic-files/:fileID/verify-integrity', authenticateToken, requireRoles('admin', 'doctor', 'patient'), (req, res) =>
+    relayBlockchainJson(req, res, `/radiographic-files/${encodeURIComponent(req.params.fileID)}/verify-integrity`));
+
+app.post('/radiographic-files', authenticateToken, requireRoles('doctor'),
+    express.raw({ type: 'application/octet-stream', limit: Number(process.env.RADIOGRAPHIC_MAX_FILE_BYTES || 536870912) }),
+    async (req, res) => {
+        try {
+            const response = await callBlockchainResponse(req, '/radiographic-files', 'POST', req.body, 'application/octet-stream', {
+                'x-patient-id': req.get('x-patient-id') || '',
+                'x-file-name': req.get('x-file-name') || '',
+                'x-file-media-type': req.get('x-file-media-type') || 'application/octet-stream',
+            });
+            const payload = await response.json().catch(() => ({}));
+            return res.status(response.status).json(payload);
+        } catch (error) {
+            return sendApiError(res, error.statusCode || 503, 'BLOCKCHAIN_SERVICE_UNAVAILABLE', error.message);
+        }
+    });
+
+app.get('/radiographic-files/:fileID/content', authenticateToken, requireRoles('doctor', 'patient'), async (req, res) => {
+    try {
+        const query = req.query.purpose ? `?purpose=${encodeURIComponent(req.query.purpose)}` : '';
+        const response = await callBlockchainResponse(
+            req,
+            `/radiographic-files/${encodeURIComponent(req.params.fileID)}/content${query}`,
+            'GET',
+            undefined,
+            null,
+        );
+        if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            return res.status(response.status).json(payload);
+        }
+        res.set('Content-Type', response.headers.get('content-type') || 'application/octet-stream');
+        res.set('Content-Disposition', response.headers.get('content-disposition') || 'inline');
+        return res.send(Buffer.from(await response.arrayBuffer()));
+    } catch (error) {
+        return sendApiError(res, error.statusCode || 503, 'BLOCKCHAIN_SERVICE_UNAVAILABLE', error.message);
+    }
 });
 
 const APPOINTMENT_SELECT = `SELECT Appointment.Appointment_ID, Appointment.Meeting_For,

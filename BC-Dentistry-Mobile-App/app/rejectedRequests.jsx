@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react'
 
 import { DataRequest, NoRequests } from '../components'
 import axios from 'axios';
-import { authHeaders, blockchainUrl, getPatientBlockchainID } from '../utils/api';
+import { authHeaders, databaseUrl, getPatientBlockchainID } from '../utils/api';
 import { useUser } from '../Context/UserContext';
 
 
@@ -20,7 +20,7 @@ const rejectedRequests = () => {
       return
     }
 
-    axios.get(blockchainUrl(`/getAllRequestsForPatient/${patientID}`), {
+    axios.get(databaseUrl(`/getAllRequestsForPatient/${patientID}`), {
       headers: authHeaders(token),
     })
     .then((response)=> {

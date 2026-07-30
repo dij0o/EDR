@@ -281,7 +281,8 @@ npm run fabric:register-identities
 # First run only
 npm install
 
-# Start the API (http://localhost:8081)
+# Start the private Blockchain API. Set the same BLOCKCHAIN_INTERNAL_TOKEN
+# in this process and the Database/Application API; clients must not call it.
 node index.js
 ```
 

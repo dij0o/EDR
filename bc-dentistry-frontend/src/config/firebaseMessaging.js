@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getMessaging, getToken, isSupported, onMessage } from 'firebase/messaging';
-import { authHeaders, blockchainUrl, jsonHeaders } from '../assets/config/api';
+import { authHeaders, databaseUrl, jsonHeaders } from '../assets/config/api';
 import { getStoredUser } from '../assets/utils/auth';
 
 const firebaseConfig = {
@@ -63,7 +63,7 @@ const registerCurrentBrowserToken = async (providedContext) => {
     });
     if (!token) throw new Error('Firebase did not return a browser push token.');
 
-    const response = await fetch(blockchainUrl('/push/subscriptions'), {
+    const response = await fetch(databaseUrl('/push/subscriptions'), {
         method: 'POST',
         headers: jsonHeaders(),
         body: JSON.stringify({
@@ -99,7 +99,7 @@ export const syncWebPushIfPermitted = async ({ force = false } = {}) => {
 export const disableWebPush = async () => {
     const token = localStorage.getItem('edr-web-push-token');
     if (!token) return;
-    const response = await fetch(blockchainUrl('/push/subscriptions'), {
+    const response = await fetch(databaseUrl('/push/subscriptions'), {
         method: 'DELETE',
         headers: jsonHeaders(),
         body: JSON.stringify({ token }),
@@ -118,21 +118,21 @@ export const subscribeToForegroundPush = async (callback) => {
 };
 
 export const getPushBackendStatus = async () => {
-    const response = await fetch(blockchainUrl('/push/config'), { headers: authHeaders() });
+    const response = await fetch(databaseUrl('/push/config'), { headers: authHeaders() });
     if (!response.ok) return { configured: false };
     const payload = await response.json();
     return payload.data || payload;
 };
 
 export const listPushDevices = async () => {
-    const response = await fetch(blockchainUrl('/push/subscriptions'), { headers: authHeaders() });
+    const response = await fetch(databaseUrl('/push/subscriptions'), { headers: authHeaders() });
     if (!response.ok) throw new Error('Unable to load registered notification devices.');
     const payload = await response.json();
     return payload.data || payload || [];
 };
 
 export const removePushDevice = async (subscriptionID) => {
-    const response = await fetch(blockchainUrl(`/push/subscriptions/${encodeURIComponent(subscriptionID)}`), {
+    const response = await fetch(databaseUrl(`/push/subscriptions/${encodeURIComponent(subscriptionID)}`), {
         method: 'DELETE',
         headers: jsonHeaders(),
     });

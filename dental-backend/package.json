@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "fabric:register-identities": "node registerRoleIdentities.js",
+    "fabric:reconcile-identities": "node reconcileFabricIdentities.js",
     "test": "node --test test/*.test.js"
   },
   "keywords": [],

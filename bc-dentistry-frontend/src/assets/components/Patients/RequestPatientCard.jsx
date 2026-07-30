@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import PatientRequestInput from "./PatientRequestInput";
 import RequestPatientCardSubmit from "./RequestPatientCardSubmit";
-import { blockchainUrl, jsonHeaders } from "../../config/api.js";
+import { databaseUrl, jsonHeaders } from "../../config/api.js";
 import { getStoredUser } from "../../utils/auth.js";
 
 const RequestPatientCard = () => {
@@ -46,7 +46,7 @@ const RequestPatientCard = () => {
 
         setStatus({ loading: true, error: '', notice: '' });
         try {
-            const response = await fetch(blockchainUrl('/requestAccess'), {
+            const response = await fetch(databaseUrl('/requestAccess'), {
                 method: 'POST',
                 headers: jsonHeaders(),
                 body: JSON.stringify({

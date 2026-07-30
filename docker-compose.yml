@@ -22,6 +22,8 @@ services:
       timeout: 5s
       retries: 20
       start_period: 30s
+    networks:
+      - application-private
 
   blockchain-api:
     build:
@@ -39,11 +41,12 @@ services:
       JWT_ISSUER: ${JWT_ISSUER:-bc-dentistry-auth}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-bc-dentistry-api}
       REFRESH_TOKEN_PEPPER: ${REFRESH_TOKEN_PEPPER:?set REFRESH_TOKEN_PEPPER in .env}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      BLOCKCHAIN_INTERNAL_TOKEN: ${BLOCKCHAIN_INTERNAL_TOKEN:?set BLOCKCHAIN_INTERNAL_TOKEN in .env}
       FABRIC_CHANNEL: ${FABRIC_CHANNEL:-mychannel}
       FABRIC_CHAINCODE: ${FABRIC_CHAINCODE:-basic}
       FABRIC_DISCOVERY_ENABLED: ${FABRIC_DISCOVERY_ENABLED:-true}
       FABRIC_DISCOVERY_AS_LOCALHOST: "false"
+      FABRIC_CA_TLS_VERIFY: ${FABRIC_CA_TLS_VERIFY:-true}
       FABRIC_CONNECTION_PROFILE_SOURCE: /fabric-connection/connection-org1.json
       FABRIC_CONNECTION_PROFILE: /app/runtime/connection-org1.container.json
       FABRIC_WALLET_PATH: /fabric-wallet
@@ -67,16 +70,19 @@ services:
       - "ca.org1.example.com:host-gateway"
     volumes:
       - ${FABRIC_CONNECTION_DIR:-./dental-backend/connection}:/fabric-connection:ro
-      - ${FABRIC_WALLET_DIR:-./dental-backend/wallet}:/fabric-wallet:ro
+      - ${FABRIC_WALLET_DIR:-./dental-backend/wallet}:/fabric-wallet
       - edr-radiographic-files:/var/lib/edr/radiographic-files
-    ports:
-      - "${BLOCKCHAIN_API_PORT:-8081}:8081"
+    expose:
+      - "8081"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8081/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 10
       start_period: 20s
+    networks:
+      - application-private
+      - fabric-access
 
   database-api:
     build:
@@ -112,22 +118,25 @@ services:
       SESSION_METADATA_PEPPER: ${SESSION_METADATA_PEPPER:-}
       ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:-}
       BLOCKCHAIN_API_URL: http://blockchain-api:8081
+      BLOCKCHAIN_INTERNAL_TOKEN: ${BLOCKCHAIN_INTERNAL_TOKEN:?set BLOCKCHAIN_INTERNAL_TOKEN in .env}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
-    ports:
-      - "${DATABASE_API_PORT:-8080}:8080"
+      RADIOGRAPHIC_MAX_FILE_BYTES: ${RADIOGRAPHIC_MAX_FILE_BYTES:-536870912}
+    expose:
+      - "8080"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 10
       start_period: 20s
+    networks:
+      - application-private
 
   web-frontend:
     build:
       context: ./bc-dentistry-frontend
       args:
         VITE_DATABASE_API_URL: /api/database
-        VITE_BLOCKCHAIN_API_URL: /api/blockchain
         VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-}
         VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-}
         VITE_FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
@@ -149,7 +158,16 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    networks:
+      - edge
+      - application-private
 
 volumes:
   edr-mysql-data:
   edr-radiographic-files:
+
+networks:
+  edge:
+  application-private:
+    internal: true
+  fabric-access:

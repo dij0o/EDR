@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import axios from "axios";
-import { authHeaders, blockchainUrl } from "../../config/api.js";
+import { authHeaders, databaseUrl } from "../../config/api.js";
 
 const statusClass = {
   verified: "bg-green-100 text-green-800",
@@ -18,7 +18,7 @@ export default function RadiographicFiles({ patientID, canUpload }) {
 
   const loadFiles = async () => {
     try {
-      const response = await axios.get(blockchainUrl(`/patients/${patientID}/radiographic-files`), { headers: authHeaders() });
+      const response = await axios.get(databaseUrl(`/patients/${patientID}/radiographic-files`), { headers: authHeaders() });
       setFiles(response.data.data || []);
     } catch (error) { setMessage(error.response?.data?.error?.message || "Unable to load radiographic files."); }
   };
@@ -27,7 +27,7 @@ export default function RadiographicFiles({ patientID, canUpload }) {
 
   const verify = async (fileID) => {
     try {
-      const response = await axios.get(blockchainUrl(`/radiographic-files/${fileID}/verify-integrity`), { headers: authHeaders() });
+      const response = await axios.get(databaseUrl(`/radiographic-files/${fileID}/verify-integrity`), { headers: authHeaders() });
       setStatuses((current) => ({ ...current, [fileID]: response.data.data.status }));
     } catch (error) { setStatuses((current) => ({ ...current, [fileID]: "unknown" })); }
   };
@@ -37,7 +37,7 @@ export default function RadiographicFiles({ patientID, canUpload }) {
     if (!file) return;
     setMessage("Uploading and anchoring SHA-256 metadata…");
     try {
-      await axios.post(blockchainUrl("/radiographic-files"), file, { headers: authHeaders({
+      await axios.post(databaseUrl("/radiographic-files"), file, { headers: authHeaders({
         "Content-Type": "application/octet-stream", "x-patient-id": patientID,
         "x-file-name": file.name, "x-file-media-type": file.type || "application/octet-stream",
       }) });

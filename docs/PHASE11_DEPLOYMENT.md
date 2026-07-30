@@ -5,7 +5,7 @@
 This release uses an **accepted development/test topology**, not the SRS production Fabric topology. Every long-running application service outside Hyperledger Fabric is in the root Compose stack. Hyperledger Fabric and the Expo mobile client are outside that boundary for different reasons:
 
 - Fabric peers, ordering service, CAs, chaincode containers, channel state, MSP/TLS material, and generated connection profiles are lifecycle-managed by `fabric-samples/test-network/network.sh`.
-- The Expo mobile app is a client/build artifact. It calls the containerized APIs but is not a long-running server container.
+- The Expo mobile app is a client/build artifact. Web and mobile call only the public application API; neither client has a Blockchain API URL.
 - The selected Fabric test network has one peer per organization and one orderer. It does **not** satisfy the SRS production target of two peers per organization and at least three Raft orderers.
 
 Do not describe this topology as production/high availability. Production promotion requires a separately designed Fabric deployment, updated connection profiles, organization MSP policies, wallet re-enrollment/revocation, backup/restore, monitoring, and failover evidence.
@@ -15,20 +15,42 @@ Do not describe this topology as production/high availability. Production promot
 | Compose service | Runtime purpose | Persistence | Health endpoint/check |
 |---|---|---|---|
 | `mysql` | Authoritative off-chain relational data | `edr-mysql-data` | `mysqladmin ping` |
-| `blockchain-api` | JWT-protected Fabric gateway and radiographic integrity service | read-only Fabric wallet/profile mounts; `edr-radiographic-files` | `GET /health` |
-| `database-api` | Database/authentication/clinical API | MySQL volume through `mysql` | `GET /health` |
-| `web-frontend` | Built React assets behind Nginx; same-origin API proxy | immutable image content | `GET /` |
+| `blockchain-api` | Private Fabric adapter, CA identity lifecycle, and radiographic integrity service; accepts only authenticated `database-api` traffic | read-only Fabric profile; protected writable wallet; `edr-radiographic-files` | private `GET /health` |
+| `database-api` | The only public application/authentication/clinical API contract | MySQL volume through `mysql` | private `GET /health`, proxied at `/api/database/health` |
+| `web-frontend` | Built React assets behind Nginx; the only published HTTP ingress | immutable image content | `GET /` |
 
-Redis is not used by the current application runtime. Mobile API support is provided by the two containerized APIs; no separate mobile backend service exists.
+Redis is not used by the current application runtime. Mobile and web use the same application API contract. `blockchain-api:8081` and `database-api:8080` are exposed only on the private Compose network; only the web/Nginx port is published.
+
+## Public/private service boundary
+
+```text
+Web or mobile
+    -> HTTPS/Nginx
+    -> database-api
+    -> private service authentication
+    -> blockchain-api
+    -> Fabric gateway, endorsing peers, and ordering service
+```
+
+`BLOCKCHAIN_INTERNAL_TOKEN` is an independent, high-entropy deployment secret shared only by `database-api` and `blockchain-api`. The Blockchain API also verifies the forwarded end-user session and retains role, actor, clinic, and wallet-identity checks. Network isolation and service authentication are both required.
+
+This layout supports future expansion without changing client contracts:
+
+- Run multiple stateless `database-api` instances behind the public load balancer.
+- Run multiple private `blockchain-api` instances behind private service discovery when required. Before horizontal scaling, replace the single-host file wallet with a concurrency-safe external secret store or HSM-backed signer.
+- Replace the test connection profile with peer/orderer endpoints on private organization networks.
+- Add peers and orderers across hosts or availability zones while keeping the public API unchanged.
+
+The current single server remains a single infrastructure failure domain even though Fabric peers maintain separate logical ledger copies. A production deployment must distribute peers/orderers and application replicas across independent failure domains.
 
 ## Prerequisites and secrets
 
-1. Copy `.env.compose.example` to `.env` and replace `MYSQL_ROOT_PASSWORD` and `JWT_SECRET`. Do not commit `.env`.
+1. Copy `.env.compose.example` to `.env` and replace every `CHANGE_ME` value, including `BLOCKCHAIN_INTERNAL_TOKEN`. Do not commit `.env`.
 2. Start Fabric and generate the Org1 connection profile and role-bound wallet as described below.
 3. Ensure host ports `7050`, `7051`, `7054`, and `9051` are published by the Fabric test network. The Blockchain API maps discovered Fabric hostnames to the Docker host through `extra_hosts`.
 4. On Linux, Docker Engine must support the Compose `host-gateway` mapping.
 
-The Compose stack creates named volumes for MySQL and private radiographic bytes. Back up both volumes before destructive upgrades. Wallet and connection-profile directories are read-only bind mounts and must be backed up through the Fabric operational process.
+The Compose stack creates named volumes for MySQL and private radiographic bytes. Back up both volumes before destructive upgrades. The connection profile remains read-only. The wallet is writable only by the private Blockchain API because new doctor and patient accounts are enrolled with the Fabric CA during provisioning; it must be protected and backed up through the Fabric operational process.
 
 ## Fabric lifecycle exception
 
@@ -66,9 +88,12 @@ Expected mounts:
 
 - `FABRIC_CONNECTION_DIR/connection-org1.json`: generated Org1 profile containing TLS CA material.
 - `FABRIC_WALLET_DIR/*.id`: `admin`, clinic-bound admin identities, actor-bound doctor/patient identities, and the system identity required by active JWT claims.
-- The wallet must not be baked into an image or committed. Compose mounts it read-only.
+- The wallet must not be baked into an image or committed. It is writable only by `blockchain-api`; web and mobile never receive certificates or private keys.
+- Set `FABRIC_CA_TLS_VERIFY=false` only for the local Fabric test network when its generated CA certificate does not match the container gateway hostname. Production must use verified CA TLS.
 
 At container startup, `prepareContainerConnectionProfile.js` copies the generated profile into the container and rewrites only loopback gRPC/CA URLs to `host.docker.internal`. Fabric TLS hostname overrides and embedded CA certificates are preserved. Discovery runs with `asLocalhost=false`; the Compose host mappings route discovered peer/orderer names to published host ports.
+
+After profile preparation, `reconcileFabricIdentities.js` idempotently enrolls any doctor or patient already present in MySQL but missing from the wallet. It also replays existing MySQL patient assignments through the canonical Fabric transaction to repair missing inverse `doctor.patients` relationships. New accounts are enrolled synchronously during provisioning. Blockchain API startup fails if reconciliation cannot complete, preventing a partially usable deployment from being marked healthy.
 
 ## Application startup and verification
 
@@ -80,18 +105,19 @@ docker compose build database-api blockchain-api web-frontend
 docker compose up -d
 docker compose ps
 curl -i http://localhost:5173/
-curl -i http://localhost:8080/
-curl -i http://localhost:8080/health
-curl -i http://localhost:8081/health
 curl -i http://localhost:5173/api/database/health
-curl -i http://localhost:5173/api/blockchain/health
 ```
 
-A protected Blockchain API check must use a valid JWT and actor whose wallet identity exists. A request without a token is expected to return `401`; that proves the route is protected but does not prove Fabric invocation. Complete deployment validation with an authenticated query appropriate to the enrolled actor, for example:
+There must be no public `/api/blockchain` route and no host listener on port `8081`. Verify the negative boundary and then exercise a ledger-backed operation through the application API:
 
 ```bash
-curl -i -H "Authorization: Bearer $TOKEN" http://localhost:8081/getPatientsByClinic/1
+curl -i http://localhost:5173/api/blockchain/health             # expected 404
+curl -i http://localhost:8081/health                            # expected connection refused
+curl -i -H "Authorization: Bearer $TOKEN" \
+  http://localhost:5173/api/database/getRequestsForAdmin/1
 ```
+
+From the private application network, a request without `X-EDR-Internal-Token` must return `401`. End-to-end acceptance must also confirm the authenticated application route committed or queried the expected Fabric state on every required channel peer.
 
 Shutdown without deleting persistent volumes:
 

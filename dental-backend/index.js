@@ -2,13 +2,13 @@
 
 const express = require('express');
 const bodyParser = require('body-parser');
-const cors = require('cors');
 const { Gateway, Wallets } = require('fabric-network');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { createSessionAuthenticator, verifySessionSchema } = require('./sessionAuth');
 const { fabricIdentityForUser } = require('./fabricIdentity');
+const { enrollIdentity } = require('./fabricEnrollment');
 const { sha256File, verifyFileIntegrity } = require('./radiographicIntegrity');
 const {
     pushStatus,
@@ -24,23 +24,10 @@ require('dotenv').config();
 
 const app = express();
 app.use(bodyParser.json());
+const blockchainInternalToken = process.env.BLOCKCHAIN_INTERNAL_TOKEN;
 
-const parseCorsOrigin = (value) => {
-    if (!value || value === '*') {
-        return '*';
-    }
-
-    return value.split(',').map((origin) => origin.trim()).filter(Boolean);
-};
-
-app.use(cors({
-    origin: parseCorsOrigin(process.env.CORS_ORIGIN),
-    credentials: true,
-    optionsSuccessStatus: 200
-}));
-
-if (process.env.NODE_ENV === 'production' && (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === '*')) {
-    throw new Error('Production CORS_ORIGIN must be an explicit allow-list');
+if (process.env.NODE_ENV === 'production' && !blockchainInternalToken) {
+    throw new Error('BLOCKCHAIN_INTERNAL_TOKEN is required in production');
 }
 
 const ccpPath = path.resolve(__dirname, process.env.FABRIC_CONNECTION_PROFILE || './connection/connection-org1.json');
@@ -211,6 +198,20 @@ app.get('/health', async (req, res) => {
     });
 });
 
+const requireInternalService = (req, res, next) => {
+    const suppliedBuffer = Buffer.from(req.get('x-edr-internal-token') || '');
+    const expectedBuffer = Buffer.from(blockchainInternalToken || '');
+    if (!expectedBuffer.length || suppliedBuffer.length !== expectedBuffer.length
+        || !crypto.timingSafeEqual(suppliedBuffer, expectedBuffer)) {
+        return sendApiError(res, 401, 'INTERNAL_SERVICE_AUTH_REQUIRED', 'Internal service authentication is required');
+    }
+    return next();
+};
+
+// Health remains reachable on the private service network for orchestration.
+// Every business route below additionally requires application-service proof.
+app.use(requireInternalService);
+
 const getConnectionProfile = () => {
     if (connectionProfile) {
         return connectionProfile;
@@ -311,6 +312,25 @@ const notificationTargetFromUser = (user) => {
     }
     return { role: normalizeRole(user.role), id: user.blockchainID || user.organizationId || user.id };
 };
+
+app.post('/internal/identities', authenticateToken, requireRoles('admin', 'system'), async (req, res) => {
+    try {
+        requireFields(req.body, ['role', 'actorID']);
+        if (isRole(req, 'admin') && Number(req.body.clinicID) !== Number(req.user.organizationId)) {
+            return sendApiError(res, 403, 'CLINIC_SCOPE_DENIED', 'Identity clinic must match the authenticated admin organization');
+        }
+        const result = await enrollIdentity({
+            ccpPath,
+            walletPath,
+            role: req.body.role,
+            actorID: req.body.actorID,
+            clinicID: req.body.clinicID,
+        });
+        return sendSuccess(res, result, result.created ? 201 : 200);
+    } catch (error) {
+        return sendApiError(res, error.statusCode || 503, 'FABRIC_IDENTITY_PROVISIONING_FAILED', error.message);
+    }
+});
 
 const notificationDeepLink = (notification) => {
     const requestID = notification.relatedRequestID || notification.payload?.requestID;
@@ -796,7 +816,9 @@ app.post('/assignPatientToDoctor', authenticateToken, requireRoles('admin'), asy
         const result = await withContract(req, (contract) => contract.submitTransaction(
             'assignPatientToDoctor',
             String(req.body.patientID),
-            String(req.body.doctorID)
+            String(req.body.doctorID),
+            String(req.body.dataHash || ''),
+            String(req.body.modifiedDate || new Date().toISOString())
         ));
 
         res.json(parseBufferJson(result));

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import React from 'react'
 import axios from 'axios';
 import { NoRequests, Document } from '../components';
-import { authHeaders, blockchainUrl, getPatientBlockchainID } from '../utils/api';
+import { authHeaders, databaseUrl, getPatientBlockchainID } from '../utils/api';
 import { useUser } from '../Context/UserContext';
 
 
@@ -24,7 +24,7 @@ const documents = () => {
 
             try{
                 setIsLoading(true)
-                const response = await axios.get(blockchainUrl(`/getAllRequestsForPatient/${patientID}`), {
+                const response = await axios.get(databaseUrl(`/getAllRequestsForPatient/${patientID}`), {
                     headers: authHeaders(token),
                 })
 

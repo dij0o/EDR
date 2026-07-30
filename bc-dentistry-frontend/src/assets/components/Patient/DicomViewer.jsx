@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { authHeaders, blockchainUrl } from '../../config/api.js';
+import { authHeaders, databaseUrl } from '../../config/api.js';
 
 export default function DicomViewer({ file, onClose }) {
   const element = useRef(null);
@@ -9,7 +9,7 @@ export default function DicomViewer({ file, onClose }) {
     const controller = new AbortController(); let objectUrl; let renderingEngine;
     const render = async () => {
       try {
-        const response = await axios.get(blockchainUrl(`/radiographic-files/${encodeURIComponent(file.fileID)}/content`), { headers: authHeaders(), responseType: 'blob', signal: controller.signal });
+        const response = await axios.get(databaseUrl(`/radiographic-files/${encodeURIComponent(file.fileID)}/content`), { headers: authHeaders(), responseType: 'blob', signal: controller.signal });
         if (controller.signal.aborted) return;
         objectUrl = URL.createObjectURL(response.data);
         if (/^image\/(jpeg|png|webp)$/i.test(response.data.type || file.mediaType)) { setState({ status: 'image', objectUrl, message: '' }); return; }

@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react'
 
 import { DataRequest, NoRequests } from '../components'
 import axios from 'axios';
-import { authHeaders, blockchainUrl, getPatientBlockchainID } from '../utils/api';
+import { authHeaders, databaseUrl, getPatientBlockchainID } from '../utils/api';
 import { useUser } from '../Context/UserContext';
 
 const ProceedRequests = () => {
@@ -16,7 +16,7 @@ const ProceedRequests = () => {
     if (!token || !patientID) return
 
     setIsLoading(true)
-    axios.get(blockchainUrl(`/getAllRequestsForPatient/${patientID}`), {
+    axios.get(databaseUrl(`/getAllRequestsForPatient/${patientID}`), {
       headers: authHeaders(token),
     })
     .then((response) => {
@@ -33,7 +33,7 @@ const ProceedRequests = () => {
 
   const revokeConsent = async (requestID) => {
     try {
-      await axios.post(blockchainUrl('/patient/revokeConsent'), {
+      await axios.post(databaseUrl('/patient/revokeConsent'), {
         patientID,
         requestID,
         revocationReason: 'Revoked from patient mobile app',
