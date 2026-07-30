@@ -29,8 +29,16 @@ test('web session channel initializes before use and production HTML is self-hos
   assert.ok(declaration >= 0 && listener > declaration, 'sessionChannel must be initialized before listener registration');
   assert.doesNotMatch(html, /https?:\/\/(cdn\.tailwindcss\.com|cdn\.jsdelivr\.net|fonts\.googleapis\.com)/);
   assert.match(css, /\.loginTh2,\s*\.signupTh2\s*\{[^}]*position:\s*absolute/s);
+  assert.match(css, /dental-hospital-login\.jpg/);
   assert.match(login, /w-full md:w-auto/);
   assert.match(app, /if \(getStoredUser\(\)\) loadCurrentSession\(\)/);
+});
+
+test('top bar keeps account controls grouped in a responsive action cluster', () => {
+  const topbar = read('src/assets/Sections/Topbar.jsx');
+  assert.match(topbar, /md:flex-row md:items-center md:justify-between/);
+  assert.match(topbar, /flex flex-wrap items-center justify-end gap-3/);
+  assert.match(topbar, /<Notifications \/>[\s\S]*Active sessions[\s\S]*Log out/);
 });
 
 test('mobile uses SecureStore, serialized rotation, restoration, and real logout', () => {

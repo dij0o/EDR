@@ -827,6 +827,9 @@ app.get('/clinic-admins', authenticateToken, requireRoles('admin', 'system'), as
 
 const DOCTOR_SELECT = `SELECT Doctor.*, User.First_Name, User.Last_Name, User.Email, User.Contact_Number, User.Created_Date
     FROM Doctor INNER JOIN User ON Doctor.ID = User.ID`;
+const CLINIC_DOCTOR_SCOPE = `(Doctor.Clinic_ID=? OR (Doctor.Clinic_ID IS NULL AND EXISTS (
+    SELECT 1 FROM Patient WHERE Patient.Clinic_ID=? AND JSON_CONTAINS(Patient.Doctors, JSON_QUOTE(Doctor.Blockchain_ID))
+)))`;
 const normalizeDoctor = (row) => ({ doctorID: row.Blockchain_ID, firstName: row.First_Name, lastName: row.Last_Name,
     email: row.Email, contactNumber: row.Contact_Number, worksAt: row.Works_At, speciality: row.Specialty,
     licenseNumber: row.License_Number, emiratesID: row.Emirates_ID, clinicID: row.Clinic_ID,
@@ -866,7 +869,11 @@ app.post('/doctors', authenticateToken, requireRoles('admin'), async (req, res) 
 });
 
 app.get('/doctors', authenticateToken, requireRoles('admin'), async (req, res) => {
-    try { const rows = await query(`${DOCTOR_SELECT} WHERE Doctor.Clinic_ID=? ORDER BY User.Last_Name,User.First_Name`, [req.user.organizationId]); return res.json({ success: true, data: rows.map(normalizeDoctor) }); }
+    try {
+        const rows = await query(`${DOCTOR_SELECT} WHERE ${CLINIC_DOCTOR_SCOPE} ORDER BY User.Last_Name,User.First_Name`,
+            [req.user.organizationId, req.user.organizationId]);
+        return res.json({ success: true, data: rows.map(normalizeDoctor) });
+    }
     catch (error) { return sendApiError(res, 500, 'DOCTOR_LIST_FAILED', 'Unable to retrieve doctors'); }
 });
 
@@ -1276,9 +1283,8 @@ const APPOINTMENT_SELECT = `SELECT Appointment.Appointment_ID, Appointment.Meeti
 
 app.get('/appointment-options/doctors', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
-        const rows = await query(`${DOCTOR_SELECT} WHERE Doctor.Clinic_ID=? OR (Doctor.Clinic_ID IS NULL AND EXISTS (
-            SELECT 1 FROM Patient WHERE Patient.Clinic_ID=? AND JSON_CONTAINS(Patient.Doctors, JSON_QUOTE(Doctor.Blockchain_ID))
-        )) ORDER BY User.Last_Name,User.First_Name`, [req.user.organizationId, req.user.organizationId]);
+        const rows = await query(`${DOCTOR_SELECT} WHERE ${CLINIC_DOCTOR_SCOPE} ORDER BY User.Last_Name,User.First_Name`,
+            [req.user.organizationId, req.user.organizationId]);
         return res.json({ success: true, data: rows.map(normalizeDoctor) });
     } catch (error) { return sendApiError(res, 500, 'APPOINTMENT_DOCTOR_OPTIONS_FAILED', 'Unable to retrieve clinic appointment doctors'); }
 });

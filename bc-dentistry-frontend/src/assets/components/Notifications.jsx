@@ -162,7 +162,7 @@ const Notifications = () => {
     };
 
     return (
-        <div className="flex items-center gap-x-8">
+        <div className="flex items-center gap-x-3 sm:gap-x-5">
             <UserType />
             <div ref={containerRef} className="relative">
                 <button
