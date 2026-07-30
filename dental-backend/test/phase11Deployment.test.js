@@ -26,6 +26,7 @@ test('Compose contains every non-Fabric server service and excludes the mobile c
     assert.match(compose, /BLOCKCHAIN_INTERNAL_TOKEN:/);
     assert.doesNotMatch(compose, /BLOCKCHAIN_API_PORT/);
     assert.doesNotMatch(read('bc-dentistry-frontend/nginx.conf'), /blockchain-api/);
+    assert.match(read('bc-dentistry-frontend/nginx.conf'), /location \^~ \/api\/blockchain[\s\S]*return 404/);
     assert.match(read('bc-dentistry-frontend/nginx.conf'), /proxy_pass http:\/\/database-api:8080\//);
 });
 
