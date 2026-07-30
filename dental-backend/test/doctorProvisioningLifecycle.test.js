@@ -30,6 +30,11 @@ test('container startup reconciles identities for accounts created before this f
     assert.match(reconcile, /FROM Patient WHERE Blockchain_ID IS NOT NULL/);
     assert.match(reconcile, /enrollIdentity/);
     assert.match(reconcile, /contract\.submitTransaction\(\s*'assignPatientToDoctor'/);
+    assert.match(reconcile, /doctorBlockchainIDByDatabaseID/);
+    assert.match(reconcile, /skippedAssignments/);
+    assert.match(reconcile, /unknown legacy relationship/);
+    assert.match(reconcile, /failedAssignments/);
+    assert.match(reconcile, /could not replay/);
 });
 
 test('account creation provisions Fabric identity before ledger actor creation', () => {
