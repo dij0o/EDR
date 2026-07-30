@@ -40,7 +40,7 @@ function App() {
     return () => { window.removeEventListener('edr-session-expired', refreshSession); window.clearInterval(timer); };
   }, []);
   useEffect(() => {
-    loadCurrentSession().catch(() => {});
+    if (getStoredUser()) loadCurrentSession().catch(() => {});
     const refreshTimer = window.setInterval(() => {
       if (getStoredUser()) refreshWebSession().catch(() => setSessionTick((value) => value + 1));
     }, 8 * 60 * 1000);

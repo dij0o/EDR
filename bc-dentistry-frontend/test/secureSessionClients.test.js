@@ -21,10 +21,16 @@ test('web uses cookies, CSRF, refresh, me, and server logout without bearer stor
 test('web session channel initializes before use and production HTML is self-hosted', () => {
   const auth = read('src/assets/utils/auth.js');
   const html = read('index.html');
+  const css = read('src/index.css');
+  const login = read('src/assets/Sections/LoginSection.jsx');
+  const app = read('src/App.jsx');
   const declaration = auth.indexOf('const sessionChannel');
   const listener = auth.indexOf("sessionChannel?.addEventListener");
   assert.ok(declaration >= 0 && listener > declaration, 'sessionChannel must be initialized before listener registration');
   assert.doesNotMatch(html, /https?:\/\/(cdn\.tailwindcss\.com|cdn\.jsdelivr\.net|fonts\.googleapis\.com)/);
+  assert.match(css, /\.loginTh2,\s*\.signupTh2\s*\{[^}]*position:\s*absolute/s);
+  assert.match(login, /w-full md:w-auto/);
+  assert.match(app, /if \(getStoredUser\(\)\) loadCurrentSession\(\)/);
 });
 
 test('mobile uses SecureStore, serialized rotation, restoration, and real logout', () => {

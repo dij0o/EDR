@@ -41,8 +41,8 @@ const LoginSection = () => {
 
 
     return (
-        <div className='loginTh2 h-full flex flex-col justify-center absolute px-16 top-0 right-0'>
-            <div className="rounded-lg p-6 w-[36em] z-40 ">
+        <div className='loginTh2 h-full w-full md:w-auto flex flex-col justify-center px-4 sm:px-8 md:px-16 top-0 right-0'>
+            <div className="rounded-lg p-6 w-full md:w-[36em] z-40 ">
                 <form id="login-form" onSubmit={(event) => { event.preventDefault(); handleLogin(email, password); }}>
                     <div className='flex justify-between items-center'>
                         <h2 className="text-4xl font-semibold text-left mb-4">Welcome Back !</h2>

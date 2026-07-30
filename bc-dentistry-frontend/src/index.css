@@ -138,7 +138,7 @@ body{
 
 .loginTh2, .signupTh2{
     background-color: transparent;
-    position: relative;
+    position: absolute;
 }
 
 .loginTh2::after,.signupTh2::after{
