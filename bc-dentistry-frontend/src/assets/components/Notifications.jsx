@@ -12,6 +12,7 @@ import {
     removePushDevice,
     subscribeToForegroundPush,
 } from "../../config/firebaseMessaging";
+import { getStoredUser } from "../utils/auth";
 
 const deepLinkForNotification = (notification) => {
     const requestID = notification.relatedRequestID || notification.payload?.requestID;
@@ -32,6 +33,7 @@ const formatTimestamp = (timestamp) => {
 
 const Notifications = () => {
     const navigate = useNavigate();
+    const isSystem = getStoredUser()?.role === "system";
     const containerRef = useRef(null);
     const [notifications, setNotifications] = useState([]);
     const [open, setOpen] = useState(false);
@@ -43,6 +45,10 @@ const Notifications = () => {
     const unread = notifications.filter((notification) => notification.status === "UNREAD").length;
 
     const loadNotifications = useCallback(async ({ quiet = false } = {}) => {
+        if (isSystem) {
+            setLoading(false);
+            return;
+        }
         if (!quiet) setLoading(true);
         try {
             const response = await fetch(databaseUrl("/notifications?status=ALL"), { headers: authHeaders() });
@@ -55,9 +61,10 @@ const Notifications = () => {
         } finally {
             if (!quiet) setLoading(false);
         }
-    }, []);
+    }, [isSystem]);
 
     useEffect(() => {
+        if (isSystem) return undefined;
         loadNotifications();
         const interval = window.setInterval(() => loadNotifications({ quiet: true }), 30000);
         const onVisible = () => { if (document.visibilityState === "visible") loadNotifications({ quiet: true }); };
@@ -66,7 +73,7 @@ const Notifications = () => {
             window.clearInterval(interval);
             document.removeEventListener("visibilitychange", onVisible);
         };
-    }, [loadNotifications]);
+    }, [isSystem, loadNotifications]);
 
     useEffect(() => {
         const closeOutside = (event) => {
@@ -77,6 +84,10 @@ const Notifications = () => {
     }, []);
 
     useEffect(() => {
+        if (isSystem) {
+            setPushState("unavailable");
+            return undefined;
+        }
         let unsubscribe = () => {};
         getPushBackendStatus().then((status) => {
             const configured = status.configured && isWebPushConfigured();
@@ -99,7 +110,7 @@ const Notifications = () => {
             .then((cleanup) => { unsubscribe = cleanup; })
             .catch(() => {});
         return () => unsubscribe();
-    }, [loadNotifications, navigate]);
+    }, [isSystem, loadNotifications, navigate]);
 
     const markRead = async (notification) => {
         if (notification.status !== "UNREAD") return notification;
@@ -164,7 +175,7 @@ const Notifications = () => {
     return (
         <div className="flex items-center gap-x-3 sm:gap-x-5">
             <UserType />
-            <div ref={containerRef} className="relative">
+            {!isSystem && <div ref={containerRef} className="relative">
                 <button
                     id="Notifications"
                     type="button"
@@ -235,7 +246,7 @@ const Notifications = () => {
                         </div>}
                     </section>
                 )}
-            </div>
+            </div>}
         </div>
     );
 };

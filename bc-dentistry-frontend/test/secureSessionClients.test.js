@@ -36,9 +36,13 @@ test('web session channel initializes before use and production HTML is self-hos
 
 test('top bar keeps account controls grouped in a responsive action cluster', () => {
   const topbar = read('src/assets/Sections/Topbar.jsx');
+  const notifications = read('src/assets/components/Notifications.jsx');
   assert.match(topbar, /md:flex-row md:items-center md:justify-between/);
   assert.match(topbar, /flex flex-wrap items-center justify-end gap-3/);
   assert.match(topbar, /<Notifications \/>[\s\S]*Active sessions[\s\S]*Log out/);
+  assert.match(notifications, /getStoredUser\(\)\?\.role === "system"/);
+  assert.match(notifications, /if \(isSystem\) return undefined/);
+  assert.match(notifications, /!isSystem && <div ref=\{containerRef\}/);
 });
 
 test('mobile uses SecureStore, serialized rotation, restoration, and real logout', () => {
