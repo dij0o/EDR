@@ -33,8 +33,11 @@ test('doctor patient list and patient detail use scoped Database API routes', ()
 test('production build strips console statements and demo lab results are not rendered', () => {
   assert.match(read('vite.config.js'), /drop: \["console", "debugger"\]/);
   const lab = read('src/assets/Pages/LabResults.jsx');
-  assert.match(lab, /Lab results unavailable/);
+  assert.match(lab, /databaseUrl\(`\/lab-results/);
+  assert.match(lab, /No lab results have been recorded/);
+  assert.match(lab, /Operational metadata only/);
   assert.doesNotMatch(lab, /LabResultsSection/);
+  assert.doesNotMatch(lab, /Phase 9 smoke|sample lab|demo result/i);
 });
 
 test('appointments page consumes the scoped API response envelope without mapping the response object', () => {

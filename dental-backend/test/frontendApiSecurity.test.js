@@ -49,8 +49,11 @@ test('doctor patient detail and list require assignment plus Fabric actor valida
   assert.match(selfList, /JSON_CONTAINS\(Patient\.Doctors/);
 });
 
-test('sample lab results are disabled in production API', () => {
-  const source = route(/app\.get\('\/Lab_Results'[\s\S]*?\n\}\);/);
-  assert.match(source, /501/);
-  assert.match(source, /LAB_RESULTS_NOT_IMPLEMENTED/);
+test('lab results use patient and clinic scoped role-specific responses', () => {
+  assert.match(databaseApi, /Lab_Result\.Patient_Blockchain_ID=\?/);
+  assert.match(databaseApi, /Lab_Result\.Clinic_ID=\?/);
+  assert.match(databaseApi, /operational-metadata/);
+  assert.match(databaseApi, /labOperationalMetadata/);
+  assert.match(databaseApi, /requireRoles\('admin', 'doctor', 'patient'\)/);
+  assert.doesNotMatch(databaseApi, /LAB_RESULTS_NOT_IMPLEMENTED/);
 });

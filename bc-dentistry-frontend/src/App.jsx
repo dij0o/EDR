@@ -80,7 +80,7 @@ function App() {
           <Route path="/my-record" element={<ProtectedRoute roles={['patient']}><Suspense fallback={<div role="status">Loading patient record…</div>}><PatientSelfRecord/></Suspense></ProtectedRoute>} />
           <Route path="/doctors" element={<ProtectedRoute roles={['admin']}><Doctors/></ProtectedRoute>} />
           <Route path="/datarequests" element={<ProtectedRoute roles={['admin']}><DataRequests/></ProtectedRoute>} />
-          <Route path="/labresults" element={<ProtectedRoute roles={['admin','doctor']}><LabResults/></ProtectedRoute>} />
+          <Route path="/labresults" element={<ProtectedRoute roles={['admin','doctor','patient']}><LabResults/></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute roles={['admin','doctor']}><Settings/></ProtectedRoute>} />
           <Route path="/info" element={<ProtectedRoute roles={['admin','doctor']}><Info/></ProtectedRoute>} />
           <Route path="/unauthorized" element={<div role="alert" className="m-8 rounded-xl border bg-white p-6">You are not authorized to view this page.</div>} />

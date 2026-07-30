@@ -1491,10 +1491,65 @@ app.patch('/appointments/:id/cancel', authenticateToken, requireRoles('admin'), 
     } catch (error) { return sendApiError(res, error.statusCode || 500, 'APPOINTMENT_CANCEL_FAILED', error.message); }
 });
 
-// Route to fetch Lab Results
-app.get('/Lab_Results', authenticateToken, requireRoles('admin', 'doctor'), (req, res) => {
-    return sendApiError(res, 501, 'LAB_RESULTS_NOT_IMPLEMENTED', 'Lab results are unavailable until a scoped clinical data source is configured');
+const LAB_RESULT_SELECT = `SELECT Lab_Result.*, PatientUser.First_Name AS Patient_First_Name,
+    PatientUser.Last_Name AS Patient_Last_Name, DoctorUser.First_Name AS Doctor_First_Name,
+    DoctorUser.Last_Name AS Doctor_Last_Name
+    FROM Lab_Result
+    JOIN Patient ON Patient.Blockchain_ID=Lab_Result.Patient_Blockchain_ID
+    JOIN User PatientUser ON PatientUser.ID=Patient.ID
+    LEFT JOIN Doctor ON Doctor.Blockchain_ID=Lab_Result.Ordering_Doctor_ID
+    LEFT JOIN User DoctorUser ON DoctorUser.ID=Doctor.ID`;
+const parseJsonColumn = (value) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value !== 'string') return value;
+    try { return JSON.parse(value); } catch { return null; }
+};
+const labOperationalMetadata = (row) => ({
+    labResultID: row.Lab_Result_ID, orderID: row.Order_ID,
+    patientID: row.Patient_Blockchain_ID, patientName: `${row.Patient_First_Name} ${row.Patient_Last_Name}`.trim(),
+    status: row.Status, discipline: row.Discipline, testName: row.Test_Name,
+    orderingDoctorID: row.Ordering_Doctor_ID,
+    orderingDoctorName: [row.Doctor_First_Name, row.Doctor_Last_Name].filter(Boolean).join(' ') || null,
+    orderedAt: row.Ordered_At, collectedAt: row.Collected_At, completedAt: row.Completed_At,
 });
+const labClinicalResult = (row) => ({
+    ...labOperationalMetadata(row), testCode: row.Test_Code,
+    resultData: parseJsonColumn(row.Result_Data), interpretation: row.Interpretation,
+    referenceRanges: parseJsonColumn(row.Reference_Ranges), notes: row.Notes,
+    dataHash: row.Data_Hash, correctedFromID: row.Corrected_From_ID,
+});
+
+const listLabResults = async (req, res) => {
+    try {
+        const role = normalizeRole(req.user.role);
+        let where; let params;
+        if (role === 'patient') {
+            if (!req.user.blockchainID) return sendApiError(res, 403, 'PATIENT_IDENTITY_REQUIRED', 'Patient identity is required');
+            where = 'Lab_Result.Patient_Blockchain_ID=?';
+            params = [req.user.blockchainID];
+        } else if (role === 'doctor') {
+            const patientID = String(req.query.patientID || '');
+            if (!patientID) return sendApiError(res, 400, 'PATIENT_REQUIRED', 'Select an authorized patient');
+            await callBlockchain(req, `/clinical-records/${encodeURIComponent(patientID)}/medical?purpose=${encodeURIComponent('lab result listing')}`, 'GET');
+            where = 'Lab_Result.Patient_Blockchain_ID=?';
+            params = [patientID];
+        } else {
+            where = 'Lab_Result.Clinic_ID=?';
+            params = [req.user.organizationId];
+            if (req.query.patientID) { where += ' AND Lab_Result.Patient_Blockchain_ID=?'; params.push(String(req.query.patientID)); }
+        }
+        const rows = await query(`${LAB_RESULT_SELECT} WHERE ${where} ORDER BY Lab_Result.Ordered_At DESC`, params);
+        if (role === 'admin') {
+            await query(`INSERT INTO Auth_Session_Event (Session_ID,User_ID,Event_Type,Details) VALUES (?,?,?,?)`, [
+                req.user.sid, req.user.id, 'LAB_METADATA_VIEWED',
+                JSON.stringify({ clinicID: Number(req.user.organizationId), patientID: req.query.patientID || null, resultCount: rows.length }),
+            ]);
+        }
+        return res.json({ success: true, data: rows.map(role === 'admin' ? labOperationalMetadata : labClinicalResult),
+            access: role === 'admin' ? 'operational-metadata' : 'clinical' });
+    } catch (error) { return sendApiError(res, error.statusCode || 500, 'LAB_RESULTS_READ_FAILED', error.message); }
+};
+app.get(['/lab-results', '/Lab_Results'], authenticateToken, requireRoles('admin', 'doctor', 'patient'), listLabResults);
 
 // Route to fetch all users
 app.get('/users', authenticateToken, requireRoles('admin'), (req, res) => {
