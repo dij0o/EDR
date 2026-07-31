@@ -27,7 +27,7 @@ test('container startup reconciles identities for accounts created before this f
     const reconcile = read('dental-backend/reconcileFabricIdentities.js');
     assert.match(dockerfile, /node reconcileFabricIdentities\.js/);
     assert.match(reconcile, /FROM Doctor WHERE Blockchain_ID IS NOT NULL/);
-    assert.match(reconcile, /FROM Patient WHERE Blockchain_ID IS NOT NULL/);
+    assert.match(reconcile, /FROM Patient[\s\S]*JOIN User ON User\.ID = Patient\.ID[\s\S]*WHERE Patient\.Blockchain_ID IS NOT NULL/);
     assert.match(reconcile, /enrollIdentity/);
     assert.match(reconcile, /contract\.submitTransaction\(\s*'assignPatientToDoctor'/);
     assert.match(reconcile, /doctorBlockchainIDByDatabaseID/);
