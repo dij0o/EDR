@@ -3,8 +3,34 @@
 require('dotenv').config();
 const mysql = require('mysql2/promise');
 const { Gateway, Wallets } = require('fabric-network');
+const crypto = require('crypto');
 const path = require('path');
 const { enrollIdentity } = require('./fabricEnrollment');
+
+const jsonValue = (value, fallback) => {
+    if (value === null || value === undefined) return fallback;
+    return typeof value === 'string' ? JSON.parse(value) : value;
+};
+
+const patientHash = (patient) => crypto.createHash('sha256').update(JSON.stringify({
+    patientID: patient.actorID,
+    firstName: patient.firstName,
+    lastName: patient.lastName,
+    dateOfBirth: patient.dateOfBirth,
+    gender: patient.gender,
+    contactNumber: patient.contactNumber,
+    email: patient.email,
+    emiratesID: patient.emiratesID,
+    nationality: patient.nationality,
+    address: patient.address,
+    bloodType: patient.bloodType,
+    medicalHistory: jsonValue(patient.medicalHistory, null),
+    allergies: jsonValue(patient.allergies, null),
+    medications: jsonValue(patient.medications, null),
+    insuranceDetails: jsonValue(patient.insuranceDetails, null),
+    clinicID: Number(patient.clinicID),
+    doctors: jsonValue(patient.doctors, []),
+})).digest('hex');
 
 const main = async () => {
     const connection = await mysql.createConnection({
@@ -21,7 +47,19 @@ const main = async () => {
             'SELECT ID AS databaseID, Blockchain_ID AS actorID, Clinic_ID AS clinicID FROM Doctor WHERE Blockchain_ID IS NOT NULL',
         );
         const [patients] = await connection.execute(
-            'SELECT Blockchain_ID AS actorID, Clinic_ID AS clinicID, Doctors AS doctors FROM Patient WHERE Blockchain_ID IS NOT NULL',
+            `SELECT Patient.ID AS databaseID, Patient.Blockchain_ID AS actorID,
+                Patient.Clinic_ID AS clinicID, Patient.Doctors AS doctors,
+                User.First_Name AS firstName, User.Last_Name AS lastName,
+                User.Contact_Number AS contactNumber, User.Email AS email,
+                User.Created_Date AS createdDate,
+                Patient.Date_of_Birth AS dateOfBirth, Patient.Gender AS gender,
+                Patient.Emirates_ID AS emiratesID, Patient.Nationality AS nationality,
+                Patient.Address AS address, Patient.Blood_Type AS bloodType,
+                Patient.Medical_History AS medicalHistory, Patient.Allergies AS allergies,
+                Patient.Medications AS medications, Patient.Insurance_Details AS insuranceDetails
+             FROM Patient
+             JOIN User ON User.ID = Patient.ID
+             WHERE Patient.Blockchain_ID IS NOT NULL`,
         );
         const unscoped = [
             ...doctors.filter((row) => row.clinicID === null || row.clinicID === undefined),
@@ -81,7 +119,6 @@ const main = async () => {
         let assignments = 0;
         const failedAssignments = [];
         for (const [clinicID, clinicAssignments] of assignmentsByClinic) {
-            if (!clinicAssignments.length) continue;
             const gateway = new Gateway();
             try {
                 await gateway.connect(ccp, {
@@ -94,6 +131,22 @@ const main = async () => {
                 });
                 const network = await gateway.getNetwork(process.env.FABRIC_CHANNEL || 'mychannel');
                 const contract = network.getContract(process.env.FABRIC_CHAINCODE || 'basic');
+                for (const patient of patients.filter((row) => String(row.clinicID) === String(clinicID))) {
+                    try {
+                        await contract.evaluateTransaction('ReadPatient', String(patient.actorID));
+                    } catch (error) {
+                        if (!String(error.message || error).includes('does not exist')) throw error;
+                        await contract.submitTransaction(
+                            'AddPatientMetadata',
+                            String(patient.actorID),
+                            String(clinicID),
+                            `mysql:Patient/${patient.databaseID}`,
+                            patientHash(patient),
+                            JSON.stringify(desiredDoctorsByPatient.get(String(patient.actorID)) || []),
+                            patient.createdDate ? new Date(patient.createdDate).toISOString() : new Date().toISOString(),
+                        );
+                    }
+                }
                 for (const assignment of clinicAssignments) {
                     try {
                         await contract.submitTransaction(

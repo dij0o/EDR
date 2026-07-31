@@ -90,5 +90,7 @@ test('MySQL, Fabric ledger, and enrollment defaults agree on seed clinic ownersh
     assert.match(reconciliation, /Refusing Fabric reconciliation[\s\S]*without a clinic assignment/);
     assert.match(reconciliation, /UpdatePatientMetadata/);
     assert.match(reconciliation, /UpdateDoctorInfo/);
+    assert.match(reconciliation, /AddPatientMetadata/);
+    assert.match(reconciliation, /patientHash\(patient\)/);
     assert.match(chaincode, /const patient = \{\s*\.\.\.existing,/);
 });
