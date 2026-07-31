@@ -725,7 +725,9 @@ FABRIC_WALLET_PATH=./wallet
 FABRIC_MSP_ID=Org1MSP
 FABRIC_ADMIN_CLINIC_IDS=1,2
 FABRIC_DOCTOR_IDS=Doctor1,Doctor2
+FABRIC_DOCTOR_CLINICS=Doctor1:1,Doctor2:2
 FABRIC_PATIENT_IDS=Patient1,Patient2,Patient3
+FABRIC_PATIENT_CLINICS=Patient1:2,Patient2:2,Patient3:1
 JWT_SECRET=CHANGE_ME   # node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 JWT_EXPIRES_IN=8h
 ```
@@ -733,6 +735,9 @@ JWT_EXPIRES_IN=8h
 The Blockchain API selects a Fabric wallet identity from verified JWT claims:
 `admin-<organizationId>`, `doctor-<blockchainID>`, `patient-<blockchainID>`, or
 `role-system`. Shared service identities are not used for actor-bound requests.
+Every seeded doctor and patient identity must have a matching clinic entry.
+Registration fails instead of issuing an unscoped certificate when a mapping is
+missing.
 
 ### `backend/.env`
 

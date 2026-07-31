@@ -208,27 +208,31 @@ class DentalRecordSharing extends Contract {
                 doctorID: 'Doctor1',
                 firstName: 'Alice',
                 lastName: 'Wong',
+                emiratesID: '784-1985-0000001-1',
                 speciality: 'Orthodontist',
                 worksAt: 'Dental Clinic A',
                 clinicID: 1,
-                email: 'alice.wong@example.com',
+                email: 'doctor1@example.com',
                 contactNumber: '0509876543',
+                licenseNumber: 'DHA-DOCTOR-0001',
                 role: 'doctor',
-                createdDate: "2025-06-13T00:00:00.000Z",// new Date().toISOString(),
-                patients: ['Patient1', 'Patient3']  // Pre-assigned patients
+                createdDate: "2025-02-03T00:00:00.000Z",
+                patients: ['Patient3']  // Pre-assigned patients
             },
             {
                 doctorID: 'Doctor2',
                 firstName: 'Bob',
                 lastName: 'Smith',
+                emiratesID: '784-1986-0000002-2',
                 speciality: 'Endodontist',
                 worksAt: 'Dental Clinic B',
                 clinicID: 2,
-                email: 'bob.smith@example.com',
+                email: 'doctor2@example.com',
                 contactNumber: '0509871234',
+                licenseNumber: 'DHA-DOCTOR-0002',
                 role: 'doctor',
-                createdDate: "2025-06-13T00:00:00.000Z",
-                patients: ['Patient2']
+                createdDate: "2025-02-03T00:00:00.000Z",
+                patients: ['Patient1', 'Patient2']
             }
         ];
             
@@ -261,7 +265,8 @@ class DentalRecordSharing extends Contract {
                 contactNumber: '0501234567',
                 address: '123 Main Street, Dubai',
                 role: 'patient',
-                createdDate: "2025-06-13T00:00:00.000Z",
+                createdDate: "2025-03-26T00:00:00.000Z",
+                clinicID: 2,
                 clinicIDs: [2],
                 doctors: ['Doctor2'],  // Pre-assigned doctor
                 dentalChart: [
@@ -538,7 +543,7 @@ class DentalRecordSharing extends Contract {
                         }
                     ]
                 }]   , 
-                sharedWith: ['Doctor2'],  // Track which hospitals/doctors the data is shared with     
+                sharedWith: ['Doctor2'],  // Track which hospitals/doctors the data is shared with
                 dentalFiles: [],   
             },
             {
@@ -552,7 +557,8 @@ class DentalRecordSharing extends Contract {
                 contactNumber: '0507654321',
                 address: '456 Elm Street, Dubai',
                 role: 'patient',
-                createdDate: "2025-06-13T00:00:00.000Z",
+                createdDate: "2025-03-26T00:00:00.000Z",
+                clinicID: 2,
                 clinicIDs: [2],
                 doctors: ['Doctor2'],
                 dentalChart: [
@@ -591,7 +597,8 @@ class DentalRecordSharing extends Contract {
                 contactNumber: '0502468135',
                 address: '789 Pine Street, Dubai',
                 role: 'patient',
-                createdDate: "2025-06-13T00:00:00.000Z",
+                createdDate: "2025-03-26T00:00:00.000Z",
+                clinicID: 1,
                 doctors: ['Doctor1'],
                 clinicIDs: [1],
                 dentalChart: [],
@@ -752,6 +759,7 @@ class DentalRecordSharing extends Contract {
         this._requireAdminClinic(ctx, existing.clinicID || (existing.clinicIDs || [])[0]);
         if (!/^[a-f0-9]{64}$/i.test(dataHash)) throw new Error('Patient dataHash must be a SHA-256 hex digest');
         const patient = {
+            ...existing,
             docType: 'patient', patientID, role: 'patient', clinicID: parseInt(clinicID), clinicIDs: [parseInt(clinicID)],
             offChainRef, dataHash: dataHash.toLowerCase(), doctors: parseArrayArgument(doctors),
             sharedWith: existing.sharedWith || [], createdDate: existing.createdDate || modifiedDate, modifiedDate,

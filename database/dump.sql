@@ -367,7 +367,7 @@ CREATE TABLE `Doctor` (
   `Blockchain_ID` varchar(50) DEFAULT NULL,
   `License_Number` varchar(100) DEFAULT NULL,
   `Emirates_ID` varchar(100) DEFAULT NULL,
-  `Clinic_ID` int DEFAULT NULL,
+  `Clinic_ID` int NOT NULL,
   `Modified_Date` datetime DEFAULT NULL,
   PRIMARY KEY (`ID`),
   UNIQUE KEY `Blockchain_ID` (`Blockchain_ID`),
@@ -383,7 +383,9 @@ CREATE TABLE `Doctor` (
 
 LOCK TABLES `Doctor` WRITE;
 /*!40000 ALTER TABLE `Doctor` DISABLE KEYS */;
-INSERT INTO `Doctor` (`ID`,`Works_At`,`Specialty`,`Blockchain_ID`) VALUES (1,'Smile Dental Clinic','Orthodontics',NULL),(2,'Bright Smiles Clinic','Periodontics',NULL),(3,'Healthy Teeth Dental','Endodontics',NULL),(4,'Advanced Dental Care','Oral Surgery',NULL),(5,'Family Dentistry Center','Pediatric Dentistry',NULL),(15,'Dental Clinic A','Orthodontist','Doctor1'),(16,'Dental Clinic B','Orthodontist','Doctor2');
+INSERT INTO `Doctor` (`ID`,`Works_At`,`Specialty`,`Blockchain_ID`,`License_Number`,`Emirates_ID`,`Clinic_ID`,`Modified_Date`) VALUES
+(15,'Dental Clinic A','Orthodontist','Doctor1','DHA-DOCTOR-0001','784-1985-0000001-1',1,'2025-07-17 00:00:00'),
+(16,'Dental Clinic B','Endodontist','Doctor2','DHA-DOCTOR-0002','784-1986-0000002-2',2,'2025-06-17 00:00:00');
 /*!40000 ALTER TABLE `Doctor` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -865,6 +867,9 @@ CREATE TABLE `Organization` (
 
 LOCK TABLES `Organization` WRITE;
 /*!40000 ALTER TABLE `Organization` DISABLE KEYS */;
+INSERT INTO `Organization` (`Organization_ID`,`Name`,`Address`,`Description`,`Coordinates`,`Type`,`IsActive`,`Created_Date`,`Modified_Date`) VALUES
+(1,'Dental Clinic A','Dubai, UAE','Seed clinic for the Clinic 1 tenant',NULL,'Dental Clinic',1,'2025-01-22',NULL),
+(2,'Dental Clinic B','Dubai, UAE','Seed clinic for the Clinic 2 tenant',NULL,'Dental Clinic',1,'2025-01-22',NULL);
 /*!40000 ALTER TABLE `Organization` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -911,7 +916,7 @@ CREATE TABLE `Patient` (
   `Allergies` json DEFAULT NULL,
   `Medications` json DEFAULT NULL,
   `Insurance_Details` json DEFAULT NULL,
-  `Clinic_ID` int DEFAULT NULL,
+  `Clinic_ID` int NOT NULL,
   `Doctors` json DEFAULT NULL,
   `Modified_Date` datetime DEFAULT NULL,
   PRIMARY KEY (`ID`),
@@ -928,7 +933,10 @@ CREATE TABLE `Patient` (
 
 LOCK TABLES `Patient` WRITE;
 /*!40000 ALTER TABLE `Patient` DISABLE KEYS */;
-INSERT INTO `Patient` (`ID`,`Date_of_Birth`,`Gender`,`Emirates_ID`,`Blockchain_ID`) VALUES (17,'1980-01-01','Male','1234567890','Patient1'),(18,'1990-02-02','Female','9876543210','Patient2'),(19,'1985-03-03','Male','1357924680','Patient3');
+INSERT INTO `Patient` (`ID`,`Date_of_Birth`,`Gender`,`Emirates_ID`,`Blockchain_ID`,`Nationality`,`Address`,`Blood_Type`,`Medical_History`,`Allergies`,`Medications`,`Insurance_Details`,`Clinic_ID`,`Doctors`,`Modified_Date`) VALUES
+(17,'1980-01-01','Male','1234567890','Patient1',NULL,'123 Main Street, Dubai',NULL,JSON_ARRAY(),JSON_ARRAY(),JSON_ARRAY(),JSON_OBJECT(),2,JSON_ARRAY('Doctor2'),'2025-05-08 00:00:00'),
+(18,'1990-02-02','Female','9876543210','Patient2',NULL,'456 Elm Street, Dubai',NULL,JSON_ARRAY(),JSON_ARRAY(),JSON_ARRAY(),JSON_OBJECT(),2,JSON_ARRAY('Doctor2'),NULL),
+(19,'1985-03-03','Male','1357924680','Patient3',NULL,'789 Pine Street, Dubai',NULL,JSON_ARRAY(),JSON_ARRAY(),JSON_ARRAY(),JSON_OBJECT(),1,JSON_ARRAY('Doctor1'),NULL);
 /*!40000 ALTER TABLE `Patient` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -1248,6 +1256,21 @@ UNLOCK TABLES;
 --
 -- Dumping routines for database 'mydatabase'
 --
+
+-- Enforce the cross-entity relationships used by the application tenant model.
+ALTER TABLE `Admin`
+  ADD CONSTRAINT `fk_admin_organization` FOREIGN KEY (`Organization_ID`) REFERENCES `Organization` (`Organization_ID`);
+ALTER TABLE `Doctor`
+  ADD CONSTRAINT `fk_doctor_user` FOREIGN KEY (`ID`) REFERENCES `User` (`ID`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_doctor_clinic` FOREIGN KEY (`Clinic_ID`) REFERENCES `Organization` (`Organization_ID`);
+ALTER TABLE `Patient`
+  ADD CONSTRAINT `fk_patient_user` FOREIGN KEY (`ID`) REFERENCES `User` (`ID`) ON DELETE CASCADE;
+ALTER TABLE `Clinical_Record`
+  ADD CONSTRAINT `fk_clinical_patient_blockchain` FOREIGN KEY (`Patient_Blockchain_ID`) REFERENCES `Patient` (`Blockchain_ID`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_clinical_doctor_blockchain` FOREIGN KEY (`Created_By_Doctor_ID`) REFERENCES `Doctor` (`Blockchain_ID`);
+ALTER TABLE `Request`
+  ADD CONSTRAINT `fk_request_organization` FOREIGN KEY (`Organization_ID`) REFERENCES `Organization` (`Organization_ID`),
+  ADD CONSTRAINT `fk_request_data_access` FOREIGN KEY (`Data_Access_ID`) REFERENCES `Data_Access` (`ID`);
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

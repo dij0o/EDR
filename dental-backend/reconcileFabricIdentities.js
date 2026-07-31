@@ -23,6 +23,13 @@ const main = async () => {
         const [patients] = await connection.execute(
             'SELECT Blockchain_ID AS actorID, Clinic_ID AS clinicID, Doctors AS doctors FROM Patient WHERE Blockchain_ID IS NOT NULL',
         );
+        const unscoped = [
+            ...doctors.filter((row) => row.clinicID === null || row.clinicID === undefined),
+            ...patients.filter((row) => row.clinicID === null || row.clinicID === undefined),
+        ];
+        if (unscoped.length) {
+            throw new Error(`Refusing Fabric reconciliation for ${unscoped.length} actor(s) without a clinic assignment`);
+        }
         let created = 0;
         for (const identity of [
             ...doctors.map((row) => ({ ...row, role: 'doctor' })),
@@ -40,6 +47,8 @@ const main = async () => {
         );
         const knownDoctorBlockchainIDs = new Set(doctors.map((doctor) => String(doctor.actorID)));
         const assignmentsByClinic = new Map();
+        const desiredDoctorsByPatient = new Map();
+        const desiredPatientsByDoctor = new Map(doctors.map((doctor) => [String(doctor.actorID), []]));
         const skippedAssignments = [];
         for (const patient of patients) {
             const assignedDoctors = typeof patient.doctors === 'string'
@@ -58,6 +67,14 @@ const main = async () => {
                     patientID: patient.actorID,
                     doctorID: normalizedDoctorID,
                 });
+                if (!desiredDoctorsByPatient.has(String(patient.actorID))) {
+                    desiredDoctorsByPatient.set(String(patient.actorID), []);
+                }
+                desiredDoctorsByPatient.get(String(patient.actorID)).push(normalizedDoctorID);
+                desiredPatientsByDoctor.get(normalizedDoctorID).push(String(patient.actorID));
+            }
+            if (!desiredDoctorsByPatient.has(String(patient.actorID))) {
+                desiredDoctorsByPatient.set(String(patient.actorID), []);
             }
         }
 
@@ -94,17 +111,63 @@ const main = async () => {
                         });
                     }
                 }
+                for (const patient of patients.filter((row) => String(row.clinicID) === String(clinicID))) {
+                    try {
+                        const current = JSON.parse((await contract.evaluateTransaction('ReadPatient', String(patient.actorID))).toString());
+                        await contract.submitTransaction(
+                            'UpdatePatientMetadata',
+                            String(patient.actorID),
+                            String(clinicID),
+                            String(current.offChainRef || `mysql:Patient/${patient.actorID}`),
+                            String(current.dataHash),
+                            JSON.stringify(desiredDoctorsByPatient.get(String(patient.actorID)) || []),
+                            new Date().toISOString(),
+                        );
+                    } catch (error) {
+                        failedAssignments.push({
+                            patientID: String(patient.actorID),
+                            doctorID: 'metadata-sync',
+                            reason: String(error.message || error).split('\n')[0],
+                        });
+                    }
+                }
+                for (const doctor of doctors.filter((row) => String(row.clinicID) === String(clinicID))) {
+                    try {
+                        const current = JSON.parse((await contract.evaluateTransaction('ReadDoctor', String(doctor.actorID))).toString());
+                        await contract.submitTransaction(
+                            'UpdateDoctorInfo',
+                            String(doctor.actorID),
+                            String(current.firstName || ''),
+                            String(current.lastName || ''),
+                            String(current.emiratesID || ''),
+                            String(current.speciality || ''),
+                            String(current.worksAt || ''),
+                            String(clinicID),
+                            String(current.email || ''),
+                            String(current.contactNumber || ''),
+                            String(current.licenseNumber || ''),
+                            String(current.createdDate || new Date().toISOString()),
+                            JSON.stringify(desiredPatientsByDoctor.get(String(doctor.actorID)) || []),
+                        );
+                    } catch (error) {
+                        failedAssignments.push({
+                            patientID: 'doctor-metadata-sync',
+                            doctorID: String(doctor.actorID),
+                            reason: String(error.message || error).split('\n')[0],
+                        });
+                    }
+                }
             } finally {
                 gateway.disconnect();
             }
         }
         if (skippedAssignments.length) {
-            console.warn(`Fabric assignment reconciliation skipped ${skippedAssignments.length} unknown legacy relationship(s): ${
+            throw new Error(`Fabric assignment reconciliation skipped ${skippedAssignments.length} unknown legacy relationship(s): ${
                 skippedAssignments.map(({ patientID, doctorID }) => `${patientID}->${doctorID}`).join(', ')
             }`);
         }
         if (failedAssignments.length) {
-            console.warn(`Fabric assignment reconciliation could not replay ${failedAssignments.length} legacy relationship(s): ${
+            throw new Error(`Fabric assignment reconciliation could not replay ${failedAssignments.length} legacy relationship(s): ${
                 failedAssignments.map(({ patientID, doctorID, reason }) => `${patientID}->${doctorID} (${reason})`).join(', ')
             }`);
         }

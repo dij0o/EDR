@@ -95,6 +95,18 @@ At container startup, `prepareContainerConnectionProfile.js` copies the generate
 
 After profile preparation, `reconcileFabricIdentities.js` idempotently enrolls any doctor or patient already present in MySQL but missing from the wallet. It also replays existing MySQL patient assignments through the canonical Fabric transaction to repair missing inverse `doctor.patients` relationships. New accounts are enrolled synchronously during provisioning. Blockchain API startup fails if reconciliation cannot complete, preventing a partially usable deployment from being marked healthy.
 
+Before starting application services on an existing database, apply and verify
+the tenant-reference migration:
+
+```bash
+bash scripts/apply-tenant-reference-integrity-migration.sh
+```
+
+The migration repairs only the recognized legacy sample identities. It stops on
+unknown orphaned or unscoped records so their clinic ownership can be mapped
+from verified deployment records instead of guessed. Fresh MySQL volumes use
+the corrected `database/dump.sql` seed directly.
+
 ## Application startup and verification
 
 ```bash
