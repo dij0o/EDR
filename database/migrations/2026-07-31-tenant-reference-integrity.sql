@@ -90,19 +90,23 @@ JOIN JSON_TABLE(
 JOIN Doctor d ON d.Blockchain_ID = assigned.Doctor_Blockchain_ID
 GROUP BY p.ID;
 
-UPDATE Patient p
-LEFT JOIN Valid_Patient_Doctors valid ON valid.Patient_ID = p.ID
-SET p.Doctors = COALESCE(valid.Doctors, JSON_ARRAY())
-WHERE EXISTS (
-  SELECT 1
-  FROM JSON_TABLE(
-    COALESCE(p.Doctors, JSON_ARRAY()),
-    '$[*]' COLUMNS (Doctor_Blockchain_ID varchar(64) PATH '$')
-  ) assigned
-  LEFT JOIN Doctor d ON d.Blockchain_ID = assigned.Doctor_Blockchain_ID
-  WHERE d.ID IS NULL
-);
+DROP TEMPORARY TABLE IF EXISTS Invalid_Patient_Doctors;
+CREATE TEMPORARY TABLE Invalid_Patient_Doctors AS
+SELECT DISTINCT p.ID AS Patient_ID
+FROM Patient p
+JOIN JSON_TABLE(
+  COALESCE(p.Doctors, JSON_ARRAY()),
+  '$[*]' COLUMNS (Doctor_Blockchain_ID varchar(64) PATH '$')
+) assigned
+LEFT JOIN Doctor d ON d.Blockchain_ID = assigned.Doctor_Blockchain_ID
+WHERE d.ID IS NULL;
 
+UPDATE Patient p
+JOIN Invalid_Patient_Doctors invalid ON invalid.Patient_ID = p.ID
+LEFT JOIN Valid_Patient_Doctors valid ON valid.Patient_ID = p.ID
+SET p.Doctors = COALESCE(valid.Doctors, JSON_ARRAY());
+
+DROP TEMPORARY TABLE Invalid_Patient_Doctors;
 DROP TEMPORARY TABLE Valid_Patient_Doctors;
 
 DELIMITER $$

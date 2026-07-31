@@ -51,7 +51,8 @@ test('existing-data migration repairs only known seeds and verifies unknown gaps
     assert.match(migration, /WHERE ID = 17 AND Blockchain_ID = 'Patient1' AND Clinic_ID IS NULL/);
     assert.match(migration, /WHERE ID = 17 AND Blockchain_ID = 'Patient1' AND Clinic_ID = 2[\s\S]*Doctors IS NULL/);
     assert.match(migration, /CREATE TEMPORARY TABLE Valid_Patient_Doctors/);
-    assert.match(migration, /LEFT JOIN Doctor d ON d\.Blockchain_ID = assigned\.Doctor_Blockchain_ID[\s\S]*WHERE d\.ID IS NULL/);
+    assert.match(migration, /CREATE TEMPORARY TABLE Invalid_Patient_Doctors/);
+    assert.match(migration, /JOIN Invalid_Patient_Doctors invalid ON invalid\.Patient_ID = p\.ID/);
     assert.match(migration, /information_schema\.TABLE_CONSTRAINTS/);
     assert.match(migration, /ALTER TABLE Doctor MODIFY Clinic_ID int NOT NULL/);
     assert.match(migration, /2026-07-31-tenant-reference-integrity/);
