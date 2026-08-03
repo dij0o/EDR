@@ -7,11 +7,14 @@ const inFlightEnrollments = new Map();
 const identityDefinition = ({ role, actorID, clinicID }) => {
     const normalizedRole = String(role || '').trim().toLowerCase();
     const normalizedActorID = String(actorID || '').trim();
-    if (!['doctor', 'patient'].includes(normalizedRole)) {
-        throw Object.assign(new Error('Only doctor and patient identities can be provisioned dynamically'), { statusCode: 400 });
+    if (!['admin', 'doctor', 'patient'].includes(normalizedRole)) {
+        throw Object.assign(new Error('Only admin, doctor, and patient identities can be provisioned dynamically'), { statusCode: 400 });
     }
     if (!normalizedActorID || !/^[A-Za-z0-9._:-]{1,128}$/.test(normalizedActorID)) {
         throw Object.assign(new Error('A valid doctor or patient blockchain identity is required'), { statusCode: 400 });
+    }
+    if (normalizedRole === 'admin' && (!clinicID || normalizedActorID !== `AdminClinic${clinicID}`)) {
+        throw Object.assign(new Error('Admin identity must match its clinic'), { statusCode: 400 });
     }
     if (normalizedRole === 'doctor' && !/^Doctor(?:-|[0-9])/i.test(normalizedActorID)) {
         throw Object.assign(new Error('Doctor identity prefix does not match the requested role'), { statusCode: 400 });
@@ -20,7 +23,7 @@ const identityDefinition = ({ role, actorID, clinicID }) => {
         throw Object.assign(new Error('Patient identity prefix does not match the requested role'), { statusCode: 400 });
     }
     return {
-        label: `${normalizedRole}-${normalizedActorID}`,
+        label: normalizedRole === 'admin' ? `admin-${clinicID}` : `${normalizedRole}-${normalizedActorID}`,
         role: normalizedRole,
         actorID: normalizedActorID,
         clinicID: clinicID === undefined || clinicID === null ? '' : String(clinicID),

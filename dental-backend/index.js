@@ -259,9 +259,20 @@ const withContract = async (req, callback) => {
     const identity = fabricIdentityForRequest(req);
 
     if (!await wallet.get(identity)) {
-        const error = new Error(`Fabric identity ${identity} is not enrolled in the configured wallet.`);
-        error.statusCode = 503;
-        throw error;
+        if (isRole(req, 'admin') && req.user.organizationId) {
+            await enrollIdentity({
+                ccpPath,
+                walletPath,
+                role: 'admin',
+                actorID: `AdminClinic${req.user.organizationId}`,
+                clinicID: req.user.organizationId,
+            });
+        }
+        if (!await wallet.get(identity)) {
+            const error = new Error(`Fabric identity ${identity} is not enrolled in the configured wallet.`);
+            error.statusCode = 503;
+            throw error;
+        }
     }
 
     try {
@@ -651,11 +662,17 @@ app.delete('/patient/:id', authenticateToken, requireRoles('admin'), async (req,
 
 app.put('/doctor/:id', authenticateToken, requireRoles('admin'), requireAdminClinicBody('clinicID'), async (req, res) => {
     try {
+        if (req.body.doctorID !== undefined && String(req.body.doctorID) !== String(req.params.id)) {
+            return sendApiError(res, 400, 'DOCTOR_ID_MISMATCH', 'doctorID is immutable and must match the URL');
+        }
+        if (req.body.patients !== undefined || req.body.createdDate !== undefined || req.body.modifiedDate !== undefined) {
+            return sendApiError(res, 400, 'DOCTOR_PROTECTED_FIELD', 'Doctor relationships and immutable metadata cannot be changed through this route');
+        }
         requireFields(req.body, ['firstName', 'lastName', 'emiratesID', 'speciality', 'worksAt', 'clinicID', 'email', 'contactNumber', 'licenseNumber']);
         const result = await withContract(req, (contract) => contract.submitTransaction(
             'UpdateDoctorInfo', String(req.params.id), String(req.body.firstName), String(req.body.lastName), String(req.body.emiratesID), String(req.body.speciality),
             String(req.body.worksAt), String(req.body.clinicID), String(req.body.email), String(req.body.contactNumber),
-            String(req.body.licenseNumber), String(req.body.createdDate || new Date().toISOString()), JSON.stringify(req.body.patients || [])
+            String(req.body.licenseNumber), '', '[]'
         ));
         return sendSuccess(res, parseBufferJson(result));
     } catch (error) { return sendFabricError(res, error); }

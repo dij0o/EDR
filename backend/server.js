@@ -968,6 +968,16 @@ const validateDoctorPayload = (body, isCreate = false) => {
     if (missing.length) { const error = new Error(`Missing required fields: ${missing.join(', ')}`); error.statusCode = 400; throw error; }
     if (!/^\S+@\S+\.\S+$/.test(body.email)) { const error = new Error('Invalid email address'); error.statusCode = 400; throw error; }
 };
+const mutableDoctorProfile = (body) => ({
+    firstName: body.firstName,
+    lastName: body.lastName,
+    email: body.email,
+    contactNumber: body.contactNumber,
+    worksAt: body.worksAt,
+    speciality: body.speciality,
+    licenseNumber: body.licenseNumber,
+    emiratesID: body.emiratesID,
+});
 
 app.post('/doctors', authenticateToken, requireRoles('admin'), async (req, res) => {
     let connection;
@@ -1016,13 +1026,25 @@ app.get('/doctors/:id', authenticateToken, requireRoles('admin','doctor'), async
 
 app.put('/doctors/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
     let connection;
-    try { validateDoctorPayload(req.body); const clinicID = Number(req.user.organizationId); connection = await db.promise().getConnection(); await connection.beginTransaction();
+    try {
+        if (req.body.doctorID !== undefined && String(req.body.doctorID) !== String(req.params.id)) {
+            return sendApiError(res, 400, 'DOCTOR_ID_MISMATCH', 'doctorID is immutable and must match the URL');
+        }
+        const clinicID = Number(req.user.organizationId);
+        if (req.body.clinicID !== undefined && Number(req.body.clinicID) !== clinicID) {
+            return sendApiError(res, 403, 'DOCTOR_CLINIC_IMMUTABLE', 'Doctor clinic cannot be changed through a profile update');
+        }
+        if (req.body.patients !== undefined || (req.body.password !== undefined && String(req.body.password) !== '')) {
+            return sendApiError(res, 400, 'DOCTOR_PROTECTED_FIELD', 'Relationships and credentials require their dedicated security workflow');
+        }
+        const update = mutableDoctorProfile(req.body);
+        validateDoctorPayload(update); connection = await db.promise().getConnection(); await connection.beginTransaction();
         const [rows] = await connection.query(`${DOCTOR_SELECT} WHERE Doctor.Blockchain_ID=? FOR UPDATE`, [req.params.id]);
         if (!rows.length) { const error = new Error('Doctor not found'); error.statusCode = 404; throw error; } requireAdminClinic(req, rows[0].Clinic_ID);
-        await connection.query('UPDATE User SET First_Name=?,Last_Name=?,Email=?,Contact_Number=? WHERE ID=?', [req.body.firstName,req.body.lastName,req.body.email,req.body.contactNumber,rows[0].ID]);
-        await connection.query('UPDATE Doctor SET Works_At=?,Specialty=?,License_Number=?,Emirates_ID=?,Modified_Date=NOW() WHERE ID=?', [req.body.worksAt,req.body.speciality,req.body.licenseNumber,req.body.emiratesID,rows[0].ID]);
-        await callBlockchain(req, `/doctor/${encodeURIComponent(req.params.id)}`, 'PUT', { ...req.body, clinicID, patients: req.body.patients || [] });
-        await connection.commit(); return res.json({ success:true, data:{ ...req.body, doctorID:req.params.id, clinicID }, message:'Doctor updated consistently' });
+        await connection.query('UPDATE User SET First_Name=?,Last_Name=?,Email=?,Contact_Number=? WHERE ID=?', [update.firstName,update.lastName,update.email,update.contactNumber,rows[0].ID]);
+        await connection.query('UPDATE Doctor SET Works_At=?,Specialty=?,License_Number=?,Emirates_ID=?,Modified_Date=NOW() WHERE ID=?', [update.worksAt,update.speciality,update.licenseNumber,update.emiratesID,rows[0].ID]);
+        await callBlockchain(req, `/doctor/${encodeURIComponent(req.params.id)}`, 'PUT', { ...update, clinicID });
+        await connection.commit(); return res.json({ success:true, data:{ ...update, doctorID:req.params.id, clinicID }, message:'Doctor updated consistently' });
     } catch (error) { if (connection) await connection.rollback().catch(()=>{}); return sendApiError(res,error.statusCode || (error.code==='ER_DUP_ENTRY'?409:500),'DOCTOR_UPDATE_FAILED',error.message); }
     finally { if (connection) connection.release(); }
 });

@@ -843,23 +843,25 @@ class DentalRecordSharing extends Contract {
         if (!exists) {
             throw new Error(`The doctor ${doctorID} does not exist`);
         }
+        const existingDoctor = JSON.parse((await ctx.stub.getState(doctorID)).toString());
+        this._requireAdminClinic(ctx, existingDoctor.clinicID);
 
-        // overwriting original doctor with new doctor
+        // Profile updates must not move tenants, rewrite identity metadata, or alter assignments.
         const updatedDoctor = {
-            doctorID: doctorID,
+            doctorID: existingDoctor.doctorID,
             firstName: firstName,
             lastName: lastName,
             emiratesID: emiratesID,
             speciality: speciality,
-            clinicID:clinicID,
+            clinicID: existingDoctor.clinicID,
             worksAt: worksAt,
             email: email,
             contactNumber: contactNumber,
             licenseNumber: licenseNumber,
-            role: 'doctor',
-            createdDate: createdDate,
-            patients: parseArrayArgument(patients),
-            docType: 'doctor'
+            role: existingDoctor.role,
+            createdDate: existingDoctor.createdDate,
+            patients: Array.isArray(existingDoctor.patients) ? existingDoctor.patients : [],
+            docType: existingDoctor.docType
         };
         // we insert data in alphabetic order using 'json-stringify-deterministic' and 'sort-keys-recursive'
         return ctx.stub.putState(doctorID, Buffer.from(stringify(sortKeysRecursive(updatedDoctor))));

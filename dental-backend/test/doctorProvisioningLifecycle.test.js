@@ -20,6 +20,18 @@ test('generated doctor and patient accounts map to actor-bound Fabric identities
     });
     assert.throws(() => identityDefinition({ role: 'doctor', actorID: patientID, clinicID: 7 }), /prefix/);
     assert.equal(identityDefinition({ role: 'doctor', actorID: 'Doctor1', clinicID: 7 }).label, 'doctor-Doctor1');
+    assert.deepEqual(identityDefinition({ role: 'admin', actorID: 'AdminClinic7', clinicID: 7 }), {
+        label: 'admin-7', role: 'admin', actorID: 'AdminClinic7', clinicID: '7',
+    });
+    assert.throws(() => identityDefinition({ role: 'admin', actorID: 'AdminClinic2', clinicID: 7 }), /match its clinic/);
+});
+
+test('missing clinic admin identity is enrolled on first Fabric transaction', () => {
+    const api = read('dental-backend/index.js');
+    const withContract = api.match(/const withContract = async[\s\S]*?\n};/)[0];
+    assert.match(withContract, /isRole\(req, 'admin'\)/);
+    assert.match(withContract, /actorID: `AdminClinic\$\{req\.user\.organizationId\}`/);
+    assert.match(withContract, /await enrollIdentity/);
 });
 
 test('container startup reconciles identities for accounts created before this fix', () => {

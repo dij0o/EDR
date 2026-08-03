@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "02fa1974-8b0c-4da5-9947-ed2202607290",
     "name": "BC Dentistry EDR - Web and Mobile APIs",
-    "description": "Source-derived Postman collection for the clean release branch.\n\nThe Web and Mobile trees intentionally duplicate overlapping routes so each team can export or use its own folder independently.\n\nMobile request descriptions explain purpose, authorization/identity constraints, and side effects, including the implemented rotating refresh-token lifecycle.\n\nUse non-production test accounts and never commit real passwords, JWTs, refresh tokens, patient data, or push tokens into this collection.",
+    "description": "Source-derived Postman collection for the clean release branch.\n\nThe Web and Mobile trees intentionally duplicate overlapping routes so each team can export or use its own folder independently.\n\nMobile request descriptions explain purpose, authorization/identity constraints, and side effects, including the implemented rotating refresh-token lifecycle.\n\nAll web and mobile requests use one public application API. The private Blockchain API has no collection variable or client request and requires internal service authentication.\n\nUse non-production test accounts and never commit real passwords, JWTs, refresh tokens, patient data, or push tokens into this collection.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -422,7 +422,7 @@
                     "type": "text"
                   }
                 ],
-                "description": "Creates a doctor in MySQL and Fabric for the authenticated clinic admin.",
+                "description": "Creates a doctor through the public application API. The backend commits MySQL/Fabric records and synchronously enrolls the actor-bound Fabric identity; clients never contact the private Blockchain API.",
                 "url": "{{databaseApiBaseUrl}}/doctors",
                 "body": {
                   "mode": "raw",
@@ -581,7 +581,7 @@
                     "type": "text"
                   }
                 ],
-                "description": "Clinic-admin creation of a patient in MySQL and Fabric.",
+                "description": "Creates a patient through the public application API, stores PII in MySQL, anchors metadata/hash on Fabric, enrolls the patient identity, and applies doctor assignments.",
                 "url": "{{databaseApiBaseUrl}}/patients",
                 "body": {
                   "mode": "raw",
@@ -651,7 +651,7 @@
                     "type": "text"
                   }
                 ],
-                "description": "Assigns a clinic patient to a doctor in the authenticated admin’s clinic.",
+                "description": "Assigns a patient through the public application API. The backend validates clinic scope, refreshes patient metadata/hash, and updates both ledger relationship directions.",
                 "url": "{{databaseApiBaseUrl}}/patients/{{patientId}}/assign",
                 "body": {
                   "mode": "raw",
@@ -962,8 +962,8 @@
                     "type": "text"
                   }
                 ],
-                "description": "Lists cross-clinic data-access requests requiring or involving the authenticated clinic admin.",
-                "url": "{{blockchainApiBaseUrl}}/getRequestsForAdmin/{{clinicId}}"
+                "description": "Lists cross-clinic data-access requests through the public application API for the authenticated clinic admin.",
+                "url": "{{databaseApiBaseUrl}}/getRequestsForAdmin/{{clinicId}}"
               },
               "response": []
             },
@@ -989,7 +989,7 @@
                   }
                 ],
                 "description": "Clinic admin approves the request’s administrative stage; patient consent is still required.",
-                "url": "{{blockchainApiBaseUrl}}/approveRequest",
+                "url": "{{databaseApiBaseUrl}}/approveRequest",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"adminID\": \"{{userId}}\",\n  \"requestID\": \"{{requestId}}\",\n  \"adminClinicID\": \"{{clinicId}}\"\n}",
@@ -1024,7 +1024,7 @@
                   }
                 ],
                 "description": "Clinic admin rejects a cross-clinic access request and records the reason on the workflow.",
-                "url": "{{blockchainApiBaseUrl}}/admin/rejectRequest",
+                "url": "{{databaseApiBaseUrl}}/admin/rejectRequest",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"adminID\": \"{{userId}}\",\n  \"requestID\": \"{{requestId}}\",\n  \"adminClinicID\": \"{{clinicId}}\",\n  \"rejectionReason\": \"Request does not meet clinic policy\"\n}",
@@ -1059,7 +1059,7 @@
                   }
                 ],
                 "description": "Doctor initiates a purpose-bound request to access a patient record held by another clinic.",
-                "url": "{{blockchainApiBaseUrl}}/requestAccess",
+                "url": "{{databaseApiBaseUrl}}/requestAccess",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"doctorID\": \"{{doctorId}}\",\n  \"patientID\": \"{{patientId}}\",\n  \"dataOriginClinicID\": \"{{clinicId}}\",\n  \"dataType\": \"Medical and Dental Records\",\n  \"purpose\": \"Continuity of care\",\n  \"reason\": \"Continuity of care\",\n  \"notes\": \"Postman example request\"\n}",
@@ -1089,7 +1089,7 @@
                   }
                 ],
                 "description": "Loads the clinical-access audit trail for a patient. Authorization is role and identity scoped.",
-                "url": "{{blockchainApiBaseUrl}}/audit/clinical-access/{{patientId}}"
+                "url": "{{databaseApiBaseUrl}}/audit/clinical-access/{{patientId}}"
               },
               "response": []
             }
@@ -1114,8 +1114,8 @@
                     "type": "text"
                   }
                 ],
-                "description": "Lists Fabric-anchored metadata for a patient’s radiographic/DICOM files.",
-                "url": "{{blockchainApiBaseUrl}}/patients/{{patientId}}/radiographic-files"
+                "description": "Lists Fabric-anchored radiographic/DICOM metadata through the public application API.",
+                "url": "{{databaseApiBaseUrl}}/patients/{{patientId}}/radiographic-files"
               },
               "response": []
             },
@@ -1156,7 +1156,7 @@
                   }
                 ],
                 "description": "Doctor uploads raw file bytes to private storage and anchors SHA-256 metadata on Fabric. Select a local .dcm or image file in Postman.",
-                "url": "{{blockchainApiBaseUrl}}/radiographic-files"
+                "url": "{{databaseApiBaseUrl}}/radiographic-files"
               },
               "response": []
             },
@@ -1176,8 +1176,8 @@
                     "type": "text"
                   }
                 ],
-                "description": "Recomputes the stored file hash and compares it with Fabric metadata.",
-                "url": "{{blockchainApiBaseUrl}}/radiographic-files/{{fileId}}/verify-integrity"
+                "description": "Recomputes the stored file hash and compares it with Fabric metadata through the public application API.",
+                "url": "{{databaseApiBaseUrl}}/radiographic-files/{{fileId}}/verify-integrity"
               },
               "response": []
             },
@@ -1197,8 +1197,8 @@
                     "type": "text"
                   }
                 ],
-                "description": "Streams a file only after integrity verification and logs the access purpose.",
-                "url": "{{blockchainApiBaseUrl}}/radiographic-files/{{fileId}}/content?purpose=radiographic%20image%20view"
+                "description": "Streams a file through the public application API only after integrity verification and logs the access purpose.",
+                "url": "{{databaseApiBaseUrl}}/radiographic-files/{{fileId}}/content?purpose=radiographic%20image%20view"
               },
               "response": []
             }
@@ -1223,8 +1223,8 @@
                     "type": "text"
                   }
                 ],
-                "description": "Lists notifications for the authenticated actor. status may be ALL, READ, or UNREAD.",
-                "url": "{{blockchainApiBaseUrl}}/notifications?status=ALL"
+                "description": "Lists ledger-backed notifications through the public application API. status may be ALL, READ, or UNREAD.",
+                "url": "{{databaseApiBaseUrl}}/notifications?status=ALL"
               },
               "response": []
             },
@@ -1244,8 +1244,8 @@
                     "type": "text"
                   }
                 ],
-                "description": "Marks one notification as read.",
-                "url": "{{blockchainApiBaseUrl}}/notifications/{{notificationId}}/read"
+                "description": "Marks one notification as read through the public application API.",
+                "url": "{{databaseApiBaseUrl}}/notifications/{{notificationId}}/read"
               },
               "response": []
             },
@@ -1265,8 +1265,8 @@
                     "type": "text"
                   }
                 ],
-                "description": "Returns server push readiness and token staleness configuration.",
-                "url": "{{blockchainApiBaseUrl}}/push/config"
+                "description": "Returns server push readiness and token staleness configuration through the public application API.",
+                "url": "{{databaseApiBaseUrl}}/push/config"
               },
               "response": []
             },
@@ -1287,7 +1287,7 @@
                   }
                 ],
                 "description": "Lists notification device registrations owned by the authenticated actor.",
-                "url": "{{blockchainApiBaseUrl}}/push/subscriptions"
+                "url": "{{databaseApiBaseUrl}}/push/subscriptions"
               },
               "response": []
             },
@@ -1313,7 +1313,7 @@
                   }
                 ],
                 "description": "Registers a browser Firebase token for the authenticated actor.",
-                "url": "{{blockchainApiBaseUrl}}/push/subscriptions",
+                "url": "{{databaseApiBaseUrl}}/push/subscriptions",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"platform\": \"web\",\n  \"token\": \"{{pushToken}}\",\n  \"deviceLabel\": \"Chrome on team workstation\"\n}",
@@ -1348,7 +1348,7 @@
                   }
                 ],
                 "description": "Unregisters a push token, normally during logout.",
-                "url": "{{blockchainApiBaseUrl}}/push/subscriptions",
+                "url": "{{databaseApiBaseUrl}}/push/subscriptions",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"token\": \"{{pushToken}}\"\n}",
@@ -1378,7 +1378,7 @@
                   }
                 ],
                 "description": "Removes a selected notification device belonging to the authenticated actor.",
-                "url": "{{blockchainApiBaseUrl}}/push/subscriptions/{{subscriptionId}}"
+                "url": "{{databaseApiBaseUrl}}/push/subscriptions/{{subscriptionId}}"
               },
               "response": []
             }
@@ -1388,7 +1388,7 @@
     },
     {
       "name": "Mobile",
-      "description": "APIs invoked by the Expo patient mobile app, plus clearly labeled required session-contract gaps.",
+      "description": "APIs invoked by the Expo patient mobile app through the public application API only.",
       "item": [
         {
           "name": "Authentication",
@@ -1405,7 +1405,7 @@
                     "type": "text"
                   }
                 ],
-                "description": "**Purpose:** Authenticate a patient and obtain the JWT required by every protected mobile API.\n\n**Current behavior:** Returns `{ token, user }`. The app rejects non-patient users after login. The test script stores the JWT and patient blockchain ID as collection variables.\n\n**Lifecycle note:** The current app keeps this token only in React state; secure persistence/session restoration is not yet implemented.",
+                "description": "**Purpose:** Authenticate a patient and obtain the short-lived access token and rotating refresh token required by protected mobile APIs.\n\n**Current behavior:** Native login returns `{ token, refreshToken, user }`. The app rejects non-patient users and stores refresh credentials in OS-backed SecureStore. The test script stores session and patient identity values as collection variables.",
                 "url": "{{databaseApiBaseUrl}}/login",
                 "body": {
                   "mode": "raw",
@@ -1490,7 +1490,7 @@
                   }
                 ],
                 "description": "**Purpose:** Populate Pending, Approved, Rejected, and Documents views with all data-access requests for the signed-in patient.\n\n**Identity rule:** `patientId` must match the blockchain ID in the verified JWT; another patient ID is rejected.\n\n**Authorization:** Patient bearer token required.",
-                "url": "{{blockchainApiBaseUrl}}/getAllRequestsForPatient/{{patientId}}"
+                "url": "{{databaseApiBaseUrl}}/getAllRequestsForPatient/{{patientId}}"
               },
               "response": []
             },
@@ -1516,7 +1516,7 @@
                   }
                 ],
                 "description": "**Purpose:** Let the patient approve a clinic-admin-approved request so the requesting doctor can access the specified data for the recorded purpose.\n\n**Effect:** Changes the request to `CONSENT_GRANTED`, writes the decision to Fabric, and can trigger a notification.\n\n**Identity rule:** `patientID` must match the patient blockchain ID in the JWT.",
-                "url": "{{blockchainApiBaseUrl}}/grantConsent",
+                "url": "{{databaseApiBaseUrl}}/grantConsent",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"patientID\": \"{{patientId}}\",\n  \"requestID\": \"{{requestId}}\"\n}",
@@ -1551,7 +1551,7 @@
                   }
                 ],
                 "description": "**Purpose:** Let the patient deny a pending data-access request and record the reason.\n\n**Effect:** Changes the workflow status to rejected on Fabric and can notify the requester.\n\n**Identity rule:** `patientID` must match the patient blockchain ID in the JWT.",
-                "url": "{{blockchainApiBaseUrl}}/patient/rejectRequest",
+                "url": "{{databaseApiBaseUrl}}/patient/rejectRequest",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"patientID\": \"{{patientId}}\",\n  \"requestID\": \"{{requestId}}\",\n  \"rejectionReason\": \"Not authorized\"\n}",
@@ -1586,7 +1586,7 @@
                   }
                 ],
                 "description": "**Purpose:** Let the patient withdraw previously granted access.\n\n**Effect:** Revokes consent for the selected request on Fabric and notifies relevant actors. This does not delete the underlying health record.\n\n**Identity rule:** `patientID` must match the patient blockchain ID in the JWT.",
-                "url": "{{blockchainApiBaseUrl}}/patient/revokeConsent",
+                "url": "{{databaseApiBaseUrl}}/patient/revokeConsent",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"patientID\": \"{{patientId}}\",\n  \"requestID\": \"{{requestId}}\",\n  \"revocationReason\": \"Revoked from patient mobile app\"\n}",
@@ -1738,22 +1738,44 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Security Boundary",
+      "description": "Negative validation proving the private Blockchain API is not exposed to clients.",
+      "item": [
+        {
+          "name": "Public Blockchain Route Is Not Exposed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Must return HTTP 404. Web, mobile, and Postman use databaseApiBaseUrl; only the application API can reach the Blockchain API over the private service network.",
+            "url": "{{webOrigin}}/api/blockchain/health"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Private blockchain route is not public\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [
     {
       "key": "databaseApiBaseUrl",
-      "value": "http://localhost:3001",
-      "type": "string"
-    },
-    {
-      "key": "blockchainApiBaseUrl",
-      "value": "http://localhost:3000",
+      "value": "https://edr.bizcenter.tech/api/database",
       "type": "string"
     },
     {
       "key": "webOrigin",
-      "value": "http://localhost:5173",
+      "value": "https://edr.bizcenter.tech",
       "type": "string"
     },
     {
