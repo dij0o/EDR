@@ -70,7 +70,7 @@ const NewPatientDialog = ({ onClose, onSaved, patient = null }) => {
       doctors: form.doctors
     };
     delete payload.insuranceProvider; delete payload.policyNumber; delete payload.coverageType;
-    if (isEditing) delete payload.password;
+    if (isEditing) { delete payload.password; delete payload.doctors; }
     try {
       const response = await fetch(databaseUrl(isEditing ? `/patients/${encodeURIComponent(patient.patientID)}` : '/patients'), {
         method: isEditing ? 'PUT' : 'POST', headers: jsonHeaders(), body: JSON.stringify(payload)
@@ -100,7 +100,7 @@ const NewPatientDialog = ({ onClose, onSaved, patient = null }) => {
         <p className="my-3 text-sm text-gray-600">Complete profile details are stored securely in the clinical database.</p>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {fields.map(([name,label,type], index) => <label key={name} className="text-sm font-medium">{label}<input ref={index === 0 ? firstField : undefined} required className="mt-1 block w-full rounded-md border p-2" type={type} value={form[name]} onChange={set(name)} /></label>)}
-          <fieldset className="rounded-lg border p-3 md:col-span-2 xl:col-span-3">
+          {!isEditing && <fieldset className="rounded-lg border p-3 md:col-span-2 xl:col-span-3">
             <legend className="px-1 text-sm font-semibold">Clinic doctors</legend>
             <label className="text-sm font-medium">Search doctors<input type="search" role="combobox" aria-expanded="true" aria-controls="clinic-doctor-options" placeholder="Search by name, specialty, or doctor ID" value={doctorQuery} onChange={(event) => setDoctorQuery(event.target.value)} className="mt-1 block w-full rounded-md border p-3" /></label>
             {form.doctors.length > 0 && <div className="mt-3 flex flex-wrap gap-2" aria-label="Selected doctors">{form.doctors.map((doctorID) => { const doctor = clinicDoctors.find((item) => item.doctorID === doctorID); return <button key={doctorID} type="button" onClick={() => toggleDoctor(doctorID)} className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-900" aria-label={`Remove ${doctor?.firstName || doctorID}`}>{doctor ? `${doctor.firstName} ${doctor.lastName}` : doctorID} ×</button>; })}</div>}
@@ -108,7 +108,8 @@ const NewPatientDialog = ({ onClose, onSaved, patient = null }) => {
               {filteredDoctors.length ? filteredDoctors.map((doctor) => <label key={doctor.doctorID} className="flex cursor-pointer items-start gap-3 border-b p-3 last:border-b-0 hover:bg-gray-50"><input type="checkbox" checked={form.doctors.includes(doctor.doctorID)} onChange={() => toggleDoctor(doctor.doctorID)} className="mt-1" /><span><strong>{doctor.firstName} {doctor.lastName}</strong><span className="block text-xs text-gray-600">{doctor.speciality || doctor.specialty || 'Specialty not recorded'} · {doctor.doctorID}</span></span></label>) : <p className="p-3 text-sm text-gray-600">No clinic doctors match your search.</p>}
             </div>
             {doctorOptionsError && <p role="alert" className="mt-2 text-sm text-red-700">{doctorOptionsError}</p>}
-          </fieldset>
+          </fieldset>}
+          {isEditing && <p className="rounded-lg border bg-gray-50 p-3 text-sm text-gray-700 md:col-span-2 xl:col-span-3">Doctor assignments are protected and must be changed with the dedicated Assign or Unassign controls.</p>}
           {['medicalHistory','allergies','medications'].map((name) => <label key={name} className="text-sm font-medium capitalize">{name.replace(/([A-Z])/g,' $1')} (one per line)<textarea required className="mt-1 block min-h-24 w-full rounded-md border p-2" value={form[name]} onChange={set(name)} /></label>)}
         </div>
         {status.error && <p role="alert" className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-red-800">{status.error}</p>}

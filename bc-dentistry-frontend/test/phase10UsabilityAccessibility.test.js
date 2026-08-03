@@ -76,7 +76,8 @@ test('patient management uses complete themed workflows without browser dialogs'
   const patientDialog = read('src/assets/components/Patients/NewPatientDialog.jsx');
   const patientCards = read('src/assets/Sections/Patients/PatientsCards.jsx');
   assert.match(patientCard, /appointment-options\/doctors/);
-  assert.match(patientCard, /title=\{`Delete \$\{fullName\}\?`\}/);
+  assert.match(patientCard, /title=\{`Deactivate \$\{fullName\}\?`\}/);
+  assert.match(patientCard, /patients\/\$\{encodeURIComponent\(patientId\)\}\/unassign/);
   assert.match(patientDialog, /method: isEditing \? 'PUT' : 'POST'/);
   assert.match(patientDialog, /appointment-options\/doctors/);
   assert.match(patientDialog, /type="search" role="combobox"/);

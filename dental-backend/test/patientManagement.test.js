@@ -8,7 +8,7 @@ const dbApi = fs.readFileSync(path.join(__dirname, '..', '..', 'backend', 'serve
 const chaincode = fs.readFileSync(path.join(__dirname, '..', '..', 'fabric-samples', 'dental-record-sharing', 'chaincode-javascript', 'lib', 'dentalRecordSharing.js'), 'utf8');
 
 test('Database API exposes admin patient CRUD and assignment routes', () => {
-    for (const route of ["app.post('/patients'", "app.get('/patients'", "app.get('/patients/:id'", "app.put('/patients/:id'", "app.post('/patients/:id/assign'", "app.delete('/patients/:id'"]) {
+    for (const route of ["app.post('/patients'", "app.get('/patients'", "app.get('/patients/:id'", "app.put('/patients/:id'", "app.post('/patients/:id/assign'", "app.post('/patients/:id/unassign'", "app.delete('/patients/:id'"]) {
         assert.ok(dbApi.includes(route), `missing ${route}`);
     }
     assert.match(dbApi, /requireRoles\('admin'\)/);
@@ -32,10 +32,11 @@ test('patient owner and admin clinic controls remain present', () => {
     assert.match(api, /requireAdminClinicBody\('clinicID'\)/);
 });
 
-test('delete removes both Patient subtype and User identity rows', () => {
+test('delete route deactivates the patient, preserves history, and retires its Fabric identity', () => {
     const route = dbApi.match(/app\.delete\('\/patients\/:id'[\s\S]*?\n\}\);/);
     assert.ok(route);
-    assert.match(route[0], /DELETE FROM Patient WHERE ID=\?/);
-    assert.match(route[0], /DELETE FROM User WHERE ID=\?/);
-    assert.ok(route[0].indexOf('DELETE FROM Patient WHERE ID=?') < route[0].indexOf('DELETE FROM User WHERE ID=?'));
+    assert.match(route[0], /UPDATE User SET IsActive=0/);
+    assert.match(route[0], /retireFabricIdentity\(req, 'patient'/);
+    assert.match(route[0], /UPDATE Patient SET Doctors=JSON_ARRAY\(\)/);
+    assert.doesNotMatch(route[0], /DELETE FROM Patient|DELETE FROM User/);
 });

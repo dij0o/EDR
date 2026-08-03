@@ -24,9 +24,10 @@ test('first-login password change is enforced', () => {
   assert.match(server, /Revocation_Reason='password changed'/);
 });
 
-test('clinic lifecycle is database-only and does not provision Fabric organizations', () => {
+test('clinic lifecycle provisions a scoped admin identity without creating Fabric organizations', () => {
   const clinicBlock = server.slice(server.indexOf("app.post('/clinics'"), server.indexOf("app.patch('/clinics/:id'"));
-  assert.doesNotMatch(clinicBlock, /callBlockchain|fabric|peer|channel/i);
+  assert.match(clinicBlock, /provisionFabricIdentity\(req, 'admin', `AdminClinic\$\{clinicID\}`/);
+  assert.doesNotMatch(clinicBlock, /createChannel|joinChannel|createOrganization/);
 });
 
 test('inactive clinics prevent their clinic admin from logging in', () => {

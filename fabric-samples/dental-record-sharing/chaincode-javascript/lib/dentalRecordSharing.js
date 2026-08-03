@@ -669,6 +669,7 @@ class DentalRecordSharing extends Contract {
                 contactNumber: contactNumber,
                 licenseNumber: licenseNumber,
                 role: 'doctor',
+                isActive: true,
                 createdDate: createdDate,
                 patients: parseArrayArgument(patients)
             };
@@ -711,6 +712,7 @@ class DentalRecordSharing extends Contract {
                 contactNumber: contactNumber,
                 address: address,
                 role: 'patient',
+                isActive: true,
                 createdDate: createdDate,
                 clinicIDs: Array.isArray(clinicID) ? clinicID : [parseInt(clinicID)],
                 doctors: parseArrayArgument(doctors),  // Pre-assigned doctors
@@ -744,7 +746,7 @@ class DentalRecordSharing extends Contract {
             docType: 'patient', patientID, role: 'patient',
             clinicID: parseInt(clinicID), clinicIDs: [parseInt(clinicID)],
             offChainRef, dataHash: dataHash.toLowerCase(), doctors: parseArrayArgument(doctors),
-            sharedWith: [], createdDate, modifiedDate: createdDate,
+            sharedWith: [], isActive: true, createdDate, modifiedDate: createdDate,
             storagePolicy: 'PII_OFF_CHAIN_MYSQL'
         };
         await ctx.stub.putState(patientID, Buffer.from(stringify(sortKeysRecursive(patient))));
@@ -900,28 +902,52 @@ class DentalRecordSharing extends Contract {
         return JSON.stringify(updatedPatient);  // Return the updated patient details
     }
 
-    // DeleteDoctor deletes an given doctor from the world state.
-    async DeleteDoctor(ctx, id) {
+    async DeactivateDoctor(ctx, id) {
         this._requireRole(ctx, 'admin');
-        const exists = await this._actorExists(ctx, id);
-        if (!exists) {
-            throw new Error(`The doctor ${id} does not exist`);
-        }
-        const doctor = JSON.parse((await ctx.stub.getState(id)).toString());
+        const doctorJSON = await ctx.stub.getState(id);
+        if (!doctorJSON || doctorJSON.length === 0) throw new Error(`The doctor ${id} does not exist`);
+        const doctor = JSON.parse(doctorJSON.toString());
         this._requireAdminClinic(ctx, doctor.clinicID);
-        return ctx.stub.deleteState(id);
+        if (doctor.isActive === false) return JSON.stringify(doctor);
+        if ((doctor.patients || []).length) throw new Error('Doctor must be unassigned from all patients before deactivation');
+        doctor.isActive = false;
+        doctor.deactivatedAt = this._txTimestamp(ctx);
+        await ctx.stub.putState(id, Buffer.from(stringify(sortKeysRecursive(doctor))));
+        return JSON.stringify(doctor);
     }
 
-    // DeletePatient deletes an given patient from the world state.
+    async DeactivatePatient(ctx, id) {
+        this._requireRole(ctx, 'admin');
+        const patientJSON = await ctx.stub.getState(id);
+        if (!patientJSON || patientJSON.length === 0) throw new Error(`The patient ${id} does not exist`);
+        const patient = JSON.parse(patientJSON.toString());
+        this._requireAdminClinic(ctx, patient.clinicID || (patient.clinicIDs || [])[0]);
+        if (patient.isActive === false) return JSON.stringify(patient);
+        for (const doctorID of Array.isArray(patient.doctors) ? patient.doctors : []) {
+            const doctorJSON = await ctx.stub.getState(String(doctorID));
+            if (!doctorJSON || doctorJSON.length === 0) continue;
+            const doctor = JSON.parse(doctorJSON.toString());
+            doctor.patients = (Array.isArray(doctor.patients) ? doctor.patients : [])
+                .filter((patientID) => String(patientID) !== String(id));
+            await ctx.stub.putState(String(doctorID), Buffer.from(stringify(sortKeysRecursive(doctor))));
+        }
+        patient.doctors = [];
+        patient.isActive = false;
+        patient.deactivatedAt = this._txTimestamp(ctx);
+        await ctx.stub.putState(id, Buffer.from(stringify(sortKeysRecursive(patient))));
+        return JSON.stringify(patient);
+    }
+
+    // Retained as an explicit compatibility guard: ledger actors are never hard deleted.
+    async DeleteDoctor(ctx, id) {
+        this._requireRole(ctx, 'admin');
+        throw new Error(`HARD_DELETE_FORBIDDEN: Doctor ${id} must be deactivated; ledger history is permanent`);
+    }
+
+    // Retained as an explicit compatibility guard: ledger actors are never hard deleted.
     async DeletePatient(ctx, id) {
         this._requireRole(ctx, 'admin');
-        const exists = await this._actorExists(ctx, id);
-        if (!exists) {
-            throw new Error(`The patient ${id} does not exist`);
-        }
-        const patient = JSON.parse((await ctx.stub.getState(id)).toString());
-        this._requireAdminClinic(ctx, patient.clinicID || (patient.clinicIDs || [])[0]);
-        return ctx.stub.deleteState(id);
+        throw new Error(`HARD_DELETE_FORBIDDEN: Patient ${id} must be deactivated; ledger history is permanent`);
     }
    
 
@@ -1166,6 +1192,9 @@ class DentalRecordSharing extends Contract {
     
         const patient = JSON.parse(patientJSON.toString());
         const doctor = JSON.parse(doctorJSON.toString());
+        if (patient.isActive === false || doctor.isActive === false) {
+            throw new Error('Inactive doctors and patients cannot be assigned');
+        }
         doctor.patients = Array.isArray(doctor.patients) ? doctor.patients : [];
         patient.doctors = Array.isArray(patient.doctors) ? patient.doctors : [];
     
@@ -1196,6 +1225,30 @@ class DentalRecordSharing extends Contract {
         await ctx.stub.putState(patientID, Buffer.from(stringify(sortKeysRecursive(patient))));
     
         return { success: true, message: `Patient ${patientID} assigned to Doctor ${doctorID}` };
+    }
+
+    async unassignPatientFromDoctor(ctx, patientID, doctorID, dataHash, modifiedDate) {
+        this._requireRole(ctx, 'admin');
+        const patientJSON = await ctx.stub.getState(patientID);
+        const doctorJSON = await ctx.stub.getState(doctorID);
+        if (!patientJSON || patientJSON.length === 0) throw new Error(`Patient ${patientID} does not exist`);
+        if (!doctorJSON || doctorJSON.length === 0) throw new Error(`Doctor ${doctorID} does not exist`);
+        const patient = JSON.parse(patientJSON.toString());
+        const doctor = JSON.parse(doctorJSON.toString());
+        const clinicID = patient.clinicID || (patient.clinicIDs || [])[0];
+        this._requireAdminClinic(ctx, clinicID);
+        this._requireAdminClinic(ctx, doctor.clinicID);
+        if (String(clinicID) !== String(doctor.clinicID)) throw new Error('Doctor and patient clinic mismatch');
+        patient.doctors = (Array.isArray(patient.doctors) ? patient.doctors : []).filter((id) => String(id) !== String(doctorID));
+        doctor.patients = (Array.isArray(doctor.patients) ? doctor.patients : []).filter((id) => String(id) !== String(patientID));
+        if (dataHash) {
+            if (!/^[a-f0-9]{64}$/i.test(dataHash)) throw new Error('Patient dataHash must be a SHA-256 hex digest');
+            patient.dataHash = dataHash.toLowerCase();
+        }
+        patient.modifiedDate = modifiedDate || patient.modifiedDate || patient.createdDate || '';
+        await ctx.stub.putState(patientID, Buffer.from(stringify(sortKeysRecursive(patient))));
+        await ctx.stub.putState(doctorID, Buffer.from(stringify(sortKeysRecursive(doctor))));
+        return JSON.stringify({ patientID, doctorID, unassigned: true });
     }
     
     // Doctor: Get all Patients assigned to the doctor

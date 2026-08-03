@@ -128,6 +128,26 @@ const provisionFabricIdentity = (req, role, actorID, clinicID) => callBlockchain
     { role, actorID, clinicID },
 );
 
+const retireFabricIdentity = (req, role, actorID, clinicID) => callBlockchain(
+    req, '/internal/identities', 'DELETE', { role, actorID, clinicID },
+);
+
+const lifecyclePayloadHash = (payload) => crypto.createHash('sha256')
+    .update(JSON.stringify(payload || {})).digest('hex');
+const beginLifecycleOperation = async (req, operationType, entityType, entityID, clinicID, payload) => {
+    const operationID = crypto.randomUUID();
+    await query(`INSERT INTO Entity_Lifecycle_Operation
+        (Operation_ID,Operation_Type,Entity_Type,Entity_ID,Clinic_ID,Correlation_ID,Payload_Hash)
+        VALUES (?,?,?,?,?,?,?)`, [operationID, operationType, entityType, String(entityID), clinicID || null,
+        req.get('x-correlation-id') || null, lifecyclePayloadHash(payload)]);
+    return operationID;
+};
+const markLifecycleOperation = (operationID, status, stage, error = null) => operationID ? query(
+    `UPDATE Entity_Lifecycle_Operation SET Status=?,Current_Stage=?,Error_Code=?,Error_Message=?,
+        Completed_At=IF(?='COMPLETED',NOW(3),Completed_At) WHERE Operation_ID=?`,
+    [status, stage, error?.code || null, error ? String(error.message || error).slice(0, 1000) : null, status, operationID],
+) : Promise.resolve();
+
 const requireAdminClinic = (req, clinicID) => {
     if (Number(req.user.organizationId) !== Number(clinicID)) {
         const error = new Error('Forbidden: patient clinic must match the authenticated admin organization');
@@ -215,10 +235,11 @@ setInterval(async () => {
 app.get('/health', (req, res) => {
     db.query(`SELECT (
         (SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()
-            AND TABLE_NAME IN ('Auth_Session','Auth_Refresh_Token','Auth_Session_Event','Schema_Migration'))=4
+            AND TABLE_NAME IN ('Auth_Session','Auth_Refresh_Token','Auth_Session_Event','Schema_Migration','Entity_Lifecycle_Operation'))=5
         AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='User'
             AND COLUMN_NAME IN ('Security_Version','Sessions_Invalid_Before'))=2
         AND EXISTS (SELECT 1 FROM Schema_Migration WHERE Migration_ID='2026-07-29-secure-auth-sessions')
+        AND EXISTS (SELECT 1 FROM Schema_Migration WHERE Migration_ID='2026-08-03-entity-lifecycle-hardening')
     ) AS ready`, (error, rows) => {
         if (error) {
             return res.status(503).json({ status: 'not-ready', service: 'database-api', database: false, sessionSchema: false });
@@ -767,18 +788,34 @@ app.get('/clinics', authenticateToken, requireRoles('system'), async (_req, res)
     } catch (error) { console.error(error); return sendApiError(res, 500, 'CLINIC_LIST_FAILED', 'Unable to load clinics'); }
 });
 
+app.get('/lifecycle-operations', authenticateToken, requireRoles('system'), async (req, res) => {
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
+    const status = req.query.status ? String(req.query.status).toUpperCase() : null;
+    if (status && !['PENDING','FABRIC_COMMITTED','COMPLETED','FAILED'].includes(status)) {
+        return sendApiError(res, 400, 'INVALID_LIFECYCLE_STATUS', 'Unsupported lifecycle status');
+    }
+    try {
+        const rows = await query(`SELECT Operation_ID,Operation_Type,Entity_Type,Entity_ID,Clinic_ID,Status,
+            Current_Stage,Correlation_ID,Error_Code,Error_Message,Created_At,Updated_At,Completed_At
+            FROM Entity_Lifecycle_Operation WHERE (? IS NULL OR Status=?) ORDER BY Created_At DESC LIMIT ?`,
+        [status, status, limit]);
+        return res.json({ success: true, data: rows });
+    } catch (error) { return sendApiError(res, 500, 'LIFECYCLE_OPERATION_LIST_FAILED', 'Unable to load lifecycle operations'); }
+});
+
 app.post('/clinics', authenticateToken, requireRoles('system'), async (req, res) => {
     const { name, address, description, coordinates, type = 'Dental Clinic', admin } = req.body || {};
     if (!name || !address || !admin?.firstName || !admin?.lastName || !admin?.email || !admin?.contactNumber || !validatePassword(admin?.password)) {
         return sendApiError(res, 400, 'INVALID_CLINIC', 'Clinic name, address, and a first admin with a strong temporary password are required');
     }
-    let connection;
+    let connection; let operationID;
     try {
         connection = await db.promise().getConnection(); await connection.beginTransaction();
         const [duplicate] = await connection.query('SELECT ID FROM User WHERE Email = ? LIMIT 1', [admin.email]);
         if (duplicate.length) { const error = new Error('Admin email already exists'); error.statusCode = 409; throw error; }
         const [lastClinic] = await connection.query('SELECT Organization_ID FROM Organization ORDER BY Organization_ID DESC LIMIT 1 FOR UPDATE');
         const clinicID = Number(lastClinic[0]?.Organization_ID || 0) + 1;
+        operationID = await beginLifecycleOperation(req, 'CLINIC_CREATE', 'clinic', clinicID, clinicID, { name, adminEmail: admin.email });
         await connection.query(`INSERT INTO Organization
             (Organization_ID, Name, Address, Description, Coordinates, Type, IsActive, Created_Date) VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
             [clinicID, name, address, description || null, coordinates || null, type]);
@@ -787,10 +824,14 @@ app.post('/clinics', authenticateToken, requireRoles('system'), async (req, res)
             (First_Name, Last_Name, Password, Email, Contact_Number, Role_ID, Created_Date, IsActive, Must_Change_Password)
             VALUES (?, ?, ?, ?, ?, ?, NOW(), 1, 1)`, [admin.firstName, admin.lastName, passwordHash, admin.email, admin.contactNumber, ADMIN_ROLE_ID]);
         await connection.query('INSERT INTO Admin (Organization_ID, User_ID) VALUES (?, ?)', [clinicID, userResult.insertId]);
+        await provisionFabricIdentity(req, 'admin', `AdminClinic${clinicID}`, clinicID);
+        await markLifecycleOperation(operationID, 'FABRIC_COMMITTED', 'ADMIN_IDENTITY_PROVISIONED');
         await connection.commit();
+        await markLifecycleOperation(operationID, 'COMPLETED', 'MYSQL_COMMITTED');
         return res.status(201).json({ success: true, data: { clinicID, primaryAdminID: userResult.insertId } });
     } catch (error) {
         if (connection) await connection.rollback(); console.error(error);
+        await markLifecycleOperation(operationID, 'FAILED', 'CLINIC_CREATE_FAILED', error).catch(() => {});
         return sendApiError(res, error.statusCode || 500, 'CLINIC_CREATE_FAILED', error.message || 'Unable to create clinic');
     } finally { if (connection) connection.release(); }
 });
@@ -952,7 +993,7 @@ app.get('/clinics/:clinicID/admin-history', authenticateToken, requireRoles('sys
     } catch (error) { return sendApiError(res, 500, 'CLINIC_ADMIN_HISTORY_FAILED', 'Unable to load administrator history'); }
 });
 
-const DOCTOR_SELECT = `SELECT Doctor.*, User.First_Name, User.Last_Name, User.Email, User.Contact_Number, User.Created_Date
+const DOCTOR_SELECT = `SELECT Doctor.*, User.First_Name, User.Last_Name, User.Email, User.Contact_Number, User.Created_Date, User.IsActive
     FROM Doctor INNER JOIN User ON Doctor.ID = User.ID`;
 const CLINIC_DOCTOR_SCOPE = `(Doctor.Clinic_ID=? OR (Doctor.Clinic_ID IS NULL AND EXISTS (
     SELECT 1 FROM Patient WHERE Patient.Clinic_ID=? AND JSON_CONTAINS(Patient.Doctors, JSON_QUOTE(Doctor.Blockchain_ID))
@@ -980,7 +1021,7 @@ const mutableDoctorProfile = (body) => ({
 });
 
 app.post('/doctors', authenticateToken, requireRoles('admin'), async (req, res) => {
-    let connection;
+    let connection; let operationID;
     try {
         validateDoctorPayload(req.body, true);
         const clinicID = Number(req.user.organizationId);
@@ -994,20 +1035,23 @@ app.post('/doctors', authenticateToken, requireRoles('admin'), async (req, res) 
             (First_Name,Last_Name,Email,Contact_Number,Password,Role_ID,Created_Date,IsActive) VALUES (?,?,?,?,?,?,NOW(),1)`,
             [req.body.firstName, req.body.lastName, req.body.email, req.body.contactNumber, passwordHash, DOCTOR_ROLE_ID]);
         const doctorID = `Doctor-${crypto.randomUUID()}`;
+        operationID = await beginLifecycleOperation(req, 'DOCTOR_CREATE', 'doctor', doctorID, clinicID, req.body);
         await connection.query(`INSERT INTO Doctor
             (ID,Works_At,Specialty,Blockchain_ID,License_Number,Emirates_ID,Clinic_ID,Modified_Date) VALUES (?,?,?,?,?,?,?,NOW())`,
             [userResult.insertId, req.body.worksAt, req.body.speciality, doctorID, req.body.licenseNumber, req.body.emiratesID, clinicID]);
         await provisionFabricIdentity(req, 'doctor', doctorID, clinicID);
         await callBlockchain(req, '/addDoctor', 'POST', { ...req.body, doctorID, clinicID, patients: [] });
+        await markLifecycleOperation(operationID, 'FABRIC_COMMITTED', 'DOCTOR_LEDGER_CREATED');
         await connection.commit();
+        await markLifecycleOperation(operationID, 'COMPLETED', 'MYSQL_COMMITTED');
         return res.status(201).json({ success: true, data: { ...req.body, password: undefined, doctorID, clinicID }, message: 'Doctor created consistently in MySQL and Fabric' });
-    } catch (error) { if (connection) await connection.rollback().catch(() => {}); return sendApiError(res, error.statusCode || (error.code === 'ER_DUP_ENTRY' ? 409 : 500), 'DOCTOR_CREATE_FAILED', error.message); }
+    } catch (error) { if (connection) await connection.rollback().catch(() => {}); await markLifecycleOperation(operationID, 'FAILED', 'DOCTOR_CREATE_FAILED', error).catch(() => {}); return sendApiError(res, error.statusCode || (error.code === 'ER_DUP_ENTRY' ? 409 : 500), 'DOCTOR_CREATE_FAILED', error.message); }
     finally { if (connection) connection.release(); }
 });
 
 app.get('/doctors', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
-        const rows = await query(`${DOCTOR_SELECT} WHERE ${CLINIC_DOCTOR_SCOPE} ORDER BY User.Last_Name,User.First_Name`,
+        const rows = await query(`${DOCTOR_SELECT} WHERE ${CLINIC_DOCTOR_SCOPE} AND User.IsActive=1 ORDER BY User.Last_Name,User.First_Name`,
             [req.user.organizationId, req.user.organizationId]);
         return res.json({ success: true, data: rows.map(normalizeDoctor) });
     }
@@ -1015,7 +1059,7 @@ app.get('/doctors', authenticateToken, requireRoles('admin'), async (req, res) =
 });
 
 app.get('/doctors/:id', authenticateToken, requireRoles('admin','doctor'), async (req, res) => {
-    try { const rows = await query(`${DOCTOR_SELECT} WHERE Doctor.Blockchain_ID=? LIMIT 1`, [req.params.id]);
+    try { const rows = await query(`${DOCTOR_SELECT} WHERE Doctor.Blockchain_ID=? AND User.IsActive=1 LIMIT 1`, [req.params.id]);
         if (!rows.length) return sendApiError(res, 404, 'DOCTOR_NOT_FOUND', 'Doctor not found');
         const doctor = normalizeDoctor(rows[0]); const role = normalizeRole(req.user.role);
         if (role === 'doctor' && req.user.blockchainID !== req.params.id) return sendApiError(res, 403, 'DOCTOR_OWNER_MISMATCH', 'Doctors may retrieve only their own profile');
@@ -1050,19 +1094,27 @@ app.put('/doctors/:id', authenticateToken, requireRoles('admin'), async (req, re
 });
 
 app.delete('/doctors/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
-    let connection;
+    let connection; let operationID;
     try { connection = await db.promise().getConnection(); await connection.beginTransaction(); const [rows] = await connection.query(`${DOCTOR_SELECT} WHERE Doctor.Blockchain_ID=? FOR UPDATE`, [req.params.id]);
         if (!rows.length) { const error = new Error('Doctor not found'); error.statusCode = 404; throw error; } requireAdminClinic(req, rows[0].Clinic_ID);
         const [assigned] = await connection.query('SELECT ID FROM Patient WHERE JSON_CONTAINS(Doctors, JSON_QUOTE(?)) LIMIT 1', [req.params.id]);
         if (assigned.length) { const error = new Error('Reassign or remove this doctor from assigned patients before deletion'); error.statusCode = 409; throw error; }
-        await callBlockchain(req, `/doctor/${encodeURIComponent(req.params.id)}`, 'DELETE'); await connection.query('DELETE FROM Doctor WHERE ID=?',[rows[0].ID]); await connection.query('DELETE FROM User WHERE ID=?',[rows[0].ID]);
-        await connection.commit(); return res.json({ success:true, data:{ doctorID:req.params.id, deleted:true }, message:'Doctor deleted from Fabric and MySQL' });
-    } catch (error) { if (connection) await connection.rollback().catch(()=>{}); return sendApiError(res,error.statusCode||500,'DOCTOR_DELETE_FAILED',`${error.message}; no MySQL deletion was committed`); }
+        operationID = await beginLifecycleOperation(req, 'DOCTOR_DEACTIVATE', 'doctor', req.params.id, rows[0].Clinic_ID, {});
+        await callBlockchain(req, `/doctor/${encodeURIComponent(req.params.id)}`, 'DELETE');
+        await retireFabricIdentity(req, 'doctor', req.params.id, rows[0].Clinic_ID);
+        await markLifecycleOperation(operationID, 'FABRIC_COMMITTED', 'ACTOR_DEACTIVATED_AND_IDENTITY_RETIRED');
+        await connection.query(`UPDATE User SET IsActive=0,Security_Version=Security_Version+1,
+            Sessions_Invalid_Before=NOW(3) WHERE ID=?`, [rows[0].ID]);
+        await revokeManagedAdminSessions(connection, rows[0].ID, 'doctor deactivated');
+        await connection.commit();
+        await markLifecycleOperation(operationID, 'COMPLETED', 'MYSQL_DEACTIVATED');
+        return res.json({ success:true, data:{ doctorID:req.params.id, deactivated:true }, message:'Doctor deactivated and Fabric identity retired' });
+    } catch (error) { if (connection) await connection.rollback().catch(()=>{}); await markLifecycleOperation(operationID, 'FAILED', 'DOCTOR_DEACTIVATE_FAILED', error).catch(()=>{}); return sendApiError(res,error.statusCode||500,'DOCTOR_DEACTIVATE_FAILED',error.message); }
     finally { if (connection) connection.release(); }
 });
 
 const PATIENT_SELECT = `
-    SELECT Patient.*, User.First_Name, User.Last_Name, User.Email, User.Contact_Number, User.Created_Date
+    SELECT Patient.*, User.First_Name, User.Last_Name, User.Email, User.Contact_Number, User.Created_Date, User.IsActive
     FROM Patient INNER JOIN User ON Patient.ID = User.ID`;
 
 const validatePatientPayload = (body, isCreate = false) => {
@@ -1092,7 +1144,7 @@ const validatePatientPayload = (body, isCreate = false) => {
 
 // Coordinated hybrid patient creation: MySQL is authoritative for PII; Fabric stores reference/hash only.
 app.post('/patients', authenticateToken, requireRoles('admin'), async (req, res) => {
-    let connection;
+    let connection; let operationID;
     try {
         validatePatientPayload(req.body, true);
         requireAdminClinic(req, req.body.clinicID);
@@ -1103,6 +1155,18 @@ app.post('/patients', authenticateToken, requireRoles('admin'), async (req, res)
             [req.body.emiratesID, req.body.email]
         );
         if (duplicates.length) { const error = new Error('Patient email or Emirates ID already exists'); error.statusCode = 409; throw error; }
+        const requestedDoctors = [...new Set((req.body.doctors || []).map(String))];
+        if (requestedDoctors.length) {
+            const placeholders = requestedDoctors.map(() => '?').join(',');
+            const [doctorRows] = await connection.query(
+                `SELECT Doctor.Blockchain_ID FROM Doctor JOIN User ON User.ID=Doctor.ID
+                 WHERE Doctor.Blockchain_ID IN (${placeholders}) AND Doctor.Clinic_ID=? AND User.IsActive=1`,
+                [...requestedDoctors, Number(req.body.clinicID)],
+            );
+            if (doctorRows.length !== requestedDoctors.length) {
+                const error = new Error('Every assigned doctor must be active and belong to the patient clinic'); error.statusCode = 400; throw error;
+            }
+        }
 
         const passwordHash = await bcrypt.hash(req.body.password, 10);
         const [userResult] = await connection.query(
@@ -1110,22 +1174,23 @@ app.post('/patients', authenticateToken, requireRoles('admin'), async (req, res)
             [req.body.firstName, req.body.lastName, passwordHash, req.body.email, req.body.contactNumber, PATIENT_ROLE_ID]
         );
         const patientID = `Patient-${crypto.randomUUID()}`;
+        operationID = await beginLifecycleOperation(req, 'PATIENT_CREATE', 'patient', patientID, Number(req.body.clinicID), req.body);
         await connection.query(`INSERT INTO Patient
             (ID, Date_of_Birth, Gender, Emirates_ID, Blockchain_ID, Nationality, Address, Blood_Type, Medical_History, Allergies, Medications, Insurance_Details, Clinic_ID, Doctors, Modified_Date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`, [
             userResult.insertId, req.body.dateOfBirth, req.body.gender, req.body.emiratesID, patientID, req.body.nationality,
             req.body.address, req.body.bloodType, JSON.stringify(req.body.medicalHistory), JSON.stringify(req.body.allergies),
             JSON.stringify(req.body.medications), JSON.stringify(req.body.insuranceDetails), Number(req.body.clinicID),
-            JSON.stringify(req.body.doctors || [])
+            JSON.stringify(requestedDoctors)
         ]);
-        const patient = { ...req.body, patientID, password: undefined };
+        const patient = { ...req.body, doctors: requestedDoctors, patientID, password: undefined };
         const dataHash = patientHash(patient);
         await provisionFabricIdentity(req, 'patient', patientID, Number(req.body.clinicID));
         await callBlockchain(req, '/patient-metadata', 'POST', {
-            patientID, clinicID: Number(req.body.clinicID), doctors: req.body.doctors || [],
+            patientID, clinicID: Number(req.body.clinicID), doctors: requestedDoctors,
             offChainRef: `mysql:Patient/${userResult.insertId}`, dataHash
         });
-        for (const doctorID of req.body.doctors || []) {
+        for (const doctorID of requestedDoctors) {
             await callBlockchain(req, '/assignPatientToDoctor', 'POST', {
                 patientID,
                 doctorID,
@@ -1133,10 +1198,13 @@ app.post('/patients', authenticateToken, requireRoles('admin'), async (req, res)
                 modifiedDate: new Date().toISOString(),
             });
         }
+        await markLifecycleOperation(operationID, 'FABRIC_COMMITTED', 'PATIENT_LEDGER_CREATED');
         await connection.commit();
+        await markLifecycleOperation(operationID, 'COMPLETED', 'MYSQL_COMMITTED');
         return res.status(201).json({ success: true, data: { ...patient, dataHash }, message: 'Patient created in MySQL and referenced on-chain' });
     } catch (error) {
         if (connection) await connection.rollback().catch(() => {});
+        await markLifecycleOperation(operationID, 'FAILED', 'PATIENT_CREATE_FAILED', error).catch(() => {});
         const status = error.statusCode || (error.code === 'ER_DUP_ENTRY' ? 409 : 500);
         return sendApiError(res, status, 'PATIENT_CREATE_FAILED', error.message);
     } finally { if (connection) connection.release(); }
@@ -1144,7 +1212,7 @@ app.post('/patients', authenticateToken, requireRoles('admin'), async (req, res)
 
 app.get('/patients', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
-        const rows = await query(`${PATIENT_SELECT} WHERE Patient.Clinic_ID = ? ORDER BY User.Last_Name, User.First_Name`, [req.user.organizationId]);
+        const rows = await query(`${PATIENT_SELECT} WHERE Patient.Clinic_ID = ? AND User.IsActive=1 ORDER BY User.Last_Name, User.First_Name`, [req.user.organizationId]);
         return res.json({ success: true, data: rows.map(normalizePatient) });
     } catch (error) { return sendApiError(res, 500, 'PATIENT_LIST_FAILED', 'Unable to retrieve patients'); }
 });
@@ -1154,7 +1222,7 @@ app.get('/doctor/me/assigned-patients', authenticateToken, requireRoles('doctor'
         if (!req.user.blockchainID) return sendApiError(res, 403, 'DOCTOR_IDENTITY_REQUIRED', 'Authenticated doctor has no blockchain identity');
         // Revalidate the JWT-to-certificate actor binding before returning authoritative MySQL PII.
         await callBlockchain(req, '/doctor/me/assigned-patients', 'GET');
-        const rows = await query(`${PATIENT_SELECT} WHERE JSON_CONTAINS(Patient.Doctors, JSON_QUOTE(?))
+        const rows = await query(`${PATIENT_SELECT} WHERE JSON_CONTAINS(Patient.Doctors, JSON_QUOTE(?)) AND User.IsActive=1
             ORDER BY User.Last_Name, User.First_Name`, [String(req.user.blockchainID)]);
         return res.json({ success: true, data: rows.map(normalizePatient) });
     } catch (error) { return sendApiError(res, error.statusCode || 500, 'ASSIGNED_PATIENT_LIST_FAILED', error.message); }
@@ -1162,7 +1230,7 @@ app.get('/doctor/me/assigned-patients', authenticateToken, requireRoles('doctor'
 
 app.get('/patients/:id', authenticateToken, requireRoles('admin', 'doctor', 'patient'), async (req, res) => {
     try {
-        const rows = await query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID = ? LIMIT 1`, [req.params.id]);
+        const rows = await query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID = ? AND User.IsActive=1 LIMIT 1`, [req.params.id]);
         if (!rows.length) return sendApiError(res, 404, 'PATIENT_NOT_FOUND', 'Patient not found');
         const patient = normalizePatient(rows[0]);
         if (normalizeRole(req.user.role) === 'patient' && req.user.blockchainID !== req.params.id) {
@@ -1181,42 +1249,52 @@ app.get('/patients/:id', authenticateToken, requireRoles('admin', 'doctor', 'pat
 app.put('/patients/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
     let connection;
     try {
-        validatePatientPayload(req.body);
-        requireAdminClinic(req, req.body.clinicID);
         connection = await db.promise().getConnection(); await connection.beginTransaction();
         const [rows] = await connection.query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID = ? FOR UPDATE`, [req.params.id]);
         if (!rows.length) { const error = new Error('Patient not found'); error.statusCode = 404; throw error; }
-        requireAdminClinic(req, rows[0].Clinic_ID);
+        const current = normalizePatient(rows[0]); requireAdminClinic(req, current.clinicID);
+        if (req.body.patientID !== undefined && String(req.body.patientID) !== String(req.params.id)) {
+            throw Object.assign(new Error('patientID is immutable and must match the URL'), { statusCode: 400, code: 'PATIENT_ID_MISMATCH' });
+        }
+        if (req.body.clinicID !== undefined && Number(req.body.clinicID) !== Number(current.clinicID)) {
+            throw Object.assign(new Error('Patient clinic requires a dedicated transfer workflow'), { statusCode: 403, code: 'PATIENT_CLINIC_IMMUTABLE' });
+        }
+        if (req.body.doctors !== undefined || (req.body.password !== undefined && String(req.body.password) !== '')) {
+            throw Object.assign(new Error('Assignments and credentials require their dedicated security workflow'), { statusCode: 400, code: 'PATIENT_PROTECTED_FIELD' });
+        }
+        const update = mutablePatientProfile(req.body);
+        validatePatientPayload({ ...update, clinicID: current.clinicID, doctors: current.doctors });
         await connection.query('UPDATE User SET First_Name=?, Last_Name=?, Email=?, Contact_Number=? WHERE ID=?',
-            [req.body.firstName, req.body.lastName, req.body.email, req.body.contactNumber, rows[0].ID]);
+            [update.firstName, update.lastName, update.email, update.contactNumber, rows[0].ID]);
         await connection.query(`UPDATE Patient SET Date_of_Birth=?, Gender=?, Emirates_ID=?, Nationality=?, Address=?, Blood_Type=?,
-            Medical_History=?, Allergies=?, Medications=?, Insurance_Details=?, Clinic_ID=?, Doctors=?, Modified_Date=NOW() WHERE ID=?`, [
-            req.body.dateOfBirth, req.body.gender, req.body.emiratesID, req.body.nationality, req.body.address, req.body.bloodType,
-            JSON.stringify(req.body.medicalHistory), JSON.stringify(req.body.allergies), JSON.stringify(req.body.medications),
-            JSON.stringify(req.body.insuranceDetails), Number(req.body.clinicID), JSON.stringify(req.body.doctors || []), rows[0].ID
+            Medical_History=?, Allergies=?, Medications=?, Insurance_Details=?, Modified_Date=NOW() WHERE ID=?`, [
+            update.dateOfBirth, update.gender, update.emiratesID, update.nationality, update.address, update.bloodType,
+            JSON.stringify(update.medicalHistory), JSON.stringify(update.allergies), JSON.stringify(update.medications),
+            JSON.stringify(update.insuranceDetails), rows[0].ID
         ]);
-        const patient = { ...req.body, patientID: req.params.id };
+        const patient = { ...current, ...update, patientID: req.params.id };
         const dataHash = patientHash(patient);
         await callBlockchain(req, `/patient-metadata/${encodeURIComponent(req.params.id)}`, 'PUT', {
-            clinicID: Number(req.body.clinicID), doctors: req.body.doctors || [], offChainRef: `mysql:Patient/${rows[0].ID}`, dataHash
+            clinicID: Number(current.clinicID), doctors: current.doctors, offChainRef: `mysql:Patient/${rows[0].ID}`, dataHash
         });
         await connection.commit();
         return res.json({ success: true, data: { ...patient, dataHash }, message: 'Patient updated consistently' });
     } catch (error) {
         if (connection) await connection.rollback().catch(() => {});
-        return sendApiError(res, error.statusCode || (error.code === 'ER_DUP_ENTRY' ? 409 : 500), 'PATIENT_UPDATE_FAILED', error.message);
+        return sendApiError(res, error.statusCode || (error.code === 'ER_DUP_ENTRY' ? 409 : 500), error.code || 'PATIENT_UPDATE_FAILED', error.message);
     } finally { if (connection) connection.release(); }
 });
 
 app.post('/patients/:id/assign', authenticateToken, requireRoles('admin'), async (req, res) => {
-    let connection;
+    let connection; let operationID;
     try {
         if (!req.body.doctorID) return sendApiError(res, 400, 'VALIDATION_ERROR', 'doctorID is required');
         connection = await db.promise().getConnection(); await connection.beginTransaction();
         const [rows] = await connection.query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID = ? FOR UPDATE`, [req.params.id]);
         if (!rows.length) { const error = new Error('Patient not found'); error.statusCode = 404; throw error; }
         const current = normalizePatient(rows[0]); requireAdminClinic(req, current.clinicID);
-        const [doctorRows] = await connection.query('SELECT Blockchain_ID, Clinic_ID FROM Doctor WHERE Blockchain_ID=? FOR UPDATE', [req.body.doctorID]);
+        const [doctorRows] = await connection.query(`SELECT Doctor.Blockchain_ID, Doctor.Clinic_ID FROM Doctor
+            JOIN User ON User.ID=Doctor.ID WHERE Doctor.Blockchain_ID=? AND User.IsActive=1 FOR UPDATE`, [req.body.doctorID]);
         if (!doctorRows.length) { const error = new Error('Doctor not found'); error.statusCode = 404; throw error; }
         requireAdminClinic(req, doctorRows[0].Clinic_ID);
         if (Number(doctorRows[0].Clinic_ID) !== Number(current.clinicID)) {
@@ -1225,6 +1303,7 @@ app.post('/patients/:id/assign', authenticateToken, requireRoles('admin'), async
             throw error;
         }
         const doctors = [...new Set([...(current.doctors || []), String(req.body.doctorID)])];
+        operationID = await beginLifecycleOperation(req, 'PATIENT_ASSIGN', 'assignment', `${req.params.id}:${req.body.doctorID}`, current.clinicID, req.body);
         await connection.query('UPDATE Patient SET Doctors=?, Modified_Date=NOW() WHERE ID=?', [JSON.stringify(doctors), rows[0].ID]);
         const updated = { ...current, doctors };
         const dataHash = patientHash(updated);
@@ -1240,29 +1319,39 @@ app.post('/patients/:id/assign', authenticateToken, requireRoles('admin'), async
             dataHash,
             modifiedDate: new Date().toISOString(),
         });
+        await markLifecycleOperation(operationID, 'FABRIC_COMMITTED', 'RELATIONSHIP_UPDATED');
         await connection.commit();
+        await markLifecycleOperation(operationID, 'COMPLETED', 'MYSQL_COMMITTED');
         return res.json({ success: true, data: { patientID: req.params.id, doctors }, message: 'Patient assigned to doctor' });
     } catch (error) {
         if (connection) await connection.rollback().catch(() => {});
+        await markLifecycleOperation(operationID, 'FAILED', 'PATIENT_ASSIGN_FAILED', error).catch(() => {});
         return sendApiError(res, error.statusCode || 500, 'PATIENT_ASSIGN_FAILED', error.message);
     } finally { if (connection) connection.release(); }
 });
 
 app.delete('/patients/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
-    let connection;
+    let connection; let operationID;
     try {
         connection = await db.promise().getConnection(); await connection.beginTransaction();
         const [rows] = await connection.query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID = ? FOR UPDATE`, [req.params.id]);
         if (!rows.length) { const error = new Error('Patient not found'); error.statusCode = 404; throw error; }
         requireAdminClinic(req, rows[0].Clinic_ID);
+        operationID = await beginLifecycleOperation(req, 'PATIENT_DEACTIVATE', 'patient', req.params.id, rows[0].Clinic_ID, {});
         await callBlockchain(req, `/patient-metadata/${encodeURIComponent(req.params.id)}`, 'DELETE');
-        await connection.query('DELETE FROM Patient WHERE ID=?', [rows[0].ID]);
-        await connection.query('DELETE FROM User WHERE ID=?', [rows[0].ID]);
+        await retireFabricIdentity(req, 'patient', req.params.id, rows[0].Clinic_ID);
+        await markLifecycleOperation(operationID, 'FABRIC_COMMITTED', 'ACTOR_DEACTIVATED_AND_IDENTITY_RETIRED');
+        await connection.query('UPDATE Patient SET Doctors=JSON_ARRAY(),Modified_Date=NOW() WHERE ID=?', [rows[0].ID]);
+        await connection.query(`UPDATE User SET IsActive=0,Security_Version=Security_Version+1,
+            Sessions_Invalid_Before=NOW(3) WHERE ID=?`, [rows[0].ID]);
+        await revokeManagedAdminSessions(connection, rows[0].ID, 'patient deactivated');
         await connection.commit();
-        return res.json({ success: true, data: { patientID: req.params.id, deleted: true }, message: 'Patient deleted from Fabric and MySQL' });
+        await markLifecycleOperation(operationID, 'COMPLETED', 'MYSQL_DEACTIVATED');
+        return res.json({ success: true, data: { patientID: req.params.id, deactivated: true }, message: 'Patient deactivated and Fabric identity retired' });
     } catch (error) {
         if (connection) await connection.rollback().catch(() => {});
-        return sendApiError(res, error.statusCode || 500, 'PATIENT_DELETE_FAILED', `${error.message}; no MySQL deletion was committed`);
+        await markLifecycleOperation(operationID, 'FAILED', 'PATIENT_DEACTIVATE_FAILED', error).catch(() => {});
+        return sendApiError(res, error.statusCode || 500, 'PATIENT_DEACTIVATE_FAILED', error.message);
     } finally { if (connection) connection.release(); }
 });
 
@@ -1302,6 +1391,39 @@ app.get(['/patients/:id/clinical-records/:recordType', '/getMedicalRecords/:id',
     } catch (error) { return sendApiError(res, error.statusCode || 500, 'CLINICAL_RECORD_READ_FAILED', error.message); }
 });
 
+app.post('/patients/:id/unassign', authenticateToken, requireRoles('admin'), async (req, res) => {
+    let connection; let operationID;
+    try {
+        if (!req.body.doctorID) return sendApiError(res, 400, 'VALIDATION_ERROR', 'doctorID is required');
+        connection = await db.promise().getConnection(); await connection.beginTransaction();
+        const [rows] = await connection.query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID=? FOR UPDATE`, [req.params.id]);
+        if (!rows.length) throw Object.assign(new Error('Patient not found'), { statusCode: 404 });
+        const current = normalizePatient(rows[0]); requireAdminClinic(req, current.clinicID);
+        const [doctorRows] = await connection.query(`SELECT Doctor.Blockchain_ID,Doctor.Clinic_ID FROM Doctor
+            JOIN User ON User.ID=Doctor.ID WHERE Doctor.Blockchain_ID=? FOR UPDATE`, [req.body.doctorID]);
+        if (!doctorRows.length) throw Object.assign(new Error('Doctor not found'), { statusCode: 404 });
+        requireAdminClinic(req, doctorRows[0].Clinic_ID);
+        if (!current.doctors.includes(String(req.body.doctorID))) {
+            await connection.rollback(); return res.json({ success: true, data: { patientID: req.params.id, doctors: current.doctors }, message: 'Patient was already unassigned' });
+        }
+        const doctors = current.doctors.filter((id) => String(id) !== String(req.body.doctorID));
+        const updated = { ...current, doctors }; const dataHash = patientHash(updated);
+        operationID = await beginLifecycleOperation(req, 'PATIENT_UNASSIGN', 'assignment', `${req.params.id}:${req.body.doctorID}`, current.clinicID, req.body);
+        await connection.query('UPDATE Patient SET Doctors=?,Modified_Date=NOW() WHERE ID=?', [JSON.stringify(doctors), rows[0].ID]);
+        await callBlockchain(req, '/unassignPatientFromDoctor', 'POST', {
+            patientID: req.params.id, doctorID: req.body.doctorID, dataHash, modifiedDate: new Date().toISOString(),
+        });
+        await markLifecycleOperation(operationID, 'FABRIC_COMMITTED', 'RELATIONSHIP_REMOVED');
+        await connection.commit();
+        await markLifecycleOperation(operationID, 'COMPLETED', 'MYSQL_COMMITTED');
+        return res.json({ success: true, data: { patientID: req.params.id, doctors }, message: 'Patient unassigned from doctor' });
+    } catch (error) {
+        if (connection) await connection.rollback().catch(() => {});
+        await markLifecycleOperation(operationID, 'FAILED', 'PATIENT_UNASSIGN_FAILED', error).catch(() => {});
+        return sendApiError(res, error.statusCode || 500, 'PATIENT_UNASSIGN_FAILED', error.message);
+    } finally { if (connection) connection.release(); }
+});
+
 const relayBlockchainJson = async (req, res, path, method = 'GET', body) => {
     try {
         const response = await callBlockchainResponse(req, path, method, body);
@@ -1314,6 +1436,13 @@ const relayBlockchainJson = async (req, res, path, method = 'GET', body) => {
         return sendApiError(res, error.statusCode || 503, 'BLOCKCHAIN_SERVICE_UNAVAILABLE', error.message);
     }
 };
+const mutablePatientProfile = (body) => ({
+    firstName: body.firstName, lastName: body.lastName, dateOfBirth: body.dateOfBirth,
+    gender: body.gender, contactNumber: body.contactNumber, email: body.email,
+    emiratesID: body.emiratesID, nationality: body.nationality, address: body.address,
+    bloodType: body.bloodType, medicalHistory: body.medicalHistory, allergies: body.allergies,
+    medications: body.medications, insuranceDetails: body.insuranceDetails,
+});
 
 // Public clients use only this application API. These facade routes sanitize
 // actor scope before calling the private blockchain service.
@@ -1432,7 +1561,7 @@ const APPOINTMENT_SELECT = `SELECT Appointment.Appointment_ID, Appointment.Meeti
 
 app.get('/appointment-options/doctors', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
-        const rows = await query(`${DOCTOR_SELECT} WHERE ${CLINIC_DOCTOR_SCOPE} ORDER BY User.Last_Name,User.First_Name`,
+        const rows = await query(`${DOCTOR_SELECT} WHERE ${CLINIC_DOCTOR_SCOPE} AND User.IsActive=1 ORDER BY User.Last_Name,User.First_Name`,
             [req.user.organizationId, req.user.organizationId]);
         return res.json({ success: true, data: rows.map(normalizeDoctor) });
     } catch (error) { return sendApiError(res, 500, 'APPOINTMENT_DOCTOR_OPTIONS_FAILED', 'Unable to retrieve clinic appointment doctors'); }

@@ -666,7 +666,42 @@
               "response": []
             },
             {
-              "name": "Delete Patient",
+              "name": "Unassign Patient from Doctor",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Removes both directions of a doctor-patient relationship through the dedicated lifecycle workflow.",
+                "url": "{{databaseApiBaseUrl}}/patients/{{patientId}}/unassign",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"doctorID\": \"{{doctorId}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Deactivate Patient",
               "request": {
                 "method": "DELETE",
                 "header": [
@@ -681,7 +716,7 @@
                     "type": "text"
                   }
                 ],
-                "description": "Clinic-admin deletion of a patient from MySQL and Fabric.",
+                "description": "Disables patient access, preserves clinical history, removes active assignments, and retires the Fabric identity.",
                 "url": "{{databaseApiBaseUrl}}/patients/{{patientId}}"
               },
               "response": []

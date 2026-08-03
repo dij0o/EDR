@@ -38,7 +38,8 @@ test('container startup reconciles identities for accounts created before this f
     const dockerfile = read('dental-backend/Dockerfile');
     const reconcile = read('dental-backend/reconcileFabricIdentities.js');
     assert.match(dockerfile, /node reconcileFabricIdentities\.js/);
-    assert.match(reconcile, /FROM Doctor WHERE Blockchain_ID IS NOT NULL/);
+    assert.match(reconcile, /FROM Doctor JOIN User ON User\.ID=Doctor\.ID/);
+    assert.match(reconcile, /FROM Admin JOIN User ON User\.ID=Admin\.User_ID/);
     assert.match(reconcile, /FROM Patient[\s\S]*JOIN User ON User\.ID = Patient\.ID[\s\S]*WHERE Patient\.Blockchain_ID IS NOT NULL/);
     assert.match(reconcile, /enrollIdentity/);
     assert.match(reconcile, /contract\.submitTransaction\(\s*'assignPatientToDoctor'/);
@@ -47,6 +48,7 @@ test('container startup reconciles identities for accounts created before this f
     assert.match(reconcile, /unknown legacy relationship/);
     assert.match(reconcile, /failedAssignments/);
     assert.match(reconcile, /could not replay/);
+    assert.match(reconcile, /'addDoctor'/);
 });
 
 test('account creation provisions Fabric identity before ledger actor creation', () => {
@@ -61,7 +63,7 @@ test('patient assignment validates clinic and updates both ledger relationship d
     const api = read('backend/server.js');
     const chaincode = read('fabric-samples/dental-record-sharing/chaincode-javascript/lib/dentalRecordSharing.js');
     const assignment = api.match(/app\.post\('\/patients\/:id\/assign'[\s\S]*?\n\}\);/)[0];
-    assert.match(assignment, /SELECT Blockchain_ID, Clinic_ID FROM Doctor/);
+    assert.match(assignment, /SELECT Doctor\.Blockchain_ID, Doctor\.Clinic_ID FROM Doctor/);
     assert.match(assignment, /Doctor and patient must belong to the same clinic/);
     assert.match(assignment, /callBlockchain\(req, '\/assignPatientToDoctor'/);
     assert.match(chaincode, /doctor\.patients\.push\(patientID\)/);
@@ -69,4 +71,6 @@ test('patient assignment validates clinic and updates both ledger relationship d
     assert.match(chaincode, /patient\.dataHash = dataHash\.toLowerCase\(\)/);
     assert.match(assignment, /\/patient-metadata\/\$\{encodeURIComponent\(req\.params\.id\)\}/);
     assert.match(chaincode, /assignPatientToDoctor\(ctx, patientID, doctorID, dataHash, modifiedDate\)/);
+    assert.match(api, /app\.post\('\/patients\/:id\/unassign'/);
+    assert.match(chaincode, /unassignPatientFromDoctor\(ctx, patientID, doctorID, dataHash, modifiedDate\)/);
 });

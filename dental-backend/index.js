@@ -8,7 +8,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { createSessionAuthenticator, verifySessionSchema } = require('./sessionAuth');
 const { fabricIdentityForUser } = require('./fabricIdentity');
-const { enrollIdentity } = require('./fabricEnrollment');
+const { enrollIdentity, retireIdentity } = require('./fabricEnrollment');
 const { sha256File, verifyFileIntegrity } = require('./radiographicIntegrity');
 const {
     pushStatus,
@@ -343,6 +343,21 @@ app.post('/internal/identities', authenticateToken, requireRoles('admin', 'syste
     }
 });
 
+app.delete('/internal/identities', authenticateToken, requireRoles('admin', 'system'), async (req, res) => {
+    try {
+        requireFields(req.body, ['role', 'actorID', 'clinicID']);
+        if (isRole(req, 'admin') && Number(req.body.clinicID) !== Number(req.user.organizationId)) {
+            return sendApiError(res, 403, 'CLINIC_SCOPE_DENIED', 'Identity clinic must match the authenticated admin organization');
+        }
+        const result = await retireIdentity({
+            ccpPath, walletPath, role: req.body.role, actorID: req.body.actorID, clinicID: req.body.clinicID,
+        });
+        return sendSuccess(res, result);
+    } catch (error) {
+        return sendApiError(res, error.statusCode || 503, 'FABRIC_IDENTITY_RETIREMENT_FAILED', error.message);
+    }
+});
+
 const notificationDeepLink = (notification) => {
     const requestID = notification.relatedRequestID || notification.payload?.requestID;
     const query = requestID ? `?requestId=${encodeURIComponent(requestID)}` : '';
@@ -476,8 +491,8 @@ app.put('/patient-metadata/:id', authenticateToken, requireRoles('admin'), requi
 
 app.delete('/patient-metadata/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
-        await withContract(req, (contract) => contract.submitTransaction('DeletePatient', String(req.params.id)));
-        return sendSuccess(res, { patientID: req.params.id, deleted: true });
+        const result = await withContract(req, (contract) => contract.submitTransaction('DeactivatePatient', String(req.params.id)));
+        return sendSuccess(res, parseBufferJson(result));
     } catch (error) { return sendFabricError(res, error); }
 });
 
@@ -655,8 +670,8 @@ app.put('/patient/:id', authenticateToken, requireRoles('admin'), requireAdminCl
 
 app.delete('/patient/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
-        await withContract(req, (contract) => contract.submitTransaction('DeletePatient', String(req.params.id)));
-        return sendSuccess(res, { id: req.params.id, deleted: true });
+        const result = await withContract(req, (contract) => contract.submitTransaction('DeactivatePatient', String(req.params.id)));
+        return sendSuccess(res, parseBufferJson(result));
     } catch (error) { return sendFabricError(res, error); }
 });
 
@@ -680,8 +695,8 @@ app.put('/doctor/:id', authenticateToken, requireRoles('admin'), requireAdminCli
 
 app.delete('/doctor/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
-        await withContract(req, (contract) => contract.submitTransaction('DeleteDoctor', String(req.params.id)));
-        return sendSuccess(res, { id: req.params.id, deleted: true });
+        const result = await withContract(req, (contract) => contract.submitTransaction('DeactivateDoctor', String(req.params.id)));
+        return sendSuccess(res, parseBufferJson(result));
     } catch (error) { return sendFabricError(res, error); }
 });
 
@@ -1064,6 +1079,17 @@ app.get('/notifications', authenticateToken, requireRoles('admin', 'doctor', 'pa
 app.post('/notifications/:notificationID/read', authenticateToken, requireRoles('admin', 'doctor', 'patient'), async (req, res) => {
     try {
         const result = await withContract(req, (contract) => contract.submitTransaction('MarkNotificationRead', String(req.params.notificationID)));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.post('/unassignPatientFromDoctor', authenticateToken, requireRoles('admin'), async (req, res) => {
+    try {
+        requireFields(req.body, ['patientID', 'doctorID']);
+        const result = await withContract(req, (contract) => contract.submitTransaction(
+            'unassignPatientFromDoctor', String(req.body.patientID), String(req.body.doctorID),
+            String(req.body.dataHash || ''), String(req.body.modifiedDate || new Date().toISOString())
+        ));
         return sendSuccess(res, parseBufferJson(result));
     } catch (error) { return sendFabricError(res, error); }
 });

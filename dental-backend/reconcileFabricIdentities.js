@@ -43,8 +43,20 @@ const main = async () => {
     const ccpPath = path.resolve(__dirname, process.env.FABRIC_CONNECTION_PROFILE || './connection/connection-org1.json');
     const walletPath = path.resolve(__dirname, process.env.FABRIC_WALLET_PATH || './wallet');
     try {
+        const [admins] = await connection.execute(
+            `SELECT Admin.Organization_ID AS clinicID
+             FROM Admin JOIN User ON User.ID=Admin.User_ID
+             JOIN Organization ON Organization.Organization_ID=Admin.Organization_ID
+             WHERE User.IsActive=1 AND Organization.IsActive=1`,
+        );
         const [doctors] = await connection.execute(
-            'SELECT ID AS databaseID, Blockchain_ID AS actorID, Clinic_ID AS clinicID FROM Doctor WHERE Blockchain_ID IS NOT NULL',
+            `SELECT Doctor.ID AS databaseID, Doctor.Blockchain_ID AS actorID, Doctor.Clinic_ID AS clinicID,
+                Doctor.Works_At AS worksAt, Doctor.Specialty AS speciality, Doctor.Emirates_ID AS emiratesID,
+                Doctor.License_Number AS licenseNumber, User.First_Name AS firstName, User.Last_Name AS lastName,
+                User.Email AS email, User.Contact_Number AS contactNumber, User.Created_Date AS createdDate
+             FROM Doctor JOIN User ON User.ID=Doctor.ID
+             JOIN Organization ON Organization.Organization_ID=Doctor.Clinic_ID
+             WHERE Doctor.Blockchain_ID IS NOT NULL AND User.IsActive=1 AND Organization.IsActive=1`,
         );
         const [patients] = await connection.execute(
             `SELECT Patient.ID AS databaseID, Patient.Blockchain_ID AS actorID,
@@ -59,7 +71,8 @@ const main = async () => {
                 Patient.Medications AS medications, Patient.Insurance_Details AS insuranceDetails
              FROM Patient
              JOIN User ON User.ID = Patient.ID
-             WHERE Patient.Blockchain_ID IS NOT NULL`,
+             JOIN Organization ON Organization.Organization_ID=Patient.Clinic_ID
+             WHERE Patient.Blockchain_ID IS NOT NULL AND User.IsActive=1 AND Organization.IsActive=1`,
         );
         const unscoped = [
             ...doctors.filter((row) => row.clinicID === null || row.clinicID === undefined),
@@ -70,13 +83,15 @@ const main = async () => {
         }
         let created = 0;
         for (const identity of [
+            ...admins.map((row) => ({ role: 'admin', actorID: `AdminClinic${row.clinicID}`, clinicID: row.clinicID })),
             ...doctors.map((row) => ({ ...row, role: 'doctor' })),
             ...patients.map((row) => ({ ...row, role: 'patient' })),
         ]) {
             const result = await enrollIdentity({ ccpPath, walletPath, ...identity });
             if (result.created) created += 1;
         }
-        console.log(`Fabric identity reconciliation complete: ${created} created, ${doctors.length + patients.length - created} already present`);
+        const identityCount = admins.length + doctors.length + patients.length;
+        console.log(`Fabric identity reconciliation complete: ${created} created, ${identityCount - created} already present`);
 
         const wallet = await Wallets.newFileSystemWallet(walletPath);
         const ccp = require(ccpPath);
@@ -84,7 +99,7 @@ const main = async () => {
             doctors.map((doctor) => [String(doctor.databaseID), String(doctor.actorID)]),
         );
         const knownDoctorBlockchainIDs = new Set(doctors.map((doctor) => String(doctor.actorID)));
-        const assignmentsByClinic = new Map();
+        const assignmentsByClinic = new Map(admins.map((admin) => [String(admin.clinicID), []]));
         const desiredDoctorsByPatient = new Map();
         const desiredPatientsByDoctor = new Map(doctors.map((doctor) => [String(doctor.actorID), []]));
         const skippedAssignments = [];
@@ -186,7 +201,19 @@ const main = async () => {
                 }
                 for (const doctor of doctors.filter((row) => String(row.clinicID) === String(clinicID))) {
                     try {
-                        const current = JSON.parse((await contract.evaluateTransaction('ReadDoctor', String(doctor.actorID))).toString());
+                        let current;
+                        try {
+                            current = JSON.parse((await contract.evaluateTransaction('ReadDoctor', String(doctor.actorID))).toString());
+                        } catch (error) {
+                            if (!String(error.message || error).includes('does not exist')) throw error;
+                            current = JSON.parse((await contract.submitTransaction(
+                                'addDoctor', String(doctor.actorID), String(doctor.firstName), String(doctor.lastName),
+                                String(doctor.emiratesID), String(doctor.speciality), String(doctor.worksAt), String(clinicID),
+                                String(doctor.email), String(doctor.contactNumber), String(doctor.licenseNumber),
+                                doctor.createdDate ? new Date(doctor.createdDate).toISOString() : new Date().toISOString(),
+                                JSON.stringify(desiredPatientsByDoctor.get(String(doctor.actorID)) || []),
+                            )).toString());
+                        }
                         await contract.submitTransaction(
                             'UpdateDoctorInfo',
                             String(doctor.actorID),

@@ -130,7 +130,10 @@ const web = [
       request('Assign Patient to Doctor', 'POST', db, '/patients/{{patientId}}/assign',
         'Assigns a patient through the public application API. The backend validates clinic scope, refreshes patient metadata/hash, and updates both ledger relationship directions.',
         { body: { doctorID: '{{doctorId}}' } }),
-      request('Delete Patient', 'DELETE', db, '/patients/{{patientId}}', 'Clinic-admin deletion of a patient from MySQL and Fabric.'),
+      request('Unassign Patient from Doctor', 'POST', db, '/patients/{{patientId}}/unassign',
+        'Removes both directions of a doctor-patient relationship through the dedicated lifecycle workflow.',
+        { body: { doctorID: '{{doctorId}}' } }),
+      request('Deactivate Patient', 'DELETE', db, '/patients/{{patientId}}', 'Disables patient access, preserves clinical history, removes active assignments, and retires the Fabric identity.'),
     ],
   },
   {

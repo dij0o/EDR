@@ -32,9 +32,10 @@ test('admin-only create validates both patient and doctor clinic scope', () => {
 test('appointment doctor options include clinic doctors and assigned doctors without clinic metadata', () => {
   const source = route('get', '/appointment-options/doctors');
   assert.match(source, /requireRoles\('admin'\)/);
-  assert.match(source, /Doctor\.Clinic_ID=\?/);
-  assert.match(source, /Doctor\.Clinic_ID IS NULL/);
-  assert.match(source, /JSON_CONTAINS\(Patient\.Doctors/);
+  assert.match(api, /const CLINIC_DOCTOR_SCOPE = `\(Doctor\.Clinic_ID=\?/);
+  assert.match(api, /Doctor\.Clinic_ID IS NULL/);
+  assert.match(api, /JSON_CONTAINS\(Patient\.Doctors/);
+  assert.match(source, /User\.IsActive=1/);
 });
 
 test('update and cancel are admin-only and patient-clinic scoped', () => {
@@ -46,9 +47,11 @@ test('update and cancel are admin-only and patient-clinic scoped', () => {
 });
 
 test('patient list derives identity from JWT and supports upcoming and past partitions', () => {
-  assert.match(api, /Patient\.Blockchain_ID = \?/);
-  assert.match(api, /params = \[req\.user\.blockchainID\]/);
-  assert.match(api, /period === 'upcoming'/);
-  assert.match(api, /period === 'past'/);
-  assert.doesNotMatch(api, /req\.query\.patientID/);
+  const start = api.indexOf('const listAppointments = async');
+  const source = api.slice(start, api.indexOf('\n};', start) + 3);
+  assert.match(source, /Patient\.Blockchain_ID = \?/);
+  assert.match(source, /params = \[req\.user\.blockchainID\]/);
+  assert.match(source, /period === 'upcoming'/);
+  assert.match(source, /period === 'past'/);
+  assert.doesNotMatch(source, /req\.query\.patientID/);
 });
