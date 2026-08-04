@@ -26,6 +26,9 @@ test('admin-only create validates both patient and doctor clinic scope', () => {
   assert.match(source, /Patient_Doctors/);
   assert.match(source, /APPOINTMENT_DOCTOR_SCOPE_DENIED/);
   assert.match(source, /requireAdminClinic\(req, rows\[0\]\.Doctor_Clinic_ID\)/);
+  assert.match(source, /Doctor\.Specialty AS Doctor_Specialty/);
+  assert.match(source, /APPOINTMENT_SPECIALTY_MISMATCH/);
+  assert.match(source, /authoritativeSpecialty/);
   assert.match(source, /INSERT INTO Appointment/);
 });
 
@@ -42,6 +45,8 @@ test('update and cancel are admin-only and patient-clinic scoped', () => {
   const update = route('put', '/appointments/:id');
   const cancel = route('patch', '/appointments/:id/cancel');
   for (const source of [update, cancel]) { assert.match(source, /requireRoles\('admin'\)/); assert.match(source, /requireAdminClinic/); }
+  assert.match(update, /APPOINTMENT_CONTEXT_IMMUTABLE/);
+  assert.match(update, /APPOINTMENT_SPECIALTY_IMMUTABLE/);
   assert.match(update, /Status='scheduled'/);
   assert.match(cancel, /Status='cancelled'/);
 });

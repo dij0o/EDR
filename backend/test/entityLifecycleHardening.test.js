@@ -26,6 +26,15 @@ test('patient profile updates cannot mutate identity, tenant, assignments, or cr
   assert.doesNotMatch(route, /Clinic_ID=\?, Doctors=\?/);
 });
 
+test('patient creation derives clinic ownership from the authenticated admin', () => {
+  const route = server.match(/app\.post\('\/patients'[\s\S]*?\n\}\);/)[0];
+  assert.match(server, /app\.get\('\/clinic\/me'.*requireRoles\('admin'\)/);
+  assert.match(route, /const clinicID = Number\(req\.user\.organizationId\)/);
+  assert.match(route, /const createBody = \{ \.\.\.req\.body, clinicID \}/);
+  assert.match(route, /Every assigned doctor must be active and belong to the patient clinic/);
+  assert.doesNotMatch(route, /Number\(req\.body\.clinicID\)/);
+});
+
 test('actor retirement is coordinated and preserves ledger history', () => {
   assert.match(enrollment, /const retireIdentity/);
   assert.match(enrollment, /ca\.revoke/);

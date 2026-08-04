@@ -306,6 +306,27 @@
               "response": []
             },
             {
+              "name": "Get My Clinic",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Clinic-admin-only lookup derived from the authenticated session; used to prefill read-only patient ownership details.",
+                "url": "{{databaseApiBaseUrl}}/clinic/me"
+              },
+              "response": []
+            },
+            {
               "name": "Create Clinic and Primary Admin",
               "request": {
                 "method": "POST",

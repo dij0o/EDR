@@ -20,6 +20,9 @@ test('medical and dental SRS routes enforce doctor identity and complete fields'
   assert.match(db, /\['medical', 'dental'\]/);
   assert.match(db, /medicalHistory.*allergies.*labResults.*medications/);
   assert.match(db, /treatmentPhase.*procedureCode.*tooth.*ceramicType.*prescriptions.*diagnostics/);
+  assert.match(db, /DOCTOR_ID_MISMATCH/);
+  assert.match(db, /Clinical records may be written only for an active assigned patient/);
+  assert.match(db, /Radiographic files may be uploaded only for an active assigned patient/);
   assert.match(api, /clinical-record-metadata'.*requireRoles\('doctor'\).*requireDoctorSelfBody\('doctorID'\)/s);
   assert.match(chaincode, /async AddDentalChartEntry/);
   assert.match(chaincode, /_requirePatientRecordAccess\(ctx, patientID, patient, 'doctor'\)/);

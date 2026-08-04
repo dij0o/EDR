@@ -93,6 +93,7 @@ const web = [
     name: 'Clinic Management',
     item: [
       request('List Clinics', 'GET', db, '/clinics', 'System-admin-only list of application-level clinics and their admin counts.'),
+      request('Get My Clinic', 'GET', db, '/clinic/me', 'Clinic-admin-only lookup derived from the authenticated session; used to prefill read-only patient ownership details.'),
       request('Create Clinic and Primary Admin', 'POST', db, '/clinics',
         'System-admin-only atomic creation of a clinic and its required first clinic admin.',
         { body: { name: 'Example Dental Clinic', address: 'Dubai, UAE', description: 'Postman example clinic', coordinates: '25.2048,55.2708', type: 'Dental Clinic', admin: { firstName: 'Primary', lastName: 'Admin', email: 'primary.admin@example.com', contactNumber: '+971500000002', password: '{{temporaryPassword}}' } } }),

@@ -79,9 +79,10 @@ test('patient management uses complete themed workflows without browser dialogs'
   assert.match(patientCard, /title=\{`Deactivate \$\{fullName\}\?`\}/);
   assert.match(patientCard, /patients\/\$\{encodeURIComponent\(patientId\)\}\/unassign/);
   assert.match(patientDialog, /method: isEditing \? 'PUT' : 'POST'/);
+  assert.match(patientDialog, /clinic\/me/);
   assert.match(patientDialog, /appointment-options\/doctors/);
-  assert.match(patientDialog, /type="search" role="combobox"/);
-  assert.match(patientDialog, /aria-multiselectable="true"/);
+  assert.match(patientDialog, /isMulti isSearchable/);
+  assert.match(patientDialog, /readOnly aria-readonly="true"/);
   assert.doesNotMatch(patientDialog, /Doctor IDs \(comma-separated\)/);
   assert.match(patientCards, /role === 'doctor' && <RequestPatientCard/);
   for (const field of ['nationality', 'address', 'bloodType', 'medicalHistory', 'allergies', 'medications', 'insuranceProvider']) assert.match(patientDialog, new RegExp(field));

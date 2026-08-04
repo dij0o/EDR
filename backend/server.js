@@ -788,6 +788,17 @@ app.get('/clinics', authenticateToken, requireRoles('system'), async (_req, res)
     } catch (error) { console.error(error); return sendApiError(res, 500, 'CLINIC_LIST_FAILED', 'Unable to load clinics'); }
 });
 
+app.get('/clinic/me', authenticateToken, requireRoles('admin'), async (req, res) => {
+    try {
+        const rows = await query(`SELECT Organization_ID,Name,Address,Type FROM Organization
+            WHERE Organization_ID=? AND IsActive=1 LIMIT 1`, [req.user.organizationId]);
+        if (!rows.length) return sendApiError(res, 404, 'CLINIC_NOT_FOUND', 'Authenticated admin clinic was not found');
+        return res.json({ success: true, data: {
+            clinicID: rows[0].Organization_ID, name: rows[0].Name, address: rows[0].Address, type: rows[0].Type,
+        } });
+    } catch (error) { return sendApiError(res, 500, 'CLINIC_READ_FAILED', 'Unable to retrieve authenticated admin clinic'); }
+});
+
 app.get('/lifecycle-operations', authenticateToken, requireRoles('system'), async (req, res) => {
     const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
     const status = req.query.status ? String(req.query.status).toUpperCase() : null;
@@ -1146,48 +1157,51 @@ const validatePatientPayload = (body, isCreate = false) => {
 app.post('/patients', authenticateToken, requireRoles('admin'), async (req, res) => {
     let connection; let operationID;
     try {
-        validatePatientPayload(req.body, true);
-        requireAdminClinic(req, req.body.clinicID);
+        const clinicID = Number(req.user.organizationId);
+        if (!clinicID) throw Object.assign(new Error('Authenticated admin has no clinic'), { statusCode: 403, code: 'ADMIN_CLINIC_REQUIRED' });
+        if (req.body.clinicID !== undefined) requireAdminClinic(req, req.body.clinicID);
+        const createBody = { ...req.body, clinicID };
+        validatePatientPayload(createBody, true);
         connection = await db.promise().getConnection();
         await connection.beginTransaction();
         const [duplicates] = await connection.query(
             'SELECT Patient.ID FROM Patient INNER JOIN User ON Patient.ID = User.ID WHERE Patient.Emirates_ID = ? OR User.Email = ? LIMIT 1',
-            [req.body.emiratesID, req.body.email]
+            [createBody.emiratesID, createBody.email]
         );
         if (duplicates.length) { const error = new Error('Patient email or Emirates ID already exists'); error.statusCode = 409; throw error; }
-        const requestedDoctors = [...new Set((req.body.doctors || []).map(String))];
+        const requestedDoctors = [...new Set((createBody.doctors || []).map(String))];
         if (requestedDoctors.length) {
             const placeholders = requestedDoctors.map(() => '?').join(',');
             const [doctorRows] = await connection.query(
                 `SELECT Doctor.Blockchain_ID FROM Doctor JOIN User ON User.ID=Doctor.ID
                  WHERE Doctor.Blockchain_ID IN (${placeholders}) AND Doctor.Clinic_ID=? AND User.IsActive=1`,
-                [...requestedDoctors, Number(req.body.clinicID)],
+                [...requestedDoctors, clinicID],
             );
             if (doctorRows.length !== requestedDoctors.length) {
                 const error = new Error('Every assigned doctor must be active and belong to the patient clinic'); error.statusCode = 400; throw error;
             }
         }
 
-        const passwordHash = await bcrypt.hash(req.body.password, 10);
+        const passwordHash = await bcrypt.hash(createBody.password, 10);
         const [userResult] = await connection.query(
             'INSERT INTO User (First_Name, Last_Name, Password, Email, Contact_Number, Role_ID, Created_Date, IsActive) VALUES (?, ?, ?, ?, ?, ?, NOW(), 1)',
-            [req.body.firstName, req.body.lastName, passwordHash, req.body.email, req.body.contactNumber, PATIENT_ROLE_ID]
+            [createBody.firstName, createBody.lastName, passwordHash, createBody.email, createBody.contactNumber, PATIENT_ROLE_ID]
         );
         const patientID = `Patient-${crypto.randomUUID()}`;
-        operationID = await beginLifecycleOperation(req, 'PATIENT_CREATE', 'patient', patientID, Number(req.body.clinicID), req.body);
+        operationID = await beginLifecycleOperation(req, 'PATIENT_CREATE', 'patient', patientID, clinicID, createBody);
         await connection.query(`INSERT INTO Patient
             (ID, Date_of_Birth, Gender, Emirates_ID, Blockchain_ID, Nationality, Address, Blood_Type, Medical_History, Allergies, Medications, Insurance_Details, Clinic_ID, Doctors, Modified_Date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`, [
-            userResult.insertId, req.body.dateOfBirth, req.body.gender, req.body.emiratesID, patientID, req.body.nationality,
-            req.body.address, req.body.bloodType, JSON.stringify(req.body.medicalHistory), JSON.stringify(req.body.allergies),
-            JSON.stringify(req.body.medications), JSON.stringify(req.body.insuranceDetails), Number(req.body.clinicID),
+            userResult.insertId, createBody.dateOfBirth, createBody.gender, createBody.emiratesID, patientID, createBody.nationality,
+            createBody.address, createBody.bloodType, JSON.stringify(createBody.medicalHistory), JSON.stringify(createBody.allergies),
+            JSON.stringify(createBody.medications), JSON.stringify(createBody.insuranceDetails), clinicID,
             JSON.stringify(requestedDoctors)
         ]);
-        const patient = { ...req.body, doctors: requestedDoctors, patientID, password: undefined };
+        const patient = { ...createBody, doctors: requestedDoctors, patientID, password: undefined };
         const dataHash = patientHash(patient);
-        await provisionFabricIdentity(req, 'patient', patientID, Number(req.body.clinicID));
+        await provisionFabricIdentity(req, 'patient', patientID, clinicID);
         await callBlockchain(req, '/patient-metadata', 'POST', {
-            patientID, clinicID: Number(req.body.clinicID), doctors: requestedDoctors,
+            patientID, clinicID, doctors: requestedDoctors,
             offChainRef: `mysql:Patient/${userResult.insertId}`, dataHash
         });
         for (const doctorID of requestedDoctors) {
@@ -1362,6 +1376,12 @@ app.post(['/clinical-records', '/addMedicalRecord', '/addDentalChartEntry'], aut
         validateClinicalPayload(recordType, req.body.payload);
         if (!req.body.patientID) return sendApiError(res, 400, 'VALIDATION_ERROR', 'patientID is required');
         if (!req.user.blockchainID) return sendApiError(res, 403, 'DOCTOR_IDENTITY_REQUIRED', 'Authenticated doctor is missing a blockchain identity');
+        if (req.body.doctorID !== undefined && String(req.body.doctorID) !== String(req.user.blockchainID)) {
+            return sendApiError(res, 400, 'DOCTOR_ID_MISMATCH', 'doctorID is derived from the authenticated doctor and cannot be overridden');
+        }
+        const authorizedPatients = await query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID=? AND User.IsActive=1
+            AND JSON_CONTAINS(Patient.Doctors,JSON_QUOTE(?)) LIMIT 1`, [req.body.patientID, String(req.user.blockchainID)]);
+        if (!authorizedPatients.length) return sendApiError(res, 403, 'PATIENT_ASSIGNMENT_REQUIRED', 'Clinical records may be written only for an active assigned patient');
         const recordID = `Clinical-${crypto.randomUUID()}`;
         const dataHash = clinicalHash(req.body.payload);
         const createdAt = new Date().toISOString();
@@ -1513,8 +1533,13 @@ app.post('/radiographic-files', authenticateToken, requireRoles('doctor'),
     express.raw({ type: 'application/octet-stream', limit: Number(process.env.RADIOGRAPHIC_MAX_FILE_BYTES || 536870912) }),
     async (req, res) => {
         try {
+            const patientID = String(req.get('x-patient-id') || '');
+            if (!patientID) return sendApiError(res, 400, 'PATIENT_REQUIRED', 'x-patient-id is required');
+            const authorizedPatients = await query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID=? AND User.IsActive=1
+                AND JSON_CONTAINS(Patient.Doctors,JSON_QUOTE(?)) LIMIT 1`, [patientID, String(req.user.blockchainID || '')]);
+            if (!authorizedPatients.length) return sendApiError(res, 403, 'PATIENT_ASSIGNMENT_REQUIRED', 'Radiographic files may be uploaded only for an active assigned patient');
             const response = await callBlockchainResponse(req, '/radiographic-files', 'POST', req.body, 'application/octet-stream', {
-                'x-patient-id': req.get('x-patient-id') || '',
+                'x-patient-id': patientID,
                 'x-file-name': req.get('x-file-name') || '',
                 'x-file-media-type': req.get('x-file-media-type') || 'application/octet-stream',
             });
@@ -1600,18 +1625,23 @@ app.get('/appointments', authenticateToken, requireRoles('admin', 'doctor', 'pat
 app.post('/appointments', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
         const { patientID, doctorID, appointmentDateTime, specialty, meetingFor, notes } = req.body;
-        if (![patientID, doctorID, appointmentDateTime, specialty, meetingFor].every(Boolean)) return sendApiError(res, 400, 'VALIDATION_ERROR', 'patientID, doctorID, appointmentDateTime, specialty, and meetingFor are required');
+        if (![patientID, doctorID, appointmentDateTime, meetingFor].every(Boolean)) return sendApiError(res, 400, 'VALIDATION_ERROR', 'patientID, doctorID, appointmentDateTime, and meetingFor are required');
         const rows = await query(`SELECT Patient.ID AS Patient_DB_ID, Patient.Clinic_ID AS Patient_Clinic_ID, Patient.Doctors AS Patient_Doctors,
-            Doctor.ID AS Doctor_DB_ID, Doctor.Clinic_ID AS Doctor_Clinic_ID
-            FROM Patient JOIN Doctor ON Doctor.Blockchain_ID=? WHERE Patient.Blockchain_ID=? LIMIT 1`, [doctorID, patientID]);
+            Doctor.ID AS Doctor_DB_ID, Doctor.Clinic_ID AS Doctor_Clinic_ID, Doctor.Specialty AS Doctor_Specialty
+            FROM Patient JOIN User PatientUser ON PatientUser.ID=Patient.ID
+            JOIN Doctor ON Doctor.Blockchain_ID=? JOIN User DoctorUser ON DoctorUser.ID=Doctor.ID
+            WHERE Patient.Blockchain_ID=? AND PatientUser.IsActive=1 AND DoctorUser.IsActive=1 LIMIT 1`, [doctorID, patientID]);
         if (!rows.length) return sendApiError(res, 404, 'APPOINTMENT_PARTY_NOT_FOUND', 'Patient or doctor not found');
         requireAdminClinic(req, rows[0].Patient_Clinic_ID);
         if (rows[0].Doctor_Clinic_ID === null) {
             const assignedDoctors = typeof rows[0].Patient_Doctors === 'string' ? JSON.parse(rows[0].Patient_Doctors || '[]') : (rows[0].Patient_Doctors || []);
             if (!assignedDoctors.map(String).includes(String(doctorID))) return sendApiError(res, 403, 'APPOINTMENT_DOCTOR_SCOPE_DENIED', 'Doctor must be assigned to the patient in the admin clinic');
         } else requireAdminClinic(req, rows[0].Doctor_Clinic_ID);
+        const authoritativeSpecialty = rows[0].Doctor_Specialty;
+        if (!authoritativeSpecialty) return sendApiError(res, 409, 'DOCTOR_SPECIALTY_REQUIRED', 'Selected doctor has no configured specialty');
+        if (specialty !== undefined && String(specialty) !== String(authoritativeSpecialty)) return sendApiError(res, 400, 'APPOINTMENT_SPECIALTY_MISMATCH', 'Appointment specialty must match the selected doctor');
         const result = await query(`INSERT INTO Appointment (Meeting_For, Doctor_ID, Patient_ID, Date, Appointment_Date_Time, Specialty, Status, Notes, Modified_Date)
-            VALUES (?, ?, ?, DATE(?), ?, ?, 'scheduled', ?, NOW())`, [meetingFor, rows[0].Doctor_DB_ID, rows[0].Patient_DB_ID, appointmentDateTime, appointmentDateTime, specialty, notes || null]);
+            VALUES (?, ?, ?, DATE(?), ?, ?, 'scheduled', ?, NOW())`, [meetingFor, rows[0].Doctor_DB_ID, rows[0].Patient_DB_ID, appointmentDateTime, appointmentDateTime, authoritativeSpecialty, notes || null]);
         const created = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [result.insertId]);
         return res.status(201).json({ success: true, data: created[0] });
     } catch (error) { return sendApiError(res, error.statusCode || 500, 'APPOINTMENT_CREATE_FAILED', error.message); }
@@ -1623,9 +1653,11 @@ app.put('/appointments/:id', authenticateToken, requireRoles('admin'), async (re
         if (!existing.length) return sendApiError(res, 404, 'APPOINTMENT_NOT_FOUND', 'Appointment not found');
         const scope = await query('SELECT Patient.Clinic_ID AS Patient_Clinic_ID FROM Appointment JOIN Patient ON Appointment.Patient_ID=Patient.ID WHERE Appointment.Appointment_ID=?', [req.params.id]);
         requireAdminClinic(req, scope[0].Patient_Clinic_ID);
+        if (['patientID', 'doctorID', 'clinicID'].some((field) => req.body[field] !== undefined)) return sendApiError(res, 400, 'APPOINTMENT_CONTEXT_IMMUTABLE', 'Patient, doctor, and clinic require a dedicated rescheduling workflow');
+        if (req.body.specialty !== undefined && String(req.body.specialty) !== String(existing[0].Specialty)) return sendApiError(res, 400, 'APPOINTMENT_SPECIALTY_IMMUTABLE', 'Appointment specialty is derived from the selected doctor');
         const appointmentDateTime = req.body.appointmentDateTime || existing[0].Appointment_Date_Time;
-        await query(`UPDATE Appointment SET Meeting_For=?, Date=DATE(?), Appointment_Date_Time=?, Specialty=?, Notes=?, Status='scheduled', Modified_Date=NOW() WHERE Appointment_ID=?`,
-            [req.body.meetingFor || existing[0].Meeting_For, appointmentDateTime, appointmentDateTime, req.body.specialty || existing[0].Specialty, req.body.notes ?? existing[0].Notes, req.params.id]);
+        await query(`UPDATE Appointment SET Meeting_For=?, Date=DATE(?), Appointment_Date_Time=?, Notes=?, Status='scheduled', Modified_Date=NOW() WHERE Appointment_ID=?`,
+            [req.body.meetingFor || existing[0].Meeting_For, appointmentDateTime, appointmentDateTime, req.body.notes ?? existing[0].Notes, req.params.id]);
         const updated = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [req.params.id]);
         return res.json({ success: true, data: updated[0] });
     } catch (error) { return sendApiError(res, error.statusCode || 500, 'APPOINTMENT_UPDATE_FAILED', error.message); }
