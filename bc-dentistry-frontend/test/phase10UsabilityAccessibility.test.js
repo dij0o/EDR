@@ -100,3 +100,11 @@ test('patient management uses complete themed workflows without browser dialogs'
   const source = sourceFiles.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
   assert.doesNotMatch(source, /\b(?:window\.)?(?:alert|prompt|confirm)\s*\(/);
 });
+
+test('lab results uses a full-width responsive page instead of the legacy twelve-column child grid', () => {
+  const page = read('src/assets/Pages/LabResults.jsx');
+  assert.match(page, /<main id="LabResults" className="mb-24 min-w-0 w-full">/);
+  assert.match(page, /sm:grid-cols-2/);
+  assert.match(page, /min-w-\[52rem\]/);
+  assert.doesNotMatch(page, /<MainContainer/);
+});
