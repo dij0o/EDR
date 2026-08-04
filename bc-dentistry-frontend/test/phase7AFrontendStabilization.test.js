@@ -45,4 +45,21 @@ test('appointments page consumes the scoped API response envelope without mappin
   assert.match(source, /Array\.isArray\(data\?\.data\) \? data\.data : \[\]/);
   assert.doesNotMatch(source, /setAppointmentsTickets\(data\)/);
   assert.match(source, /No appointments found\./);
+  assert.match(source, /onDataLoaded\?\.\(appointments\)/);
+  assert.match(source, /className="col-span-12 rounded-xl border bg-white p-6"/);
+});
+
+test('appointment statistics use the scoped API records rather than bundled demo data', () => {
+  const source = read('src/assets/Sections/Appointments/AppointmentsStatstics.jsx');
+  assert.doesNotMatch(source, /from "\.\.\/\.\.\/\.\.\/\.\.\/data"/);
+  assert.match(source, /appointments\.reduce/);
+  assert.match(source, /appointments\.length/);
+  assert.match(source, /new Set\(appointments\.map/);
+});
+
+test('patient profile uses an initials avatar when image upload is unavailable', () => {
+  const source = read('src/assets/components/Patient/PatientMainBar.jsx');
+  assert.match(source, /const initials =/);
+  assert.match(source, /role="img"/);
+  assert.doesNotMatch(source, /<img\s+src=""/);
 });

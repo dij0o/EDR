@@ -4,7 +4,7 @@ import AppointmentTicket from "../../components/Appointments/AppointmentTicket";
 import { authHeaders, databaseUrl, handleUnauthorizedResponse } from '../../config/api.js';
 import { useRole } from '../../Context/RoleContext.jsx';
 
-const AppointmentsSection = ({ refreshKey = 0 }) => {
+const AppointmentsSection = ({ refreshKey = 0, onDataLoaded, onLoadingChange }) => {
     const [appointmentsTickets, setAppointmentsTickets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -12,6 +12,9 @@ const AppointmentsSection = ({ refreshKey = 0 }) => {
     const isPatient = userRole?.toLowerCase() === 'patient';
 
     const fetchAppointments = async () => {
+            setLoading(true);
+            onLoadingChange?.(true);
+            setError('');
             try {
                 const response = await fetch(databaseUrl('/appointments'), { headers: authHeaders() });
                 handleUnauthorizedResponse(response);
@@ -19,11 +22,16 @@ const AppointmentsSection = ({ refreshKey = 0 }) => {
                 if (!response.ok || data?.success === false) {
                     throw new Error(data?.error?.message || 'Unable to load appointments.');
                 }
-                setAppointmentsTickets(Array.isArray(data?.data) ? data.data : []);
+                const appointments = Array.isArray(data?.data) ? data.data : [];
+                setAppointmentsTickets(appointments);
+                onDataLoaded?.(appointments);
             } catch (error) {
                 setError(error.message || 'Unable to load appointments.');
+                setAppointmentsTickets([]);
+                onDataLoaded?.([]);
             } finally {
                 setLoading(false);
+                onLoadingChange?.(false);
             }
         };
     useEffect(() => {
@@ -69,9 +77,9 @@ const AppointmentsSection = ({ refreshKey = 0 }) => {
 
     return (
         <MainContainer Id="AppointmentsSection" classes={'mt-6 gap-y-6'}>
-            {loading && <p>Loading appointments...</p>}
-            {!loading && error && <p role="alert">{error}</p>}
-            {!loading && !error && allAppointments.length === 0 && <p>No appointments found.</p>}
+            {loading && <p className="col-span-12">Loading appointments...</p>}
+            {!loading && error && <p role="alert" className="col-span-12">{error}</p>}
+            {!loading && !error && allAppointments.length === 0 && <p className="col-span-12 rounded-xl border bg-white p-6">No appointments found.</p>}
             {!loading && !error && isPatient && allAppointments.length > 0 && <>
                 <section aria-labelledby="upcoming-appointments" className="col-span-12 grid grid-cols-12 gap-6"><h2 id="upcoming-appointments" className="col-span-12 text-xl font-bold">Upcoming appointments</h2>{upcomingAppointments.length ? upcomingAppointments : <p className="col-span-12">No upcoming appointments.</p>}</section>
                 <section aria-labelledby="past-appointments" className="col-span-12 grid grid-cols-12 gap-6"><h2 id="past-appointments" className="col-span-12 text-xl font-bold">Past and cancelled appointments</h2>{pastAppointments.length ? pastAppointments : <p className="col-span-12">No past appointments.</p>}</section>
