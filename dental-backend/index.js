@@ -237,7 +237,7 @@ const sendFabricError = (res, error) => {
     res.status(statusCode).json({
         success: false,
         error: {
-            code: statusCode === 400 ? 'VALIDATION_ERROR' : statusCode === 403 ? 'FORBIDDEN' : 'BLOCKCHAIN_ERROR',
+            code: error.code || (statusCode === 400 ? 'VALIDATION_ERROR' : statusCode === 403 ? 'FORBIDDEN' : 'BLOCKCHAIN_ERROR'),
             message
         }
     });
@@ -324,6 +324,38 @@ const notificationTargetFromUser = (user) => {
     return { role: normalizeRole(user.role), id: user.blockchainID || user.organizationId || user.id };
 };
 
+const requireValidPatientNames = (body) => {
+    for (const field of ['firstName', 'lastName']) {
+        if (Array.from(String(body[field] || '')).length > 100) {
+            const error = new Error(`${field === 'firstName' ? 'First' : 'Last'} name must be 100 characters or fewer`);
+            error.statusCode = 400;
+            error.code = 'PATIENT_NAME_TOO_LONG';
+            throw error;
+        }
+    }
+};
+
+const requireLegacyProfileBounds = (body, entity) => {
+    requireValidPatientNames(body);
+    const limits = entity === 'doctor'
+        ? { email: 254, contactNumber: 25, emiratesID: 18, speciality: 100, worksAt: 255, licenseNumber: 100 }
+        : { email: 254, contactNumber: 25, emiratesID: 18, address: 1000 };
+    for (const [field, max] of Object.entries(limits)) {
+        if (Array.from(String(body[field] || '')).length > max) {
+            const error = new Error(`${field} must be ${max} characters or fewer`); error.statusCode = 400; error.code = 'FIELD_TOO_LONG'; throw error;
+        }
+    }
+    if (!/^\S+@\S+\.\S+$/.test(String(body.email)) || Array.from(String(body.email)).length > 254) {
+        const error = new Error('Invalid email address'); error.statusCode = 400; error.code = 'INVALID_EMAIL'; throw error;
+    }
+    if (!/^\+?[0-9][0-9 ()-]{6,24}$/.test(String(body.contactNumber))) {
+        const error = new Error('Invalid contact number'); error.statusCode = 400; error.code = 'INVALID_CONTACT_NUMBER'; throw error;
+    }
+    if (!/^784-\d{4}-\d{7}-\d$/.test(String(body.emiratesID))) {
+        const error = new Error('Emirates ID must use the format 784-YYYY-NNNNNNN-C'); error.statusCode = 400; error.code = 'INVALID_EMIRATES_ID'; throw error;
+    }
+};
+
 app.post('/internal/identities', authenticateToken, requireRoles('admin', 'system'), async (req, res) => {
     try {
         requireFields(req.body, ['role', 'actorID']);
@@ -356,6 +388,13 @@ app.delete('/internal/identities', authenticateToken, requireRoles('admin', 'sys
     } catch (error) {
         return sendApiError(res, error.statusCode || 503, 'FABRIC_IDENTITY_RETIREMENT_FAILED', error.message);
     }
+});
+
+app.post('/internal/clinics/:clinicID/deactivate', authenticateToken, requireRoles('system'), async (req, res) => {
+    try {
+        const result = await withContract(req, (contract) => contract.submitTransaction('DeactivateClinicActors', String(req.params.clinicID)));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
 });
 
 const notificationDeepLink = (notification) => {
@@ -659,6 +698,7 @@ app.get('/doctor/:id', authenticateToken, requireRoles('admin', 'doctor', 'syste
 app.put('/patient/:id', authenticateToken, requireRoles('admin'), requireAdminClinicBody('clinicID'), async (req, res) => {
     try {
         requireFields(req.body, ['firstName', 'lastName', 'dateOfBirth', 'gender', 'emiratesID', 'email', 'contactNumber', 'address', 'clinicID']);
+        requireLegacyProfileBounds(req.body, 'patient');
         const result = await withContract(req, (contract) => contract.submitTransaction(
             'UpdatePatientInfo', String(req.params.id), String(req.body.firstName), String(req.body.lastName), String(req.body.dateOfBirth),
             String(req.body.gender), String(req.body.emiratesID), String(req.body.email), String(req.body.contactNumber), String(req.body.address),
@@ -684,11 +724,36 @@ app.put('/doctor/:id', authenticateToken, requireRoles('admin'), requireAdminCli
             return sendApiError(res, 400, 'DOCTOR_PROTECTED_FIELD', 'Doctor relationships and immutable metadata cannot be changed through this route');
         }
         requireFields(req.body, ['firstName', 'lastName', 'emiratesID', 'speciality', 'worksAt', 'clinicID', 'email', 'contactNumber', 'licenseNumber']);
-        const result = await withContract(req, (contract) => contract.submitTransaction(
-            'UpdateDoctorInfo', String(req.params.id), String(req.body.firstName), String(req.body.lastName), String(req.body.emiratesID), String(req.body.speciality),
-            String(req.body.worksAt), String(req.body.clinicID), String(req.body.email), String(req.body.contactNumber),
-            String(req.body.licenseNumber), '', '[]'
-        ));
+        requireLegacyProfileBounds(req.body, 'doctor');
+        const result = await withContract(req, async (contract) => {
+            let existingDoctor;
+            try {
+                existingDoctor = parseBufferJson(await contract.evaluateTransaction('ReadDoctor', String(req.params.id)));
+            } catch (error) {
+                if (/does not exist|not found/i.test(error.message || String(error))) {
+                    error.statusCode = 404;
+                    error.code = 'DOCTOR_NOT_FOUND';
+                }
+                throw error;
+            }
+            if (!existingDoctor || String(existingDoctor.doctorID) !== String(req.params.id)) {
+                const error = new Error(`The doctor ${req.params.id} does not exist`);
+                error.statusCode = 404;
+                error.code = 'DOCTOR_NOT_FOUND';
+                throw error;
+            }
+            if (Number(existingDoctor.clinicID) !== Number(req.body.clinicID)) {
+                const error = new Error('Doctor belongs to a different clinic');
+                error.statusCode = 403;
+                error.code = 'DOCTOR_CLINIC_MISMATCH';
+                throw error;
+            }
+            return contract.submitTransaction(
+                'UpdateDoctorInfo', String(req.params.id), String(req.body.firstName), String(req.body.lastName), String(req.body.emiratesID), String(req.body.speciality),
+                String(req.body.worksAt), String(req.body.clinicID), String(req.body.email), String(req.body.contactNumber),
+                String(req.body.licenseNumber), '', '[]'
+            );
+        });
         return sendSuccess(res, parseBufferJson(result));
     } catch (error) { return sendFabricError(res, error); }
 });

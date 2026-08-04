@@ -83,6 +83,11 @@ test('patient management uses complete themed workflows without browser dialogs'
   assert.match(patientDialog, /appointment-options\/doctors/);
   assert.match(patientDialog, /isMulti isSearchable/);
   assert.match(patientDialog, /readOnly aria-readonly="true"/);
+  assert.match(patientDialog, /PATIENT_NAME_MAX_LENGTH = 100/);
+  assert.match(patientDialog, /hyphens and apostrophes\. Maximum 100 characters per field/);
+  assert.match(patientDialog, /aria-describedby=\{isName \? 'patient-name-rule'/);
+  assert.match(patientDialog, /patientFieldLimits/);
+  assert.match(patientDialog, /784-\[0-9\]\{4\}/);
   assert.doesNotMatch(patientDialog, /Doctor IDs \(comma-separated\)/);
   assert.match(patientCards, /role === 'doctor' && <RequestPatientCard/);
   for (const field of ['nationality', 'address', 'bloodType', 'medicalHistory', 'allergies', 'medications', 'insuranceProvider']) assert.match(patientDialog, new RegExp(field));
@@ -99,6 +104,42 @@ test('patient management uses complete themed workflows without browser dialogs'
   visit(sourceRoot);
   const source = sourceFiles.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
   assert.doesNotMatch(source, /\b(?:window\.)?(?:alert|prompt|confirm)\s*\(/);
+});
+
+test('web forms mirror server-side bounds for profiles, appointments, and clinical text', () => {
+  const doctors = read('src/assets/Pages/Doctors.jsx');
+  const clinics = read('src/assets/Pages/Clinics.jsx');
+  const appointment = read('src/assets/components/Appointments/NewAppointmentDialog.jsx');
+  const ticket = read('src/assets/components/Appointments/AppointmentTicket.jsx');
+  const clinical = read('src/assets/components/Patient/ClinicalRecords.jsx');
+  assert.match(doctors, /doctorFieldLimits/);
+  assert.match(doctors, /maxLength=\{72\}/);
+  assert.match(clinics, /clinicLimits/);
+  assert.match(clinics, /adminLimits/);
+  assert.match(appointment, /maxLength=\{255\}/);
+  assert.match(appointment, /maxLength=\{2000\}/);
+  assert.match(ticket, /maxLength=\{1000\}/);
+  assert.match(clinical, /maxLength=\{4000\}/);
+});
+
+test('patient deactivation previews dependencies and explains preserved history', () => {
+  const card = read('src/assets/components/Patients/PatientCard.jsx');
+  assert.match(card, /deactivation-impact/);
+  assert.match(card, /activeToCancel/);
+  assert.match(card, /completedToPreserve/);
+  assert.match(card, /clinicalRecordsToPreserve/);
+  assert.match(card, /retain ledger history/);
+});
+
+test('doctor and clinic deactivation require dependency-aware confirmation', () => {
+  const doctors = read('src/assets/Pages/Doctors.jsx');
+  const clinics = read('src/assets/Pages/Clinics.jsx');
+  assert.match(doctors, /deactivation-impact/);
+  assert.match(doctors, /replacementDoctorID/);
+  assert.match(doctors, /No other active doctor remains/);
+  assert.match(clinics, /deactivation-impact/);
+  assert.match(clinics, /Deactivate clinic and cancel active items/);
+  assert.match(clinics, /ledger history/);
 });
 
 test('lab results uses a full-width responsive page instead of the legacy twelve-column child grid', () => {

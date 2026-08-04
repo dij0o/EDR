@@ -80,6 +80,43 @@ const patientHash = (patient) => crypto.createHash('sha256').update(JSON.stringi
 })).digest('hex');
 
 const clinicalHash = (payload) => crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+const validationError = (code, message) => Object.assign(new Error(message), { statusCode: 400, code });
+const textLength = (value) => Array.from(String(value ?? '')).length;
+const requireTextLimit = (value, field, max, code = 'FIELD_TOO_LONG') => {
+    if (textLength(value) > max) throw validationError(code, `${field} must be ${max} characters or fewer`);
+};
+const validateEmail = (value) => {
+    requireTextLimit(value, 'Email', 254, 'EMAIL_TOO_LONG');
+    if (!/^\S+@\S+\.\S+$/.test(String(value))) throw validationError('INVALID_EMAIL', 'Invalid email address');
+};
+const validateContactNumber = (value) => {
+    requireTextLimit(value, 'Contact number', 25, 'CONTACT_NUMBER_TOO_LONG');
+    if (!/^\+?[0-9][0-9 ()-]{6,24}$/.test(String(value))) throw validationError('INVALID_CONTACT_NUMBER', 'Contact number must contain 7 to 25 valid telephone characters');
+};
+const validateEmiratesID = (value) => {
+    if (!/^784-\d{4}-\d{7}-\d$/.test(String(value))) throw validationError('INVALID_EMIRATES_ID', 'Emirates ID must use the format 784-YYYY-NNNNNNN-C');
+};
+const validatePersonNames = (body, entity = 'Person', code = `${entity.toUpperCase().replace(/\s+/g, '_')}_NAME_TOO_LONG`) => {
+    for (const field of ['firstName', 'lastName']) {
+        requireTextLimit(body[field], `${entity} ${field === 'firstName' ? 'first' : 'last'} name`, 100, code);
+    }
+};
+const validateBoundedJson = (value, label, { maxBytes = 65536, maxDepth = 6, maxArray = 100, maxString = 4000 } = {}) => {
+    if (Buffer.byteLength(JSON.stringify(value ?? null), 'utf8') > maxBytes) throw validationError('CLINICAL_PAYLOAD_TOO_LARGE', `${label} must be ${maxBytes} bytes or fewer`);
+    const visit = (item, depth) => {
+        if (depth > maxDepth) throw validationError('CLINICAL_PAYLOAD_TOO_DEEP', `${label} nesting exceeds ${maxDepth} levels`);
+        if (typeof item === 'string' && textLength(item) > maxString) throw validationError('CLINICAL_TEXT_TOO_LONG', `${label} text values must be ${maxString} characters or fewer`);
+        if (Array.isArray(item)) {
+            if (item.length > maxArray) throw validationError('CLINICAL_ARRAY_TOO_LARGE', `${label} arrays may contain at most ${maxArray} items`);
+            item.forEach((entry) => visit(entry, depth + 1));
+        } else if (item && typeof item === 'object') {
+            const entries = Object.entries(item);
+            if (entries.length > 100) throw validationError('CLINICAL_OBJECT_TOO_LARGE', `${label} objects may contain at most 100 fields`);
+            entries.forEach(([key, entry]) => { requireTextLimit(key, `${label} field name`, 100, 'CLINICAL_FIELD_NAME_TOO_LONG'); visit(entry, depth + 1); });
+        }
+    };
+    visit(value, 0);
+};
 const validateClinicalPayload = (recordType, payload) => {
     if (!['medical', 'dental'].includes(recordType)) { const error = new Error('recordType must be medical or dental'); error.statusCode = 400; throw error; }
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) { const error = new Error('payload must be an object'); error.statusCode = 400; throw error; }
@@ -87,6 +124,7 @@ const validateClinicalPayload = (recordType, payload) => {
         : ['treatmentPhase', 'procedureCode', 'tooth', 'ceramicType', 'prescriptions', 'diagnostics'];
     const missing = required.filter((field) => payload[field] === undefined || payload[field] === null || payload[field] === '');
     if (missing.length) { const error = new Error(`Missing required clinical fields: ${missing.join(', ')}`); error.statusCode = 400; throw error; }
+    validateBoundedJson(payload, 'Clinical payload');
 };
 
 const blockchainHeaders = (req, contentType = 'application/json', extraHeaders = {}) => ({
@@ -629,6 +667,11 @@ app.post('/register', authenticateToken, requireRoles('system'), async (req, res
     if (!firstName || !lastName || !username || !contactNumber || !password || !organizationId) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
+    try {
+        validatePersonNames({ firstName, lastName }, 'Admin', 'ADMIN_NAME_TOO_LONG');
+        validateEmail(username); validateContactNumber(contactNumber);
+        if (!validatePassword(password)) throw validationError('INVALID_PASSWORD', 'Temporary password must be 12 to 72 UTF-8 bytes and include uppercase, lowercase, number, and symbol');
+    } catch (error) { return sendApiError(res, 400, error.code || 'INVALID_ADMIN', error.message); }
 
     db.getConnection(async (connectionErr, connection) => {
         if (connectionErr) {
@@ -707,13 +750,13 @@ app.post('/register', authenticateToken, requireRoles('system'), async (req, res
     });
 });
 
-const validatePassword = (password) => typeof password === 'string' && password.length >= 12
+const validatePassword = (password) => typeof password === 'string' && password.length >= 12 && Buffer.byteLength(password, 'utf8') <= 72
     && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
 
 app.post('/change-password', authenticateToken, async (req, res) => {
     const { currentPassword, newPassword } = req.body || {};
     if (!currentPassword || !validatePassword(newPassword)) {
-        return sendApiError(res, 400, 'INVALID_PASSWORD', 'New password must be at least 12 characters and include uppercase, lowercase, number, and symbol');
+        return sendApiError(res, 400, 'INVALID_PASSWORD', 'New password must be 12 to 72 UTF-8 bytes and include uppercase, lowercase, number, and symbol');
     }
     let connection;
     try {
@@ -819,6 +862,14 @@ app.post('/clinics', authenticateToken, requireRoles('system'), async (req, res)
     if (!name || !address || !admin?.firstName || !admin?.lastName || !admin?.email || !admin?.contactNumber || !validatePassword(admin?.password)) {
         return sendApiError(res, 400, 'INVALID_CLINIC', 'Clinic name, address, and a first admin with a strong temporary password are required');
     }
+    try {
+        requireTextLimit(name, 'Clinic name', 255, 'CLINIC_NAME_TOO_LONG');
+        requireTextLimit(address, 'Clinic address', 1000, 'CLINIC_ADDRESS_TOO_LONG');
+        requireTextLimit(description, 'Clinic description', 2000, 'CLINIC_DESCRIPTION_TOO_LONG');
+        requireTextLimit(coordinates, 'Clinic coordinates', 255, 'CLINIC_COORDINATES_TOO_LONG');
+        requireTextLimit(type, 'Clinic type', 100, 'CLINIC_TYPE_TOO_LONG');
+        validatePersonNames(admin, 'Admin'); validateEmail(admin.email); validateContactNumber(admin.contactNumber);
+    } catch (error) { return sendApiError(res, 400, error.code || 'INVALID_CLINIC', error.message); }
     let connection; let operationID;
     try {
         connection = await db.promise().getConnection(); await connection.beginTransaction();
@@ -843,28 +894,62 @@ app.post('/clinics', authenticateToken, requireRoles('system'), async (req, res)
     } catch (error) {
         if (connection) await connection.rollback(); console.error(error);
         await markLifecycleOperation(operationID, 'FAILED', 'CLINIC_CREATE_FAILED', error).catch(() => {});
-        return sendApiError(res, error.statusCode || 500, 'CLINIC_CREATE_FAILED', error.message || 'Unable to create clinic');
+        return sendApiError(res, error.statusCode || 500, error.code || 'CLINIC_CREATE_FAILED', error.message || 'Unable to create clinic');
     } finally { if (connection) connection.release(); }
+});
+
+app.get('/clinics/:id/deactivation-impact', authenticateToken, requireRoles('system'), async (req, res) => {
+    try {
+        const clinicID=Number(req.params.id); if(!clinicID)return sendApiError(res,400,'INVALID_CLINIC','Valid clinic is required');
+        const [actors,appointments,requests,clinical,lab]=await Promise.all([
+            query(`SELECT SUM(role='doctor') doctors,SUM(role='patient') patients,SUM(role='admin') admins FROM (SELECT 'doctor' role FROM Doctor JOIN User ON User.ID=Doctor.ID WHERE Doctor.Clinic_ID=? AND User.IsActive=1 UNION ALL SELECT 'patient' FROM Patient JOIN User ON User.ID=Patient.ID WHERE Patient.Clinic_ID=? AND User.IsActive=1 UNION ALL SELECT 'admin' FROM Admin JOIN User ON User.ID=Admin.User_ID WHERE Admin.Organization_ID=? AND User.IsActive=1) scoped`,[clinicID,clinicID,clinicID]),
+            query(`SELECT COUNT(*) total FROM Appointment JOIN Patient ON Patient.ID=Appointment.Patient_ID WHERE Patient.Clinic_ID=? AND LOWER(COALESCE(Appointment.Status,'scheduled')) NOT IN ('cancelled','canceled','completed','complete','done','finished')`,[clinicID]),
+            query("SELECT COUNT(*) total FROM Request WHERE Organization_ID=? AND LOWER(COALESCE(Status,'pending')) NOT IN ('cancelled','rejected','consent_revoked','completed')",[clinicID]),
+            query('SELECT COUNT(*) total FROM Clinical_Record JOIN Patient ON Patient.Blockchain_ID=Clinical_Record.Patient_Blockchain_ID WHERE Patient.Clinic_ID=?',[clinicID]),
+            query('SELECT COUNT(*) total FROM Lab_Result WHERE Clinic_ID=?',[clinicID]),
+        ]);
+        return res.json({success:true,data:{clinicID,actors:{doctors:Number(actors[0]?.doctors||0),patients:Number(actors[0]?.patients||0),admins:Number(actors[0]?.admins||0)},activeAppointmentsToCancel:Number(appointments[0]?.total||0),activeRequestsToCancel:Number(requests[0]?.total||0),clinicalRecordsToPreserve:Number(clinical[0]?.total||0),labResultsToPreserve:Number(lab[0]?.total||0)}});
+    } catch(error){return sendApiError(res,error.statusCode||500,error.code||'CLINIC_DEACTIVATION_IMPACT_FAILED',error.message);}
 });
 
 app.patch('/clinics/:id', authenticateToken, requireRoles('system'), async (req, res) => {
     const clinicID = Number(req.params.id); const { name, address, description, coordinates, type, isActive } = req.body || {};
     if (!clinicID || !name || !address || typeof isActive !== 'boolean') return sendApiError(res, 400, 'INVALID_CLINIC', 'Valid clinic name, address, and status are required');
+    let connection;
     try {
-        const result = await query(`UPDATE Organization SET Name=?, Address=?, Description=?, Coordinates=?, Type=?, IsActive=?, Modified_Date=NOW() WHERE Organization_ID=?`,
-            [name, address, description || null, coordinates || null, type || 'Dental Clinic', isActive ? 1 : 0, clinicID]);
-        if (!result.affectedRows) return sendApiError(res, 404, 'CLINIC_NOT_FOUND', 'Clinic not found');
-        if (!isActive) {
-            await query(`UPDATE Auth_Session s JOIN User u ON u.ID=s.User_ID
-                LEFT JOIN Admin a ON a.User_ID=u.ID LEFT JOIN Doctor d ON d.ID=u.ID LEFT JOIN Patient p ON p.ID=u.ID
-                SET s.Revoked_At=COALESCE(s.Revoked_At,NOW(3)),s.Revocation_Reason=COALESCE(s.Revocation_Reason,'clinic deactivated')
-                WHERE COALESCE(a.Organization_ID,d.Clinic_ID,p.Clinic_ID)=?`, [clinicID]);
-            await query(`UPDATE User u LEFT JOIN Admin a ON a.User_ID=u.ID LEFT JOIN Doctor d ON d.ID=u.ID LEFT JOIN Patient p ON p.ID=u.ID
-                SET u.Security_Version=u.Security_Version+1,u.Sessions_Invalid_Before=NOW(3)
-                WHERE COALESCE(a.Organization_ID,d.Clinic_ID,p.Clinic_ID)=?`, [clinicID]);
+        requireTextLimit(name, 'Clinic name', 255, 'CLINIC_NAME_TOO_LONG');
+        requireTextLimit(address, 'Clinic address', 1000, 'CLINIC_ADDRESS_TOO_LONG');
+        requireTextLimit(description, 'Clinic description', 2000, 'CLINIC_DESCRIPTION_TOO_LONG');
+        requireTextLimit(coordinates, 'Clinic coordinates', 255, 'CLINIC_COORDINATES_TOO_LONG');
+        requireTextLimit(type, 'Clinic type', 100, 'CLINIC_TYPE_TOO_LONG');
+        if (isActive) {
+            const result=await query(`UPDATE Organization SET Name=?,Address=?,Description=?,Coordinates=?,Type=?,IsActive=1,Modified_Date=NOW() WHERE Organization_ID=?`,[name,address,description||null,coordinates||null,type||'Dental Clinic',clinicID]);
+            if(!result.affectedRows)return sendApiError(res,404,'CLINIC_NOT_FOUND','Clinic not found');
+            return res.json({success:true,message:'Clinic profile updated; previously deactivated users require explicit reactivation workflows'});
         }
-        return res.json({ success: true });
-    } catch (error) { console.error(error); return sendApiError(res, 500, 'CLINIC_UPDATE_FAILED', 'Unable to update clinic'); }
+        connection=await db.promise().getConnection();await connection.beginTransaction();
+        const [organizations]=await connection.query('SELECT Organization_ID FROM Organization WHERE Organization_ID=? FOR UPDATE',[clinicID]);
+        if(!organizations.length)throw Object.assign(new Error('Clinic not found'),{statusCode:404,code:'CLINIC_NOT_FOUND'});
+        const [doctors]=await connection.query(`${DOCTOR_SELECT} WHERE Doctor.Clinic_ID=? AND User.IsActive=1 FOR UPDATE`,[clinicID]);
+        const [patients]=await connection.query(`${PATIENT_SELECT} WHERE Patient.Clinic_ID=? AND User.IsActive=1 FOR UPDATE`,[clinicID]);
+        const [admins]=await connection.query('SELECT User.ID FROM Admin JOIN User ON User.ID=Admin.User_ID WHERE Admin.Organization_ID=? AND User.IsActive=1 FOR UPDATE',[clinicID]);
+        const userIDs=[...admins.map(x=>x.ID),...doctors.map(x=>x.ID),...patients.map(x=>x.ID)];
+        const actorIDs=[...doctors.map(x=>String(x.Blockchain_ID)),...patients.map(x=>String(x.Blockchain_ID))];
+        const ledger=await callBlockchain(req,`/internal/clinics/${clinicID}/deactivate`,'POST',{});
+        for(const doctor of doctors)await retireFabricIdentity(req,'doctor',doctor.Blockchain_ID,clinicID);
+        for(const patient of patients)await retireFabricIdentity(req,'patient',patient.Blockchain_ID,clinicID);
+        await retireFabricIdentity(req,'admin',`AdminClinic${clinicID}`,clinicID);
+        const [appointments]=await connection.query(`UPDATE Appointment JOIN Patient ON Patient.ID=Appointment.Patient_ID SET Appointment.Status='cancelled',Appointment.Notes=CONCAT_WS('\n',NULLIF(Appointment.Notes,''),'Automatically cancelled because the clinic was deactivated.'),Appointment.Cancelled_Date=COALESCE(Appointment.Cancelled_Date,NOW()),Appointment.Modified_Date=NOW() WHERE Patient.Clinic_ID=? AND LOWER(COALESCE(Appointment.Status,'scheduled')) NOT IN ('cancelled','canceled','completed','complete','done','finished')`,[clinicID]);
+        const [requests]=await connection.query("UPDATE Request SET Status='cancelled',Modified_Date=CURDATE() WHERE Organization_ID=? AND LOWER(COALESCE(Status,'pending')) NOT IN ('cancelled','rejected','consent_revoked','completed')",[clinicID]);
+        if(actorIDs.length)await connection.query(`UPDATE Push_Subscription SET Active=0,Updated_At=NOW(),Last_Error='clinic deactivated' WHERE (Recipient_Role='admin' AND Recipient_ID=?) OR Recipient_ID IN (${actorIDs.map(()=>'?').join(',')})`,[String(clinicID),...actorIDs]);
+        else await connection.query("UPDATE Push_Subscription SET Active=0,Updated_At=NOW(),Last_Error='clinic deactivated' WHERE Recipient_Role='admin' AND Recipient_ID=?",[String(clinicID)]);
+        await connection.query('UPDATE Patient SET Doctors=JSON_ARRAY(),Modified_Date=NOW() WHERE Clinic_ID=?',[clinicID]);
+        if(userIDs.length){await connection.query(`UPDATE User SET IsActive=0,Security_Version=Security_Version+1,Sessions_Invalid_Before=NOW(3) WHERE ID IN (${userIDs.map(()=>'?').join(',')})`,userIDs);await connection.query(`UPDATE Auth_Session SET Revoked_At=COALESCE(Revoked_At,NOW(3)),Revocation_Reason=COALESCE(Revocation_Reason,'clinic deactivated') WHERE User_ID IN (${userIDs.map(()=>'?').join(',')})`,userIDs);}
+        await connection.query(`UPDATE Organization SET Name=?,Address=?,Description=?,Coordinates=?,Type=?,IsActive=0,Modified_Date=NOW() WHERE Organization_ID=?`,[name,address,description||null,coordinates||null,type||'Dental Clinic',clinicID]);
+        await connection.commit();
+        return res.json({success:true,data:{clinicID,deactivated:true,actors:{doctors:doctors.length,patients:patients.length,admins:admins.length},appointmentsCancelled:appointments.affectedRows,requestsCancelled:requests.affectedRows,ledger},message:'Clinic deactivated; active appointments and requests cancelled; access revoked; clinical and ledger history preserved'});
+    } catch (error) { if(connection)await connection.rollback().catch(()=>{});console.error(error); return sendApiError(res, error.statusCode || 500, error.code || 'CLINIC_UPDATE_FAILED', error.statusCode ? error.message : 'Unable to update clinic'); }
+    finally{if(connection)connection.release();}
 });
 
 app.get('/clinic-admins', authenticateToken, requireRoles('admin', 'system'), async (req, res) => {
@@ -891,6 +976,7 @@ const validateClinicAdminProfile = (body, requirePassword = false) => {
         error.statusCode = 400;
         throw error;
     }
+    validatePersonNames(body, 'Admin'); validateEmail(body.email); validateContactNumber(body.contactNumber);
 };
 
 const revokeManagedAdminSessions = async (connection, userID, reason) => {
@@ -926,7 +1012,7 @@ app.patch('/clinics/:clinicID/admin', authenticateToken, requireRoles('system'),
         return res.json({ success: true });
     } catch (error) {
         if (connection) await connection.rollback().catch(() => {});
-        return sendApiError(res, error.statusCode || 500, 'CLINIC_ADMIN_UPDATE_FAILED', error.statusCode ? error.message : 'Unable to update clinic administrator');
+        return sendApiError(res, error.statusCode || 500, error.code || 'CLINIC_ADMIN_UPDATE_FAILED', error.statusCode ? error.message : 'Unable to update clinic administrator');
     } finally { if (connection) connection.release(); }
 });
 
@@ -986,7 +1072,7 @@ app.post('/clinics/:clinicID/admin/transfer', authenticateToken, requireRoles('s
         return res.status(201).json({ success: true, data: { clinicID, previousAdminID: current[0].ID, newAdminID: created.insertId } });
     } catch (error) {
         if (connection) await connection.rollback().catch(() => {});
-        return sendApiError(res, error.statusCode || 500, 'CLINIC_ADMIN_TRANSFER_FAILED', error.statusCode ? error.message : 'Unable to transfer clinic ownership');
+        return sendApiError(res, error.statusCode || 500, error.code || 'CLINIC_ADMIN_TRANSFER_FAILED', error.statusCode ? error.message : 'Unable to transfer clinic ownership');
     } finally { if (connection) connection.release(); }
 });
 
@@ -1018,7 +1104,12 @@ const validateDoctorPayload = (body, isCreate = false) => {
     if (isCreate) required.push('password');
     const missing = required.filter((field) => body[field] === undefined || body[field] === null || String(body[field]).trim() === '');
     if (missing.length) { const error = new Error(`Missing required fields: ${missing.join(', ')}`); error.statusCode = 400; throw error; }
-    if (!/^\S+@\S+\.\S+$/.test(body.email)) { const error = new Error('Invalid email address'); error.statusCode = 400; throw error; }
+    validatePersonNames(body, 'Doctor', 'DOCTOR_NAME_TOO_LONG'); validateEmail(body.email); validateContactNumber(body.contactNumber); validateEmiratesID(body.emiratesID);
+    requireTextLimit(body.worksAt, 'Clinic name', 255, 'DOCTOR_WORKS_AT_TOO_LONG');
+    requireTextLimit(body.speciality, 'Specialty', 100, 'DOCTOR_SPECIALTY_TOO_LONG');
+    requireTextLimit(body.licenseNumber, 'License number', 100, 'DOCTOR_LICENSE_TOO_LONG');
+    if (!/^[A-Za-z0-9][A-Za-z0-9 ./-]{1,99}$/.test(String(body.licenseNumber))) throw validationError('INVALID_DOCTOR_LICENSE', 'License number contains unsupported characters');
+    if (isCreate && !validatePassword(body.password)) throw validationError('INVALID_PASSWORD', 'Temporary password must be 12 to 72 UTF-8 bytes and include uppercase, lowercase, number, and symbol');
 };
 const mutableDoctorProfile = (body) => ({
     firstName: body.firstName,
@@ -1056,7 +1147,7 @@ app.post('/doctors', authenticateToken, requireRoles('admin'), async (req, res) 
         await connection.commit();
         await markLifecycleOperation(operationID, 'COMPLETED', 'MYSQL_COMMITTED');
         return res.status(201).json({ success: true, data: { ...req.body, password: undefined, doctorID, clinicID }, message: 'Doctor created consistently in MySQL and Fabric' });
-    } catch (error) { if (connection) await connection.rollback().catch(() => {}); await markLifecycleOperation(operationID, 'FAILED', 'DOCTOR_CREATE_FAILED', error).catch(() => {}); return sendApiError(res, error.statusCode || (error.code === 'ER_DUP_ENTRY' ? 409 : 500), 'DOCTOR_CREATE_FAILED', error.message); }
+    } catch (error) { if (connection) await connection.rollback().catch(() => {}); await markLifecycleOperation(operationID, 'FAILED', 'DOCTOR_CREATE_FAILED', error).catch(() => {}); return sendApiError(res, error.statusCode || (error.code === 'ER_DUP_ENTRY' ? 409 : 500), error.code || 'DOCTOR_CREATE_FAILED', error.message); }
     finally { if (connection) connection.release(); }
 });
 
@@ -1100,27 +1191,63 @@ app.put('/doctors/:id', authenticateToken, requireRoles('admin'), async (req, re
         await connection.query('UPDATE Doctor SET Works_At=?,Specialty=?,License_Number=?,Emirates_ID=?,Modified_Date=NOW() WHERE ID=?', [update.worksAt,update.speciality,update.licenseNumber,update.emiratesID,rows[0].ID]);
         await callBlockchain(req, `/doctor/${encodeURIComponent(req.params.id)}`, 'PUT', { ...update, clinicID });
         await connection.commit(); return res.json({ success:true, data:{ ...update, doctorID:req.params.id, clinicID }, message:'Doctor updated consistently' });
-    } catch (error) { if (connection) await connection.rollback().catch(()=>{}); return sendApiError(res,error.statusCode || (error.code==='ER_DUP_ENTRY'?409:500),'DOCTOR_UPDATE_FAILED',error.message); }
+    } catch (error) { if (connection) await connection.rollback().catch(()=>{}); return sendApiError(res,error.statusCode || (error.code==='ER_DUP_ENTRY'?409:500),error.code || 'DOCTOR_UPDATE_FAILED',error.message); }
     finally { if (connection) connection.release(); }
+});
+
+app.get('/doctors/:id/deactivation-impact', authenticateToken, requireRoles('admin'), async (req, res) => {
+    try {
+        const rows = await query(`${DOCTOR_SELECT} WHERE Doctor.Blockchain_ID=? AND User.IsActive=1 LIMIT 1`, [req.params.id]);
+        if (!rows.length) return sendApiError(res, 404, 'DOCTOR_NOT_FOUND', 'Doctor not found');
+        requireAdminClinic(req, rows[0].Clinic_ID);
+        const [patients, appointments, replacements] = await Promise.all([
+            query(`${PATIENT_SELECT} WHERE Patient.Clinic_ID=? AND User.IsActive=1 AND JSON_CONTAINS(Patient.Doctors,JSON_QUOTE(?))`, [rows[0].Clinic_ID, req.params.id]),
+            query(`SELECT COUNT(*) AS total FROM Appointment WHERE Doctor_ID=? AND LOWER(COALESCE(Status,'scheduled')) NOT IN ('cancelled','canceled','completed','complete','done','finished')`, [rows[0].ID]),
+            query(`${DOCTOR_SELECT} WHERE Doctor.Clinic_ID=? AND Doctor.Blockchain_ID<>? AND User.IsActive=1 ORDER BY User.Last_Name,User.First_Name`, [rows[0].Clinic_ID, req.params.id]),
+        ]);
+        return res.json({ success:true, data:{ doctorID:req.params.id, assignedPatients:patients.map(normalizePatient), activeAppointments:Number(appointments[0]?.total||0), replacementDoctors:replacements.map(normalizeDoctor), cancellationAllowed:replacements.length===0 }, message: replacements.length ? 'Select an active replacement doctor from the same clinic' : 'No replacement doctor remains; active appointments will be cancelled' });
+    } catch (error) { return sendApiError(res,error.statusCode||500,error.code||'DOCTOR_DEACTIVATION_IMPACT_FAILED',error.message); }
 });
 
 app.delete('/doctors/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
     let connection; let operationID;
     try { connection = await db.promise().getConnection(); await connection.beginTransaction(); const [rows] = await connection.query(`${DOCTOR_SELECT} WHERE Doctor.Blockchain_ID=? FOR UPDATE`, [req.params.id]);
         if (!rows.length) { const error = new Error('Doctor not found'); error.statusCode = 404; throw error; } requireAdminClinic(req, rows[0].Clinic_ID);
-        const [assigned] = await connection.query('SELECT ID FROM Patient WHERE JSON_CONTAINS(Doctors, JSON_QUOTE(?)) LIMIT 1', [req.params.id]);
-        if (assigned.length) { const error = new Error('Reassign or remove this doctor from assigned patients before deletion'); error.statusCode = 409; throw error; }
-        operationID = await beginLifecycleOperation(req, 'DOCTOR_DEACTIVATE', 'doctor', req.params.id, rows[0].Clinic_ID, {});
+        const [assigned] = await connection.query(`${PATIENT_SELECT} WHERE Patient.Clinic_ID=? AND User.IsActive=1 AND JSON_CONTAINS(Patient.Doctors,JSON_QUOTE(?)) FOR UPDATE`, [rows[0].Clinic_ID, req.params.id]);
+        const [replacementRows] = await connection.query(`${DOCTOR_SELECT} WHERE Doctor.Clinic_ID=? AND Doctor.Blockchain_ID<>? AND User.IsActive=1`, [rows[0].Clinic_ID, req.params.id]);
+        const replacementDoctorID = req.body?.replacementDoctorID ? String(req.body.replacementDoctorID) : null;
+        if (replacementRows.length && !replacementDoctorID) throw Object.assign(new Error('Select an active replacement doctor from the same clinic'), { statusCode:409, code:'DOCTOR_REASSIGNMENT_REQUIRED' });
+        const replacement = replacementDoctorID ? replacementRows.find((doctor) => String(doctor.Blockchain_ID)===replacementDoctorID) : null;
+        if (replacementDoctorID && !replacement) throw Object.assign(new Error('Replacement doctor must be active and belong to the same clinic'), { statusCode:400, code:'INVALID_REPLACEMENT_DOCTOR' });
+        if (!replacementRows.length && replacementDoctorID) throw Object.assign(new Error('No replacement doctor is available; appointments must be cancelled'), { statusCode:400, code:'DOCTOR_CANCELLATION_REQUIRED' });
+        operationID = await beginLifecycleOperation(req, 'DOCTOR_DEACTIVATE', 'doctor', req.params.id, rows[0].Clinic_ID, { replacementDoctorID });
+        for (const patientRow of assigned) {
+            const patient = normalizePatient(patientRow);
+            const doctors = [...new Set(patient.doctors.filter((id) => String(id)!==String(req.params.id)).concat(replacement ? [replacementDoctorID] : []))];
+            const updated = { ...patient, doctors };
+            const dataHash = patientHash(updated);
+            await callBlockchain(req, '/unassignPatientFromDoctor', 'POST', { patientID:patient.patientID, doctorID:req.params.id, dataHash, modifiedDate:new Date().toISOString() });
+            if (replacement) await callBlockchain(req, '/assignPatientToDoctor', 'POST', { patientID:patient.patientID, doctorID:replacementDoctorID, dataHash, modifiedDate:new Date().toISOString() });
+            await callBlockchain(req, `/patient-metadata/${encodeURIComponent(patient.patientID)}`, 'PUT', { clinicID:Number(rows[0].Clinic_ID), doctors, offChainRef:`mysql:Patient/${patientRow.ID}`, dataHash });
+            await connection.query('UPDATE Patient SET Doctors=?,Modified_Date=NOW() WHERE ID=?',[JSON.stringify(doctors),patientRow.ID]);
+        }
+        let appointmentsAffected;
+        if (replacement) {
+            [appointmentsAffected] = await connection.query(`UPDATE Appointment SET Doctor_ID=?,Specialty=?,Notes=CONCAT_WS('\n',NULLIF(Notes,''),?),Modified_Date=NOW() WHERE Doctor_ID=? AND LOWER(COALESCE(Status,'scheduled')) NOT IN ('cancelled','canceled','completed','complete','done','finished')`, [replacement.ID,replacement.Specialty,`Reassigned from ${req.params.id} during doctor deactivation.`,rows[0].ID]);
+        } else {
+            [appointmentsAffected] = await connection.query(`UPDATE Appointment SET Status='cancelled',Notes=CONCAT_WS('\n',NULLIF(Notes,''),?),Cancelled_Date=COALESCE(Cancelled_Date,NOW()),Modified_Date=NOW() WHERE Doctor_ID=? AND LOWER(COALESCE(Status,'scheduled')) NOT IN ('cancelled','canceled','completed','complete','done','finished')`, [`Automatically cancelled because ${req.params.id} was deactivated and no replacement doctor remained.`,rows[0].ID]);
+        }
         await callBlockchain(req, `/doctor/${encodeURIComponent(req.params.id)}`, 'DELETE');
         await retireFabricIdentity(req, 'doctor', req.params.id, rows[0].Clinic_ID);
         await markLifecycleOperation(operationID, 'FABRIC_COMMITTED', 'ACTOR_DEACTIVATED_AND_IDENTITY_RETIRED');
         await connection.query(`UPDATE User SET IsActive=0,Security_Version=Security_Version+1,
             Sessions_Invalid_Before=NOW(3) WHERE ID=?`, [rows[0].ID]);
+        await connection.query("UPDATE Push_Subscription SET Active=0,Updated_At=NOW(),Last_Error='doctor deactivated' WHERE Recipient_Role='doctor' AND Recipient_ID=?", [req.params.id]);
         await revokeManagedAdminSessions(connection, rows[0].ID, 'doctor deactivated');
         await connection.commit();
         await markLifecycleOperation(operationID, 'COMPLETED', 'MYSQL_DEACTIVATED');
-        return res.json({ success:true, data:{ doctorID:req.params.id, deactivated:true }, message:'Doctor deactivated and Fabric identity retired' });
-    } catch (error) { if (connection) await connection.rollback().catch(()=>{}); await markLifecycleOperation(operationID, 'FAILED', 'DOCTOR_DEACTIVATE_FAILED', error).catch(()=>{}); return sendApiError(res,error.statusCode||500,'DOCTOR_DEACTIVATE_FAILED',error.message); }
+        return res.json({ success:true, data:{ doctorID:req.params.id, deactivated:true, replacementDoctorID, patientsReassigned:assigned.length, appointments:{ action:replacement?'reassigned':'cancelled', count:appointmentsAffected.affectedRows } }, message:replacement?'Doctor deactivated; patients and active appointments reassigned; history preserved':'Doctor deactivated; active appointments cancelled because no replacement remained; history preserved' });
+    } catch (error) { if (connection) await connection.rollback().catch(()=>{}); await markLifecycleOperation(operationID, 'FAILED', 'DOCTOR_DEACTIVATE_FAILED', error).catch(()=>{}); return sendApiError(res,error.statusCode||500,error.code||'DOCTOR_DEACTIVATE_FAILED',error.message); }
     finally { if (connection) connection.release(); }
 });
 
@@ -1138,9 +1265,10 @@ const validatePatientPayload = (body, isCreate = false) => {
         error.statusCode = 400;
         throw error;
     }
-    if (!/^\S+@\S+\.\S+$/.test(body.email)) {
-        const error = new Error('Invalid email address'); error.statusCode = 400; throw error;
-    }
+    validatePersonNames(body, 'Patient', 'PATIENT_NAME_TOO_LONG'); validateEmail(body.email); validateContactNumber(body.contactNumber); validateEmiratesID(body.emiratesID);
+    requireTextLimit(body.nationality, 'Nationality', 100, 'PATIENT_NATIONALITY_TOO_LONG');
+    requireTextLimit(body.address, 'Address', 1000, 'PATIENT_ADDRESS_TOO_LONG');
+    if (!['male', 'female', 'other', 'prefer not to say'].includes(String(body.gender).trim().toLowerCase())) throw validationError('INVALID_GENDER', 'Gender must be Male, Female, Other, or Prefer not to say');
     if (!/^(A|B|AB|O)[+-]$/.test(body.bloodType)) {
         const error = new Error('Invalid blood type'); error.statusCode = 400; throw error;
     }
@@ -1220,7 +1348,7 @@ app.post('/patients', authenticateToken, requireRoles('admin'), async (req, res)
         if (connection) await connection.rollback().catch(() => {});
         await markLifecycleOperation(operationID, 'FAILED', 'PATIENT_CREATE_FAILED', error).catch(() => {});
         const status = error.statusCode || (error.code === 'ER_DUP_ENTRY' ? 409 : 500);
-        return sendApiError(res, status, 'PATIENT_CREATE_FAILED', error.message);
+        return sendApiError(res, status, error.code || 'PATIENT_CREATE_FAILED', error.message);
     } finally { if (connection) connection.release(); }
 });
 
@@ -1344,6 +1472,32 @@ app.post('/patients/:id/assign', authenticateToken, requireRoles('admin'), async
     } finally { if (connection) connection.release(); }
 });
 
+app.get('/patients/:id/deactivation-impact', authenticateToken, requireRoles('admin'), async (req, res) => {
+    try {
+        const rows = await query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID=? LIMIT 1`, [req.params.id]);
+        if (!rows.length) return sendApiError(res, 404, 'PATIENT_NOT_FOUND', 'Patient not found');
+        requireAdminClinic(req, rows[0].Clinic_ID);
+        if (!rows[0].IsActive) return sendApiError(res, 409, 'PATIENT_ALREADY_INACTIVE', 'Patient is already inactive');
+        const [appointmentRows, clinicalRows, labRows] = await Promise.all([
+            query(`SELECT COUNT(*) AS total,
+                SUM(CASE WHEN LOWER(COALESCE(Status,'scheduled')) NOT IN ('cancelled','canceled','completed','complete','done','finished') THEN 1 ELSE 0 END) AS active,
+                SUM(CASE WHEN LOWER(COALESCE(Status,'scheduled')) IN ('completed','complete','done','finished') THEN 1 ELSE 0 END) AS completed,
+                SUM(CASE WHEN LOWER(COALESCE(Status,'scheduled')) IN ('cancelled','canceled') THEN 1 ELSE 0 END) AS cancelled
+                FROM Appointment WHERE Patient_ID=?`, [rows[0].ID]),
+            query('SELECT COUNT(*) AS total FROM Clinical_Record WHERE Patient_Blockchain_ID=?', [req.params.id]),
+            query('SELECT COUNT(*) AS total FROM Lab_Result WHERE Patient_Blockchain_ID=?', [req.params.id]),
+        ]);
+        const appointments = appointmentRows[0] || {};
+        return res.json({ success: true, data: {
+            patientID: req.params.id,
+            assignedDoctors: normalizePatient(rows[0]).doctors.length,
+            appointments: { total: Number(appointments.total || 0), activeToCancel: Number(appointments.active || 0), completedToPreserve: Number(appointments.completed || 0), cancelledToPreserve: Number(appointments.cancelled || 0) },
+            clinicalRecordsToPreserve: Number(clinicalRows[0]?.total || 0),
+            labResultsToPreserve: Number(labRows[0]?.total || 0),
+        }, message: 'Deactivation preserves clinical history and cancels only non-terminal appointments' });
+    } catch (error) { return sendApiError(res, error.statusCode || 500, error.code || 'PATIENT_DEACTIVATION_IMPACT_FAILED', error.message); }
+});
+
 app.delete('/patients/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
     let connection; let operationID;
     try {
@@ -1352,16 +1506,26 @@ app.delete('/patients/:id', authenticateToken, requireRoles('admin'), async (req
         if (!rows.length) { const error = new Error('Patient not found'); error.statusCode = 404; throw error; }
         requireAdminClinic(req, rows[0].Clinic_ID);
         operationID = await beginLifecycleOperation(req, 'PATIENT_DEACTIVATE', 'patient', req.params.id, rows[0].Clinic_ID, {});
+        const [appointmentImpact] = await connection.query('SELECT Appointment_ID,Status FROM Appointment WHERE Patient_ID=? FOR UPDATE', [rows[0].ID]);
+        const [clinicalImpact] = await connection.query('SELECT COUNT(*) AS total FROM Clinical_Record WHERE Patient_Blockchain_ID=?', [req.params.id]);
+        const [labImpact] = await connection.query('SELECT COUNT(*) AS total FROM Lab_Result WHERE Patient_Blockchain_ID=?', [req.params.id]);
         await callBlockchain(req, `/patient-metadata/${encodeURIComponent(req.params.id)}`, 'DELETE');
         await retireFabricIdentity(req, 'patient', req.params.id, rows[0].Clinic_ID);
         await markLifecycleOperation(operationID, 'FABRIC_COMMITTED', 'ACTOR_DEACTIVATED_AND_IDENTITY_RETIRED');
+        const [cancelledAppointments] = await connection.query(`UPDATE Appointment SET Status='cancelled',
+            Notes=CONCAT_WS('\n',NULLIF(Notes,''),'Automatically cancelled because the patient was deactivated.'),
+            Cancelled_Date=COALESCE(Cancelled_Date,NOW()),Modified_Date=NOW()
+            WHERE Patient_ID=? AND LOWER(COALESCE(Status,'scheduled')) NOT IN ('cancelled','canceled','completed','complete','done','finished')`, [rows[0].ID]);
         await connection.query('UPDATE Patient SET Doctors=JSON_ARRAY(),Modified_Date=NOW() WHERE ID=?', [rows[0].ID]);
         await connection.query(`UPDATE User SET IsActive=0,Security_Version=Security_Version+1,
             Sessions_Invalid_Before=NOW(3) WHERE ID=?`, [rows[0].ID]);
         await revokeManagedAdminSessions(connection, rows[0].ID, 'patient deactivated');
         await connection.commit();
         await markLifecycleOperation(operationID, 'COMPLETED', 'MYSQL_DEACTIVATED');
-        return res.json({ success: true, data: { patientID: req.params.id, deactivated: true }, message: 'Patient deactivated and Fabric identity retired' });
+        return res.json({ success: true, data: { patientID: req.params.id, deactivated: true,
+            appointments: { total: appointmentImpact.length, cancelled: cancelledAppointments.affectedRows },
+            clinicalRecordsPreserved: Number(clinicalImpact[0]?.total || 0), labResultsPreserved: Number(labImpact[0]?.total || 0),
+        }, message: 'Patient deactivated; active appointments cancelled; clinical, appointment, and ledger history preserved' });
     } catch (error) {
         if (connection) await connection.rollback().catch(() => {});
         await markLifecycleOperation(operationID, 'FAILED', 'PATIENT_DEACTIVATE_FAILED', error).catch(() => {});
@@ -1393,7 +1557,7 @@ app.post(['/clinical-records', '/addMedicalRecord', '/addDentalChartEntry'], aut
         return res.status(201).json({ success: true, data: { recordID, recordType, patientID: req.body.patientID, payload: req.body.payload, dataHash, createdAt } });
     } catch (error) {
         if (connection) await connection.rollback().catch(() => {});
-        return sendApiError(res, error.statusCode || 500, 'CLINICAL_RECORD_CREATE_FAILED', error.message);
+        return sendApiError(res, error.statusCode || 500, error.code || 'CLINICAL_RECORD_CREATE_FAILED', error.message);
     } finally { if (connection) connection.release(); }
 });
 
@@ -1455,6 +1619,13 @@ const relayBlockchainJson = async (req, res, path, method = 'GET', body) => {
     } catch (error) {
         return sendApiError(res, error.statusCode || 503, 'BLOCKCHAIN_SERVICE_UNAVAILABLE', error.message);
     }
+    for (const [field, values] of [['medicalHistory', body.medicalHistory], ['allergies', body.allergies], ['medications', body.medications]]) {
+        if (!Array.isArray(values) || values.length > 50) throw validationError('PATIENT_LIST_INVALID', `${field} must contain at most 50 items`);
+        values.forEach((value) => requireTextLimit(value, field, 500, 'PATIENT_LIST_ITEM_TOO_LONG'));
+    }
+    if (!body.insuranceDetails || typeof body.insuranceDetails !== 'object' || Array.isArray(body.insuranceDetails)) throw validationError('INVALID_INSURANCE_DETAILS', 'insuranceDetails must be an object');
+    for (const [field, max] of [['provider', 255], ['policyNumber', 100], ['coverageType', 100]]) requireTextLimit(body.insuranceDetails[field], `Insurance ${field}`, max, 'INSURANCE_FIELD_TOO_LONG');
+    if (isCreate && !validatePassword(body.password)) throw validationError('INVALID_PASSWORD', 'Temporary password must be 12 to 72 UTF-8 bytes and include uppercase, lowercase, number, and symbol');
 };
 const mutablePatientProfile = (body) => ({
     firstName: body.firstName, lastName: body.lastName, dateOfBirth: body.dateOfBirth,
@@ -1626,6 +1797,10 @@ app.post('/appointments', authenticateToken, requireRoles('admin'), async (req, 
     try {
         const { patientID, doctorID, appointmentDateTime, specialty, meetingFor, notes } = req.body;
         if (![patientID, doctorID, appointmentDateTime, meetingFor].every(Boolean)) return sendApiError(res, 400, 'VALIDATION_ERROR', 'patientID, doctorID, appointmentDateTime, and meetingFor are required');
+        requireTextLimit(meetingFor, 'Appointment reason', 255, 'APPOINTMENT_REASON_TOO_LONG');
+        requireTextLimit(notes, 'Appointment notes', 2000, 'APPOINTMENT_NOTES_TOO_LONG');
+        const scheduledAt = new Date(appointmentDateTime);
+        if (req.body.appointmentDateTime !== undefined && (Number.isNaN(scheduledAt.getTime()) || scheduledAt <= new Date())) throw validationError('INVALID_APPOINTMENT_DATE', 'Appointment date and time must be valid and in the future');
         const rows = await query(`SELECT Patient.ID AS Patient_DB_ID, Patient.Clinic_ID AS Patient_Clinic_ID, Patient.Doctors AS Patient_Doctors,
             Doctor.ID AS Doctor_DB_ID, Doctor.Clinic_ID AS Doctor_Clinic_ID, Doctor.Specialty AS Doctor_Specialty
             FROM Patient JOIN User PatientUser ON PatientUser.ID=Patient.ID
@@ -1644,7 +1819,7 @@ app.post('/appointments', authenticateToken, requireRoles('admin'), async (req, 
             VALUES (?, ?, ?, DATE(?), ?, ?, 'scheduled', ?, NOW())`, [meetingFor, rows[0].Doctor_DB_ID, rows[0].Patient_DB_ID, appointmentDateTime, appointmentDateTime, authoritativeSpecialty, notes || null]);
         const created = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [result.insertId]);
         return res.status(201).json({ success: true, data: created[0] });
-    } catch (error) { return sendApiError(res, error.statusCode || 500, 'APPOINTMENT_CREATE_FAILED', error.message); }
+    } catch (error) { return sendApiError(res, error.statusCode || 500, error.code || 'APPOINTMENT_CREATE_FAILED', error.message); }
 });
 
 app.put('/appointments/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
@@ -1656,22 +1831,27 @@ app.put('/appointments/:id', authenticateToken, requireRoles('admin'), async (re
         if (['patientID', 'doctorID', 'clinicID'].some((field) => req.body[field] !== undefined)) return sendApiError(res, 400, 'APPOINTMENT_CONTEXT_IMMUTABLE', 'Patient, doctor, and clinic require a dedicated rescheduling workflow');
         if (req.body.specialty !== undefined && String(req.body.specialty) !== String(existing[0].Specialty)) return sendApiError(res, 400, 'APPOINTMENT_SPECIALTY_IMMUTABLE', 'Appointment specialty is derived from the selected doctor');
         const appointmentDateTime = req.body.appointmentDateTime || existing[0].Appointment_Date_Time;
+        requireTextLimit(req.body.meetingFor ?? existing[0].Meeting_For, 'Appointment reason', 255, 'APPOINTMENT_REASON_TOO_LONG');
+        requireTextLimit(req.body.notes ?? existing[0].Notes, 'Appointment notes', 2000, 'APPOINTMENT_NOTES_TOO_LONG');
+        const scheduledAt = new Date(appointmentDateTime);
+        if (req.body.appointmentDateTime !== undefined && (Number.isNaN(scheduledAt.getTime()) || scheduledAt <= new Date())) throw validationError('INVALID_APPOINTMENT_DATE', 'Appointment date and time must be valid and in the future');
         await query(`UPDATE Appointment SET Meeting_For=?, Date=DATE(?), Appointment_Date_Time=?, Notes=?, Status='scheduled', Modified_Date=NOW() WHERE Appointment_ID=?`,
             [req.body.meetingFor || existing[0].Meeting_For, appointmentDateTime, appointmentDateTime, req.body.notes ?? existing[0].Notes, req.params.id]);
         const updated = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [req.params.id]);
         return res.json({ success: true, data: updated[0] });
-    } catch (error) { return sendApiError(res, error.statusCode || 500, 'APPOINTMENT_UPDATE_FAILED', error.message); }
+    } catch (error) { return sendApiError(res, error.statusCode || 500, error.code || 'APPOINTMENT_UPDATE_FAILED', error.message); }
 });
 
 app.patch('/appointments/:id/cancel', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
+        requireTextLimit(req.body.reason, 'Cancellation reason', 1000, 'CANCELLATION_REASON_TOO_LONG');
         const rows = await query(`SELECT Patient.Clinic_ID FROM Appointment JOIN Patient ON Appointment.Patient_ID=Patient.ID WHERE Appointment.Appointment_ID=?`, [req.params.id]);
         if (!rows.length) return sendApiError(res, 404, 'APPOINTMENT_NOT_FOUND', 'Appointment not found');
         requireAdminClinic(req, rows[0].Clinic_ID);
         await query("UPDATE Appointment SET Status='cancelled', Notes=COALESCE(?, Notes), Cancelled_Date=NOW(), Modified_Date=NOW() WHERE Appointment_ID=?", [req.body.reason || null, req.params.id]);
         const cancelled = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [req.params.id]);
         return res.json({ success: true, data: cancelled[0] });
-    } catch (error) { return sendApiError(res, error.statusCode || 500, 'APPOINTMENT_CANCEL_FAILED', error.message); }
+    } catch (error) { return sendApiError(res, error.statusCode || 500, error.code || 'APPOINTMENT_CANCEL_FAILED', error.message); }
 });
 
 const LAB_RESULT_SELECT = `SELECT Lab_Result.*, PatientUser.First_Name AS Patient_First_Name,

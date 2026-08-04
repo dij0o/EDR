@@ -48,3 +48,13 @@ test('clinic administrator lifecycle is system-only, transactional, and revokes 
   assert.match(server, /UPDATE User SET IsActive=0,Security_Version=Security_Version\+1/);
   assert.match(server, /await connection\.rollback\(\)\.catch/);
 });
+
+test('clinic deactivation cancels active dependencies and preserves historical records', () => {
+  assert.match(server, /app\.get\('\/clinics\/:id\/deactivation-impact'/);
+  const route = server.match(/app\.patch\('\/clinics\/:id'[\s\S]*?\n\}\);/)[0];
+  assert.match(route, /Appointment\.Status='cancelled'/);
+  assert.match(route, /UPDATE Request SET Status='cancelled'/);
+  assert.match(route, /Push_Subscription SET Active=0/);
+  assert.match(route, /internal\/clinics\/\$\{clinicID\}\/deactivate/);
+  assert.doesNotMatch(route, /DELETE FROM (Clinical_Record|Lab_Result|Patient|Doctor)/);
+});

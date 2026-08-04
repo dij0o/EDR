@@ -500,7 +500,7 @@ CREATE TABLE `Lab_Result` (
   KEY `idx_lab_result_patient_date` (`Patient_Blockchain_ID`,`Ordered_At`),
   KEY `idx_lab_result_clinic_status` (`Clinic_ID`,`Status`,`Ordered_At`),
   KEY `idx_lab_result_doctor_date` (`Ordering_Doctor_ID`,`Ordered_At`),
-  CONSTRAINT `fk_lab_result_patient` FOREIGN KEY (`Patient_Blockchain_ID`) REFERENCES `Patient` (`Blockchain_ID`) ON DELETE CASCADE,
+  CONSTRAINT `fk_lab_result_patient` FOREIGN KEY (`Patient_Blockchain_ID`) REFERENCES `Patient` (`Blockchain_ID`) ON DELETE RESTRICT,
   CONSTRAINT `fk_lab_result_clinic` FOREIGN KEY (`Clinic_ID`) REFERENCES `Organization` (`Organization_ID`),
   CONSTRAINT `fk_lab_result_doctor` FOREIGN KEY (`Ordering_Doctor_ID`) REFERENCES `Doctor` (`Blockchain_ID`) ON DELETE SET NULL,
   CONSTRAINT `fk_lab_result_clinical_record` FOREIGN KEY (`Clinical_Record_ID`) REFERENCES `Clinical_Record` (`Record_ID`) ON DELETE SET NULL,
@@ -1266,7 +1266,7 @@ ALTER TABLE `Doctor`
 ALTER TABLE `Patient`
   ADD CONSTRAINT `fk_patient_user` FOREIGN KEY (`ID`) REFERENCES `User` (`ID`) ON DELETE CASCADE;
 ALTER TABLE `Clinical_Record`
-  ADD CONSTRAINT `fk_clinical_patient_blockchain` FOREIGN KEY (`Patient_Blockchain_ID`) REFERENCES `Patient` (`Blockchain_ID`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_clinical_patient_blockchain` FOREIGN KEY (`Patient_Blockchain_ID`) REFERENCES `Patient` (`Blockchain_ID`) ON DELETE RESTRICT,
   ADD CONSTRAINT `fk_clinical_doctor_blockchain` FOREIGN KEY (`Created_By_Doctor_ID`) REFERENCES `Doctor` (`Blockchain_ID`);
 ALTER TABLE `Request`
   ADD CONSTRAINT `fk_request_organization` FOREIGN KEY (`Organization_ID`) REFERENCES `Organization` (`Organization_ID`),

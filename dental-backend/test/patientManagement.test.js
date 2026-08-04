@@ -37,6 +37,34 @@ test('delete route deactivates the patient, preserves history, and retires its F
     assert.ok(route);
     assert.match(route[0], /UPDATE User SET IsActive=0/);
     assert.match(route[0], /retireFabricIdentity\(req, 'patient'/);
-    assert.match(route[0], /UPDATE Patient SET Doctors=JSON_ARRAY\(\)/);
-    assert.doesNotMatch(route[0], /DELETE FROM Patient|DELETE FROM User/);
+  assert.match(route[0], /UPDATE Patient SET Doctors=JSON_ARRAY\(\)/);
+  assert.match(route[0], /UPDATE Appointment SET Status='cancelled'/);
+  assert.match(route[0], /NOT IN \('cancelled','canceled','completed','complete','done','finished'\)/);
+  assert.match(route[0], /clinicalRecordsPreserved/);
+  assert.match(route[0], /labResultsPreserved/);
+  assert.doesNotMatch(route[0], /DELETE FROM Patient|DELETE FROM User/);
+});
+
+test('patient deactivation impact is clinic scoped and reports preserved dependencies', () => {
+    const route = dbApi.match(/app\.get\('\/patients\/:id\/deactivation-impact'[\s\S]*?\n\}\);/);
+    assert.ok(route);
+    assert.match(route[0], /requireRoles\('admin'\)/);
+    assert.match(route[0], /requireAdminClinic\(req,/);
+    assert.match(route[0], /activeToCancel/);
+    assert.match(route[0], /clinicalRecordsToPreserve/);
+    assert.match(route[0], /labResultsToPreserve/);
+});
+
+test('patient names preserve valid punctuation and reject values above 100 characters before persistence', () => {
+    assert.match(dbApi, /PATIENT_NAME_TOO_LONG/);
+    assert.match(dbApi, /requireTextLimit\(body\[field\].*100, code\)/);
+    assert.match(api, /requireLegacyProfileBounds\(req\.body, 'patient'\)/);
+    assert.match(api, /code: error\.code \|\|/);
+    assert.ok(api.indexOf('requireValidPatientNames(req.body)') < api.indexOf("contract.submitTransaction(\n            'UpdatePatientInfo'"));
+    assert.doesNotMatch(dbApi, /replace\([^\n]+['"]-['"]|replace\([^\n]+['"]\\'['"]/);
+});
+
+test('identity and profile validation is enforced before legacy Fabric updates', () => {
+    assert.match(api, /requireLegacyProfileBounds\(req\.body, 'doctor'\)/);
+    for (const code of ['INVALID_EMAIL', 'INVALID_CONTACT_NUMBER', 'INVALID_EMIRATES_ID']) assert.match(api, new RegExp(code));
 });

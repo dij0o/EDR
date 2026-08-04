@@ -44,6 +44,15 @@ test('doctor update rejects an immutable ID mismatch before changing either stor
   assert.ok(fabricRoute.indexOf('DOCTOR_ID_MISMATCH') < fabricRoute.indexOf('UpdateDoctorInfo'));
 });
 
+test('blockchain API rejects an unknown doctor before submitting an update', () => {
+  const route = api.match(/app\.put\('\/doctor\/:id'[\s\S]*?\n\}\);/)[0];
+  assert.match(route, /evaluateTransaction\('ReadDoctor', String\(req\.params\.id\)\)/);
+  assert.match(route, /DOCTOR_NOT_FOUND/);
+  assert.match(route, /existingDoctor\.doctorID/);
+  assert.match(route, /DOCTOR_CLINIC_MISMATCH/);
+  assert.ok(route.indexOf("evaluateTransaction('ReadDoctor'") < route.indexOf("submitTransaction(\n                'UpdateDoctorInfo'"));
+});
+
 test('doctor profile update prevents mass assignment and tenant or relationship tampering', () => {
   const databaseRoute = databaseApi.match(/app\.put\('\/doctors\/:id'[\s\S]*?\n\}\);/)[0];
   const fabricRoute = api.match(/app\.put\('\/doctor\/:id'[\s\S]*?\n\}\);/)[0];
@@ -64,4 +73,15 @@ test('chaincode preserves doctor identity, tenant, creation metadata, and assign
     assert.match(update, new RegExp(`${field}: existingDoctor\\.${field}`));
   }
   assert.match(update, /patients: Array\.isArray\(existingDoctor\.patients\) \? existingDoctor\.patients : \[\]/);
+});
+
+test('doctor deactivation requires same-clinic reassignment or cancels only when no replacement remains', () => {
+  assert.match(databaseApi, /app\.get\('\/doctors\/:id\/deactivation-impact'/);
+  const route = databaseApi.match(/app\.delete\('\/doctors\/:id'[\s\S]*?\n\}\);/)[0];
+  assert.match(route, /DOCTOR_REASSIGNMENT_REQUIRED/);
+  assert.match(route, /INVALID_REPLACEMENT_DOCTOR/);
+  assert.match(route, /unassignPatientFromDoctor/);
+  assert.match(route, /assignPatientToDoctor/);
+  assert.match(route, /appointmentsAffected/);
+  assert.match(route, /Push_Subscription SET Active=0/);
 });

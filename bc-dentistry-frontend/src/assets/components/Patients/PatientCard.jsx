@@ -10,6 +10,7 @@ const PatientCard = ({ patientId, fullName, age, gender, insurance, patient, onC
   const [dialog, setDialog] = useState('');
   const [doctors, setDoctors] = useState([]);
   const [doctorID, setDoctorID] = useState('');
+  const [deactivationImpact, setDeactivationImpact] = useState(null);
   const [status, setStatus] = useState({ busy: false, error: '', notice: '' });
 
   useEffect(() => {
@@ -20,6 +21,17 @@ const PatientCard = ({ patientId, fullName, age, gender, insurance, patient, onC
       setDoctors(result.data || []);
     }).catch((error) => setStatus({ busy: false, error: error.message, notice: '' }));
   }, [dialog]);
+
+  useEffect(() => {
+    if (dialog !== 'delete') return;
+    setDeactivationImpact(null);
+    setStatus({ busy: true, error: '', notice: '' });
+    fetch(databaseUrl(`/patients/${encodeURIComponent(patientId)}/deactivation-impact`), { headers: jsonHeaders() }).then(async (response) => {
+      const result = await response.json();
+      if (!response.ok) throw new Error(result?.error?.message || 'Unable to calculate deactivation impact');
+      setDeactivationImpact(result.data); setStatus({ busy: false, error: '', notice: '' });
+    }).catch((error) => setStatus({ busy: false, error: error.message, notice: '' }));
+  }, [dialog, patientId]);
 
   const assign = async () => {
     if (!doctorID) return setStatus({ busy: false, error: 'Select a doctor to continue.', notice: '' });
@@ -44,6 +56,7 @@ const PatientCard = ({ patientId, fullName, age, gender, insurance, patient, onC
   };
 
   const remove = async () => {
+    if (!deactivationImpact) return setStatus({ busy: false, error: 'Dependency impact must load before deactivation.', notice: '' });
     setStatus({ busy: true, error: '', notice: '' });
     try {
       const response = await fetch(databaseUrl(`/patients/${encodeURIComponent(patientId)}`), { method: 'DELETE', headers: jsonHeaders() });
@@ -64,7 +77,7 @@ const PatientCard = ({ patientId, fullName, age, gender, insurance, patient, onC
     {dialog === 'edit' && <NewPatientDialog patient={patient} onClose={() => setDialog('')} onSaved={() => { setStatus({busy:false,error:'',notice:'Patient updated successfully.'}); onChanged?.(); }} />}
     {dialog === 'assign' && <ActionDialog title={`Assign doctor to ${fullName}`} description="Choose a doctor from this clinic." confirmLabel="Assign doctor" busy={status.busy} error={status.error} onClose={() => setDialog('')} onConfirm={assign}><label className="text-sm font-semibold">Doctor<select value={doctorID} onChange={(event) => setDoctorID(event.target.value)} className="mt-2 block w-full rounded-md border p-3"><option value="">Select a doctor</option>{doctors.map((doctor) => <option key={doctor.doctorID} value={doctor.doctorID}>{doctor.firstName} {doctor.lastName} ({doctor.doctorID})</option>)}</select></label></ActionDialog>}
     {dialog === 'unassign' && <ActionDialog title={`Unassign doctor from ${fullName}?`} description={`Remove ${doctorID} from both patient and doctor assignment records.`} confirmLabel="Unassign doctor" busy={status.busy} error={status.error} onClose={() => setDialog('')} onConfirm={unassign} />}
-    {dialog === 'delete' && <ActionDialog title={`Deactivate ${fullName}?`} description="This disables the account, preserves clinical history, removes active assignments, and retires the Fabric identity." confirmLabel="Deactivate patient" danger busy={status.busy} error={status.error} onClose={() => setDialog('')} onConfirm={remove} />}
+    {dialog === 'delete' && <ActionDialog title={`Deactivate ${fullName}?`} description={deactivationImpact ? `This will cancel ${deactivationImpact.appointments.activeToCancel} active appointment(s), remove ${deactivationImpact.assignedDoctors} doctor assignment(s), preserve ${deactivationImpact.appointments.completedToPreserve + deactivationImpact.appointments.cancelledToPreserve} completed/cancelled appointment(s), preserve ${deactivationImpact.clinicalRecordsToPreserve} clinical record(s) and ${deactivationImpact.labResultsToPreserve} lab result(s), disable access, and retain ledger history.` : 'Checking linked appointments and clinical records before deactivation…'} confirmLabel="Deactivate patient" danger busy={status.busy} error={status.error} onClose={() => setDialog('')} onConfirm={remove} />}
   </div>;
 };
 

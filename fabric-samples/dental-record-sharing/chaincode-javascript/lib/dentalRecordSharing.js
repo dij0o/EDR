@@ -938,6 +938,41 @@ class DentalRecordSharing extends Contract {
         return JSON.stringify(patient);
     }
 
+    async DeactivateClinicActors(ctx, clinicID) {
+        this._requireRole(ctx, 'system');
+        const clinic = String(clinicID);
+        const iterator = await ctx.stub.getStateByRange('', '');
+        const records = [];
+        for (;;) {
+            const item = await iterator.next();
+            if (item.value?.value) {
+                try { records.push({ key: item.value.key, value: JSON.parse(item.value.value.toString()) }); } catch { /* non-JSON state */ }
+            }
+            if (item.done) break;
+        }
+        await iterator.close();
+        const doctorIDs = new Set(records.filter(({ value }) => String(value.clinicID || '') === clinic && (value.docType === 'doctor' || Array.isArray(value.patients))).map(({ key, value }) => String(value.doctorID || value.id || key)));
+        let actorsDeactivated = 0; let requestsCancelled = 0;
+        const deactivatedAt = this._txTimestamp(ctx);
+        for (const record of records) {
+            const value = record.value;
+            const belongsToClinic = String(value.clinicID || (value.clinicIDs || [])[0] || '') === clinic;
+            const isDoctor = value.docType === 'doctor' || Array.isArray(value.patients);
+            const isPatient = value.docType === 'patient' || Array.isArray(value.doctors);
+            if (belongsToClinic && (isDoctor || isPatient)) {
+                value.isActive = false; value.deactivatedAt = deactivatedAt;
+                if (isDoctor) value.patients = [];
+                if (isPatient) value.doctors = [];
+                await ctx.stub.putState(record.key, Buffer.from(stringify(sortKeysRecursive(value)))); actorsDeactivated += 1;
+            } else if ((String(value.dataOriginClinicID || '') === clinic || doctorIDs.has(String(value.doctorID || ''))) && ['PENDING_ADMIN_APPROVAL','PENDING_PATIENT_CONSENT','CONSENT_GRANTED'].includes(value.status)) {
+                value.status = value.status === 'CONSENT_GRANTED' ? 'CONSENT_REVOKED' : 'CANCELLED';
+                value.revocationReason = 'Clinic deactivated'; value.modifiedDate = deactivatedAt;
+                await ctx.stub.putState(record.key, Buffer.from(stringify(sortKeysRecursive(value)))); requestsCancelled += 1;
+            }
+        }
+        return JSON.stringify({ clinicID: clinic, actorsDeactivated, requestsCancelled, historyPreserved: true });
+    }
+
     // Retained as an explicit compatibility guard: ledger actors are never hard deleted.
     async DeleteDoctor(ctx, id) {
         this._requireRole(ctx, 'admin');

@@ -11,6 +11,7 @@ const enrollment = read('dental-backend/fabricEnrollment.js');
 const reconcile = read('dental-backend/reconcileFabricIdentities.js');
 const chaincode = read('fabric-samples/dental-record-sharing/chaincode-javascript/lib/dentalRecordSharing.js');
 const migration = read('database/migrations/2026-08-03-entity-lifecycle-hardening.sql');
+const historyMigration = read('database/migrations/2026-08-04-preserve-clinical-history.sql');
 
 test('cross-store lifecycle operations are durable and observable', () => {
   assert.match(migration, /CREATE TABLE IF NOT EXISTS Entity_Lifecycle_Operation/);
@@ -60,4 +61,20 @@ test('certificates renew before expiry and expired identities fail closed', () =
   assert.match(enrollment, /FABRIC_IDENTITY_RENEWAL_DAYS/);
   assert.match(enrollment, /ca\.reenroll/);
   assert.match(enrollment, /expired and requires registrar recovery/);
+});
+
+test('bounded validation rejects abusive profile, password, appointment, and clinical payloads', () => {
+  for (const code of ['EMAIL_TOO_LONG', 'INVALID_CONTACT_NUMBER', 'INVALID_EMIRATES_ID', 'DOCTOR_LICENSE_TOO_LONG', 'PATIENT_LIST_ITEM_TOO_LONG', 'CLINICAL_PAYLOAD_TOO_LARGE', 'APPOINTMENT_REASON_TOO_LONG']) {
+    assert.match(server, new RegExp(code));
+  }
+  assert.match(server, /Buffer\.byteLength\(password, 'utf8'\) <= 72/);
+  assert.match(server, /validateBoundedJson\(payload, 'Clinical payload'\)/);
+});
+
+test('database and ledger clinic lifecycle preserve clinical history while revoking active state', () => {
+  assert.doesNotMatch(historyMigration, /ON DELETE CASCADE/);
+  assert.match(historyMigration, /ON DELETE RESTRICT/g);
+  assert.match(blockchain, /internal\/clinics\/:clinicID\/deactivate/);
+  assert.match(chaincode, /async DeactivateClinicActors/);
+  assert.match(chaincode, /CONSENT_REVOKED/);
 });
