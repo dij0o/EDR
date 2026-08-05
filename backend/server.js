@@ -120,14 +120,43 @@ const validateBoundedJson = (value, label, { maxBytes = 65536, maxDepth = 6, max
     };
     visit(value, 0);
 };
+const FDI_TOOTH_CODES = new Set([
+    ...[1,2,3,4].flatMap((quadrant) => Array.from({ length:8 }, (_, index) => `${quadrant}${index + 1}`)),
+    ...[5,6,7,8].flatMap((quadrant) => Array.from({ length:5 }, (_, index) => `${quadrant}${index + 1}`)),
+]);
+const DENTAL_SURFACES = new Set(['W','M','D','O','I','B','L','P','F']);
+const normalizeDentalCoding = (payload) => {
+    const legacyTooth = payload.tooth !== undefined && payload.teeth === undefined;
+    const teeth = (Array.isArray(payload.teeth) ? payload.teeth : [payload.teeth ?? payload.tooth])
+        .filter((value) => value !== undefined && value !== null && value !== '').map((value) => String(value).trim());
+    if (!teeth.length) throw validationError('DENTAL_TOOTH_REQUIRED', 'Select at least one tooth using FDI notation');
+    if (teeth.length > 32) throw validationError('DENTAL_TOOTH_LIMIT', 'A dental chart entry may include at most 32 teeth');
+    const invalidTeeth = teeth.filter((value) => !FDI_TOOTH_CODES.has(value));
+    if (invalidTeeth.length) throw validationError('INVALID_DENTAL_TOOTH', `Invalid FDI tooth code: ${invalidTeeth.join(', ')}`);
+    const rawSurfaces = payload.surfaces ?? payload.surface ?? (legacyTooth ? ['W'] : []);
+    const surfaces = (Array.isArray(rawSurfaces) ? rawSurfaces : [rawSurfaces])
+        .filter((value) => value !== undefined && value !== null && value !== '').map((value) => String(value).trim().toUpperCase());
+    if (!surfaces.length) throw validationError('DENTAL_SURFACE_REQUIRED', 'Select at least one dental surface or Whole tooth');
+    if (surfaces.length > DENTAL_SURFACES.size) throw validationError('DENTAL_SURFACE_LIMIT', 'Too many dental surfaces were selected');
+    const invalidSurfaces = surfaces.filter((value) => !DENTAL_SURFACES.has(value));
+    if (invalidSurfaces.length) throw validationError('INVALID_DENTAL_SURFACE', `Invalid dental surface: ${invalidSurfaces.join(', ')}`);
+    if (surfaces.includes('W') && surfaces.length > 1) throw validationError('DENTAL_SURFACE_CONFLICT', 'Whole tooth cannot be combined with individual surfaces');
+    const surfaceOrder = [...DENTAL_SURFACES];
+    return { ...payload,
+        teeth:[...new Set(teeth)].sort((left,right) => Number(left) - Number(right)),
+        surfaces:[...new Set(surfaces)].sort((left,right) => surfaceOrder.indexOf(left) - surfaceOrder.indexOf(right)),
+        tooth:undefined, surface:undefined };
+};
 const validateClinicalPayload = (recordType, payload) => {
     if (!['medical', 'dental'].includes(recordType)) { const error = new Error('recordType must be medical or dental'); error.statusCode = 400; throw error; }
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) { const error = new Error('payload must be an object'); error.statusCode = 400; throw error; }
     const required = recordType === 'medical' ? ['medicalHistory', 'allergies', 'labResults', 'medications']
-        : ['treatmentPhase', 'procedureCode', 'tooth', 'ceramicType', 'prescriptions', 'diagnostics'];
+        : ['treatmentPhase', 'procedureCode', 'ceramicType', 'prescriptions', 'diagnostics'];
     const missing = required.filter((field) => payload[field] === undefined || payload[field] === null || payload[field] === '');
     if (missing.length) { const error = new Error(`Missing required clinical fields: ${missing.join(', ')}`); error.statusCode = 400; throw error; }
-    validateBoundedJson(payload, 'Clinical payload');
+    const normalized = recordType === 'dental' ? normalizeDentalCoding(payload) : payload;
+    validateBoundedJson(normalized, 'Clinical payload');
+    return normalized;
 };
 
 const blockchainHeaders = (req, contentType = 'application/json', extraHeaders = {}) => ({
@@ -1576,7 +1605,7 @@ app.post(['/clinical-records', '/addMedicalRecord', '/addDentalChartEntry'], aut
     let connection;
     try {
         const recordType = req.path === '/addDentalChartEntry' ? 'dental' : (req.body.recordType || 'medical');
-        validateClinicalPayload(recordType, req.body.payload);
+        const normalizedPayload = validateClinicalPayload(recordType, req.body.payload);
         if (!req.body.patientID) return sendApiError(res, 400, 'VALIDATION_ERROR', 'patientID is required');
         if (!req.user.blockchainID) return sendApiError(res, 403, 'DOCTOR_IDENTITY_REQUIRED', 'Authenticated doctor is missing a blockchain identity');
         if (req.body.doctorID !== undefined && String(req.body.doctorID) !== String(req.user.blockchainID)) {
@@ -1587,7 +1616,7 @@ app.post(['/clinical-records', '/addMedicalRecord', '/addDentalChartEntry'], aut
         if (!authorizedPatients.length) return sendApiError(res, 403, 'PATIENT_ASSIGNMENT_REQUIRED', 'Clinical records may be written only for an active assigned patient');
         const idempotencyKey = String(req.get('Idempotency-Key') || req.body.idempotencyKey || '').trim() || null;
         if (idempotencyKey && idempotencyKey.length > 128) return sendApiError(res, 400, 'IDEMPOTENCY_KEY_TOO_LONG', 'Idempotency key must not exceed 128 characters');
-        const dataHash = clinicalHash(req.body.payload);
+        const dataHash = clinicalHash(normalizedPayload);
         const recordID = idempotencyKey
             ? `Clinical-${crypto.createHash('sha256').update(`${req.user.blockchainID}:${req.body.patientID}:${recordType}:${idempotencyKey}`).digest('hex').slice(0, 48)}`
             : `Clinical-${crypto.randomUUID()}`;
@@ -1600,10 +1629,10 @@ app.post(['/clinical-records', '/addMedicalRecord', '/addDentalChartEntry'], aut
             return res.json({ success:true, data:{ recordID, recordType:replay[0].Record_Type, patientID:replay[0].Patient_Blockchain_ID, payload:typeof replay[0].Payload==='string'?JSON.parse(replay[0].Payload):replay[0].Payload, dataHash:replay[0].Data_Hash, createdAt:replay[0].Created_Date }, alreadyProcessed:true, idempotent:true, message:'This clinical record request was already processed; the existing record was returned' });
         }
         await connection.query('INSERT INTO Clinical_Record (Record_ID, Patient_Blockchain_ID, Record_Type, Payload, Data_Hash, Created_By_Doctor_ID, Created_Date) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [recordID, req.body.patientID, recordType, JSON.stringify(req.body.payload), dataHash, req.user.blockchainID, createdAt.slice(0, 19).replace('T', ' ')]);
+            [recordID, req.body.patientID, recordType, JSON.stringify(normalizedPayload), dataHash, req.user.blockchainID, createdAt.slice(0, 19).replace('T', ' ')]);
         await callBlockchain(req, '/clinical-record-metadata', 'POST', { recordID, recordType, patientID: req.body.patientID, offChainRef: `mysql:Clinical_Record/${recordID}`, dataHash, doctorID: req.user.blockchainID, createdAt });
         await connection.commit();
-        return res.status(201).json({ success: true, data: { recordID, recordType, patientID: req.body.patientID, payload: req.body.payload, dataHash, createdAt } });
+        return res.status(201).json({ success: true, data: { recordID, recordType, patientID: req.body.patientID, payload: normalizedPayload, dataHash, createdAt } });
     } catch (error) {
         if (connection) await connection.rollback().catch(() => {});
         return sendApiError(res, error.statusCode || 500, error.code || 'CLINICAL_RECORD_CREATE_FAILED', error.message);

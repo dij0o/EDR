@@ -10,7 +10,7 @@ const migration = fs.readFileSync(path.resolve(__dirname, '..', '..', 'database'
 test('clinical payload is stored off-chain and only reference/hash metadata is submitted', () => {
   assert.match(migration, /CREATE TABLE IF NOT EXISTS Clinical_Record/);
   assert.match(db, /INSERT INTO Clinical_Record/);
-  assert.match(db, /clinicalHash\(req\.body\.payload\)/);
+  assert.match(db, /clinicalHash\(normalizedPayload\)/);
   assert.match(db, /offChainRef: `mysql:Clinical_Record\/\$\{recordID\}`/);
   const tx = chaincode.match(/async _addClinicalMetadata[\s\S]*?async AddMedicalRecord/)[0];
   assert.doesNotMatch(tx, /payload|medicalHistory|allergies|labResults|medications/);
@@ -19,7 +19,9 @@ test('clinical payload is stored off-chain and only reference/hash metadata is s
 test('medical and dental SRS routes enforce doctor identity and complete fields', () => {
   assert.match(db, /\['medical', 'dental'\]/);
   assert.match(db, /medicalHistory.*allergies.*labResults.*medications/);
-  assert.match(db, /treatmentPhase.*procedureCode.*tooth.*ceramicType.*prescriptions.*diagnostics/);
+  assert.match(db, /treatmentPhase.*procedureCode.*ceramicType.*prescriptions.*diagnostics/);
+  assert.match(db, /FDI_TOOTH_CODES/);
+  assert.match(db, /DENTAL_SURFACES/);
   assert.match(db, /DOCTOR_ID_MISMATCH/);
   assert.match(db, /Clinical records may be written only for an active assigned patient/);
   assert.match(db, /Radiographic files may be uploaded only for an active assigned patient/);
