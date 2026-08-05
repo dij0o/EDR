@@ -17,10 +17,10 @@ test('appointments reject terminal edits and preserve repeat cancellation', () =
   assert.match(db, /APPOINTMENT_ALREADY_COMPLETED/);
 });
 
-test('appointment creation supports retry keys and blocks duplicate slots', () => {
+test('appointment creation supports retry keys and blocks conflicting intervals', () => {
   assert.match(migration, /Idempotency_Key/);
   assert.match(db, /Idempotency-Key/);
-  assert.match(db, /DUPLICATE_APPOINTMENT_SLOT/);
+  assert.match(db, /APPOINTMENT_TIME_CONFLICT/);
   assert.match(db, /alreadyProcessed:true, idempotent:true/);
 });
 

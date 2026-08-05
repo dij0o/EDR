@@ -284,6 +284,9 @@ app.get('/health', (req, res) => {
         AND EXISTS (SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()
             AND TABLE_NAME='Patient_Clinic_Association')
         AND EXISTS (SELECT 1 FROM Schema_Migration WHERE Migration_ID='2026-08-05-patient-clinic-transfer')
+        AND EXISTS (SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()
+            AND TABLE_NAME='System_Configuration')
+        AND EXISTS (SELECT 1 FROM Schema_Migration WHERE Migration_ID='2026-08-05-appointment-overlap')
     ) AS ready`, (error, rows) => {
         if (error) {
             return res.status(503).json({ status: 'not-ready', service: 'database-api', database: false, sessionSchema: false });
@@ -1831,6 +1834,7 @@ app.get('/radiographic-files/:fileID/content', authenticateToken, requireRoles('
 
 const APPOINTMENT_SELECT = `SELECT Appointment.Appointment_ID, Appointment.Meeting_For,
     COALESCE(Appointment.Appointment_Date_Time, Appointment.Date) AS Appointment_Date_Time,
+    Appointment.Appointment_End_Date_Time, Appointment.Duration_Minutes,
     Appointment.Date, Appointment.Specialty, Appointment.Status, Appointment.Notes,
     Doctor.Blockchain_ID AS Doctor_ID, Patient.Blockchain_ID AS Patient_ID,
     CONCAT(DoctorUser.First_Name, ' ', DoctorUser.Last_Name) AS Doctor_Name,
@@ -1840,6 +1844,24 @@ const APPOINTMENT_SELECT = `SELECT Appointment.Appointment_ID, Appointment.Meeti
     INNER JOIN User DoctorUser ON Doctor.ID = DoctorUser.ID
     INNER JOIN Patient ON Appointment.Patient_ID = Patient.ID
     INNER JOIN User PatientUser ON Patient.ID = PatientUser.ID`;
+
+const appointmentDurationBounds = { min: 30, max: 480 };
+const configuredAppointmentDuration = async (runQuery = query) => {
+    const environmentDefault = Number(process.env.APPOINTMENT_DEFAULT_DURATION_MINUTES || 30);
+    const safeEnvironmentDefault = Number.isInteger(environmentDefault) && environmentDefault >= appointmentDurationBounds.min && environmentDefault <= appointmentDurationBounds.max ? environmentDefault : 30;
+    const rows = await runQuery("SELECT Configuration_Value FROM System_Configuration WHERE Configuration_Key='appointment.defaultDurationMinutes' LIMIT 1");
+    const databaseDefault = Number(rows[0]?.Configuration_Value);
+    return Number.isInteger(databaseDefault) && databaseDefault >= appointmentDurationBounds.min && databaseDefault <= appointmentDurationBounds.max ? databaseDefault : safeEnvironmentDefault;
+};
+
+const resolveAppointmentDuration = async (requestedDuration, runQuery = query) => {
+    const duration = requestedDuration === undefined || requestedDuration === null || requestedDuration === ''
+        ? await configuredAppointmentDuration(runQuery) : Number(requestedDuration);
+    if (!Number.isInteger(duration) || duration < appointmentDurationBounds.min || duration > appointmentDurationBounds.max) {
+        throw validationError('INVALID_APPOINTMENT_DURATION', `Appointment duration must be a whole number between ${appointmentDurationBounds.min} and ${appointmentDurationBounds.max} minutes`);
+    }
+    return duration;
+};
 
 app.get('/appointment-options/doctors', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
@@ -1880,8 +1902,9 @@ const listAppointments = async (req, res) => {
 app.get('/appointments', authenticateToken, requireRoles('admin', 'doctor', 'patient'), listAppointments);
 
 app.post('/appointments', authenticateToken, requireRoles('admin'), async (req, res) => {
+    let connection; let scheduleLock = false;
     try {
-        const { patientID, doctorID, appointmentDateTime, specialty, meetingFor, notes } = req.body;
+        const { patientID, doctorID, appointmentDateTime, specialty, meetingFor, notes, durationMinutes } = req.body;
         const idempotencyKey = String(req.get('Idempotency-Key') || req.body.idempotencyKey || '').trim() || null;
         if (idempotencyKey && idempotencyKey.length > 128) return sendApiError(res, 400, 'IDEMPOTENCY_KEY_TOO_LONG', 'Idempotency key must not exceed 128 characters');
         const storedIdempotencyKey = idempotencyKey ? crypto.createHash('sha256').update(`${req.user.organizationId}:${req.user.id}:${idempotencyKey}`).digest('hex') : null;
@@ -1890,7 +1913,14 @@ app.post('/appointments', authenticateToken, requireRoles('admin'), async (req, 
         requireTextLimit(notes, 'Appointment notes', 2000, 'APPOINTMENT_NOTES_TOO_LONG');
         const scheduledAt = new Date(appointmentDateTime);
         if (req.body.appointmentDateTime !== undefined && (Number.isNaN(scheduledAt.getTime()) || scheduledAt <= new Date())) throw validationError('INVALID_APPOINTMENT_DATE', 'Appointment date and time must be valid and in the future');
-        const rows = await query(`SELECT Patient.ID AS Patient_DB_ID, Patient.Clinic_ID AS Patient_Clinic_ID, Patient.Doctors AS Patient_Doctors,
+        connection = await db.promise().getConnection();
+        const runQuery = async (sql, params = []) => (await connection.query(sql, params))[0];
+        const lockRows = await runQuery("SELECT GET_LOCK('edr:appointment-schedule',5) AS Acquired");
+        if (Number(lockRows[0]?.Acquired) !== 1) throw Object.assign(new Error('Appointment scheduling is busy; please retry'), { statusCode:503, code:'APPOINTMENT_SCHEDULE_BUSY' });
+        scheduleLock = true;
+        const resolvedDuration = await resolveAppointmentDuration(durationMinutes, runQuery);
+        const scheduledEnd = new Date(scheduledAt.getTime() + resolvedDuration * 60 * 1000);
+        const rows = await runQuery(`SELECT Patient.ID AS Patient_DB_ID, Patient.Clinic_ID AS Patient_Clinic_ID, Patient.Doctors AS Patient_Doctors,
             Doctor.ID AS Doctor_DB_ID, Doctor.Clinic_ID AS Doctor_Clinic_ID, Doctor.Specialty AS Doctor_Specialty
             FROM Patient JOIN User PatientUser ON PatientUser.ID=Patient.ID
             JOIN Doctor ON Doctor.Blockchain_ID=? JOIN User DoctorUser ON DoctorUser.ID=Doctor.ID
@@ -1906,50 +1936,80 @@ app.post('/appointments', authenticateToken, requireRoles('admin'), async (req, 
         if (!authoritativeSpecialty) return sendApiError(res, 409, 'DOCTOR_SPECIALTY_REQUIRED', 'Selected doctor has no configured specialty');
         if (specialty !== undefined && String(specialty) !== String(authoritativeSpecialty)) return sendApiError(res, 400, 'APPOINTMENT_SPECIALTY_MISMATCH', 'Appointment specialty must match the selected doctor');
         if (idempotencyKey) {
-            const replay = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Idempotency_Key=? LIMIT 1`, [storedIdempotencyKey]);
+            const replay = await runQuery(`${APPOINTMENT_SELECT} WHERE Appointment.Idempotency_Key=? LIMIT 1`, [storedIdempotencyKey]);
             if (replay.length) {
                 const sameRequest = String(replay[0].Patient_ID) === String(patientID)
                     && String(replay[0].Doctor_ID) === String(doctorID)
                     && new Date(replay[0].Appointment_Date_Time).getTime() === scheduledAt.getTime()
+                    && Number(replay[0].Duration_Minutes) === resolvedDuration
                     && String(replay[0].Meeting_For) === String(meetingFor);
                 if (!sameRequest) return sendApiError(res, 409, 'IDEMPOTENCY_KEY_REUSED', 'This idempotency key was already used for a different appointment request');
                 return res.json({ success:true, data:replay[0], alreadyProcessed:true, idempotent:true, message:'This appointment request was already processed; the existing appointment was returned' });
             }
         }
-        const conflicts = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_Date_Time=?
+        const conflicts = await runQuery(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_Date_Time < ?
+            AND Appointment.Appointment_End_Date_Time > ?
             AND (Appointment.Doctor_ID=? OR Appointment.Patient_ID=?)
             AND LOWER(COALESCE(Appointment.Status,'scheduled')) NOT IN ('cancelled','canceled','completed','complete','done','finished') LIMIT 1`,
-            [appointmentDateTime, rows[0].Doctor_DB_ID, rows[0].Patient_DB_ID]);
-        if (conflicts.length) return sendApiError(res, 409, 'DUPLICATE_APPOINTMENT_SLOT', 'The selected doctor or patient already has an active appointment at this time');
-        const result = await query(`INSERT INTO Appointment (Meeting_For, Doctor_ID, Patient_ID, Date, Appointment_Date_Time, Specialty, Status, Notes, Modified_Date, Idempotency_Key)
-            VALUES (?, ?, ?, DATE(?), ?, ?, 'scheduled', ?, NOW(), ?)`, [meetingFor, rows[0].Doctor_DB_ID, rows[0].Patient_DB_ID, appointmentDateTime, appointmentDateTime, authoritativeSpecialty, notes || null, storedIdempotencyKey]);
-        const created = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [result.insertId]);
+            [scheduledEnd, scheduledAt, rows[0].Doctor_DB_ID, rows[0].Patient_DB_ID]);
+        if (conflicts.length) return sendApiError(res, 409, 'APPOINTMENT_TIME_CONFLICT', `The selected doctor or patient already has an appointment from ${conflicts[0].Appointment_Date_Time} to ${conflicts[0].Appointment_End_Date_Time}`);
+        const result = await runQuery(`INSERT INTO Appointment (Meeting_For, Doctor_ID, Patient_ID, Date, Appointment_Date_Time, Duration_Minutes, Appointment_End_Date_Time, Specialty, Status, Notes, Modified_Date, Idempotency_Key)
+            VALUES (?, ?, ?, DATE(?), ?, ?, ?, ?, 'scheduled', ?, NOW(), ?)`, [meetingFor, rows[0].Doctor_DB_ID, rows[0].Patient_DB_ID, scheduledAt, scheduledAt, resolvedDuration, scheduledEnd, authoritativeSpecialty, notes || null, storedIdempotencyKey]);
+        const created = await runQuery(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [result.insertId]);
         return res.status(201).json({ success: true, data: created[0] });
     } catch (error) {
         if (error.code === 'ER_DUP_ENTRY') return sendApiError(res, 409, 'DUPLICATE_APPOINTMENT', 'This appointment request or active booking slot already exists');
         return sendApiError(res, error.statusCode || 500, error.code || 'APPOINTMENT_CREATE_FAILED', error.message);
+    } finally {
+        if (connection) {
+            if (scheduleLock) await connection.query("SELECT RELEASE_LOCK('edr:appointment-schedule')").catch(()=>{});
+            connection.release();
+        }
     }
 });
 
 app.put('/appointments/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
+    let connection; let scheduleLock = false;
     try {
-        const existing = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [req.params.id]);
+        connection = await db.promise().getConnection();
+        const runQuery = async (sql, params = []) => (await connection.query(sql, params))[0];
+        const lockRows = await runQuery("SELECT GET_LOCK('edr:appointment-schedule',5) AS Acquired");
+        if (Number(lockRows[0]?.Acquired) !== 1) throw Object.assign(new Error('Appointment scheduling is busy; please retry'), { statusCode:503, code:'APPOINTMENT_SCHEDULE_BUSY' });
+        scheduleLock = true;
+        const existing = await runQuery(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [req.params.id]);
         if (!existing.length) return sendApiError(res, 404, 'APPOINTMENT_NOT_FOUND', 'Appointment not found');
         if (['cancelled','canceled','completed','complete','done','finished'].includes(String(existing[0].Status || '').toLowerCase())) return sendApiError(res, 409, 'APPOINTMENT_TERMINAL_STATE', 'Cancelled or completed appointments cannot be edited; create a new appointment to reschedule');
-        const scope = await query('SELECT Patient.Clinic_ID AS Patient_Clinic_ID FROM Appointment JOIN Patient ON Appointment.Patient_ID=Patient.ID WHERE Appointment.Appointment_ID=?', [req.params.id]);
+        const scope = await runQuery('SELECT Patient.Clinic_ID AS Patient_Clinic_ID,Appointment.Doctor_ID,Appointment.Patient_ID FROM Appointment JOIN Patient ON Appointment.Patient_ID=Patient.ID WHERE Appointment.Appointment_ID=?', [req.params.id]);
         requireAdminClinic(req, scope[0].Patient_Clinic_ID);
         if (['patientID', 'doctorID', 'clinicID'].some((field) => req.body[field] !== undefined)) return sendApiError(res, 400, 'APPOINTMENT_CONTEXT_IMMUTABLE', 'Patient, doctor, and clinic require a dedicated rescheduling workflow');
         if (req.body.specialty !== undefined && String(req.body.specialty) !== String(existing[0].Specialty)) return sendApiError(res, 400, 'APPOINTMENT_SPECIALTY_IMMUTABLE', 'Appointment specialty is derived from the selected doctor');
         const appointmentDateTime = req.body.appointmentDateTime || existing[0].Appointment_Date_Time;
+        const resolvedDuration = await resolveAppointmentDuration(req.body.durationMinutes ?? existing[0].Duration_Minutes, runQuery);
         requireTextLimit(req.body.meetingFor ?? existing[0].Meeting_For, 'Appointment reason', 255, 'APPOINTMENT_REASON_TOO_LONG');
         requireTextLimit(req.body.notes ?? existing[0].Notes, 'Appointment notes', 2000, 'APPOINTMENT_NOTES_TOO_LONG');
         const scheduledAt = new Date(appointmentDateTime);
         if (req.body.appointmentDateTime !== undefined && (Number.isNaN(scheduledAt.getTime()) || scheduledAt <= new Date())) throw validationError('INVALID_APPOINTMENT_DATE', 'Appointment date and time must be valid and in the future');
-        await query(`UPDATE Appointment SET Meeting_For=?, Date=DATE(?), Appointment_Date_Time=?, Notes=?, Modified_Date=NOW() WHERE Appointment_ID=?`,
-            [req.body.meetingFor || existing[0].Meeting_For, appointmentDateTime, appointmentDateTime, req.body.notes ?? existing[0].Notes, req.params.id]);
-        const updated = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [req.params.id]);
+        const scheduledEnd = new Date(scheduledAt.getTime() + resolvedDuration * 60 * 1000);
+        const conflicts = await runQuery(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID<>?
+            AND Appointment.Appointment_Date_Time < ? AND Appointment.Appointment_End_Date_Time > ?
+            AND (Appointment.Doctor_ID=? OR Appointment.Patient_ID=?)
+            AND LOWER(COALESCE(Appointment.Status,'scheduled')) NOT IN ('cancelled','canceled','completed','complete','done','finished') LIMIT 1`,
+            [req.params.id,scheduledEnd,scheduledAt,scope[0].Doctor_ID,scope[0].Patient_ID]);
+        if (conflicts.length) return sendApiError(res, 409, 'APPOINTMENT_TIME_CONFLICT', `The selected doctor or patient already has an appointment from ${conflicts[0].Appointment_Date_Time} to ${conflicts[0].Appointment_End_Date_Time}`);
+        await runQuery(`UPDATE Appointment SET Meeting_For=?, Date=DATE(?), Appointment_Date_Time=?, Duration_Minutes=?, Appointment_End_Date_Time=?, Notes=?, Modified_Date=NOW() WHERE Appointment_ID=?`,
+            [req.body.meetingFor || existing[0].Meeting_For, scheduledAt, scheduledAt, resolvedDuration, scheduledEnd, req.body.notes ?? existing[0].Notes, req.params.id]);
+        const updated = await runQuery(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [req.params.id]);
         return res.json({ success: true, data: updated[0] });
-    } catch (error) { return sendApiError(res, error.statusCode || 500, error.code || 'APPOINTMENT_UPDATE_FAILED', error.message); }
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') return sendApiError(res, 409, 'APPOINTMENT_TIME_CONFLICT', 'The selected doctor or patient already has an active appointment at this time');
+        return sendApiError(res, error.statusCode || 500, error.code || 'APPOINTMENT_UPDATE_FAILED', error.message);
+    }
+    finally {
+        if (connection) {
+            if (scheduleLock) await connection.query("SELECT RELEASE_LOCK('edr:appointment-schedule')").catch(()=>{});
+            connection.release();
+        }
+    }
 });
 
 app.patch('/appointments/:id/cancel', authenticateToken, requireRoles('admin'), async (req, res) => {

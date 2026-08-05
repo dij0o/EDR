@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Select from 'react-select';
 import { authHeaders, databaseUrl, handleUnauthorizedResponse } from '../../config/api.js';
 
-const emptyForm = { patientID: '', doctorID: '', appointmentDateTime: '', specialty: '', meetingFor: '', notes: '' };
+const emptyForm = { patientID: '', doctorID: '', appointmentDateTime: '', durationMinutes: '', specialty: '', meetingFor: '', notes: '' };
 
 const NewAppointmentDialog = ({ onClose, onCreated }) => {
   const [form, setForm] = useState(emptyForm);
@@ -63,6 +63,7 @@ const NewAppointmentDialog = ({ onClose, onCreated }) => {
         <div className="text-sm font-semibold text-gray-800"><label htmlFor="appointment-patient">Patient</label><Select inputId="appointment-patient" required isSearchable options={patientOptions} value={patientOptions.find((option) => option.value === form.patientID) || null} onChange={(option) => setForm({ ...form, patientID: option?.value || '' })} placeholder="Search clinic patients" /></div>
         <div className="text-sm font-semibold text-gray-800"><label htmlFor="appointment-doctor">Doctor</label><Select inputId="appointment-doctor" required isSearchable options={doctorOptions} value={doctorOptions.find((option) => option.value === form.doctorID) || null} onChange={(option) => { const doctor = doctors.find((item) => item.doctorID === option?.value); setForm({ ...form, doctorID: option?.value || '', specialty: doctor?.speciality || doctor?.specialty || '' }); }} placeholder="Search clinic doctors" /></div>
         <label className="text-sm font-semibold text-gray-800">Date and time<input required type="datetime-local" value={form.appointmentDateTime} onChange={(event) => setForm({ ...form, appointmentDateTime: event.target.value })} className="mt-2 block w-full rounded-lg border border-gray-300 p-3" /></label>
+        <label className="text-sm font-semibold text-gray-800">Duration<select value={form.durationMinutes} onChange={(event) => setForm({ ...form, durationMinutes: event.target.value ? Number(event.target.value) : '' })} className="mt-2 block w-full rounded-lg border border-gray-300 p-3"><option value="">Clinic default</option><option value="30">30 minutes</option><option value="45">45 minutes</option><option value="60">60 minutes</option><option value="90">90 minutes</option><option value="120">120 minutes</option></select></label>
         <label className="text-sm font-semibold text-gray-800">Specialty<input required readOnly aria-readonly="true" value={form.specialty} className="mt-2 block w-full cursor-not-allowed rounded-lg border border-gray-300 bg-gray-100 p-3 text-gray-700" /></label>
         <label className="text-sm font-semibold text-gray-800 md:col-span-2">Reason<input required maxLength={255} value={form.meetingFor} onChange={(event) => setForm({ ...form, meetingFor: event.target.value })} className="mt-2 block w-full rounded-lg border border-gray-300 p-3" /></label>
         <label className="text-sm font-semibold text-gray-800 md:col-span-2">Notes (maximum 2,000 characters)<textarea maxLength={2000} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} className="mt-2 block min-h-24 w-full resize-y rounded-lg border border-gray-300 p-3" /></label>
