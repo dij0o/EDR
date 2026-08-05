@@ -3,10 +3,10 @@ import MainContainer from "../../components/MainContainer";
 import AppointmentsStatstics from "./AppointmentsStatstics";
 
 
-const AppointmentsBar = ({ appointments, loading, onCreated }) => {
+const AppointmentsBar = ({ appointments, loading, filters, onFiltersChange, onCreated }) => {
     return (
         <MainContainer Id={"AppointmentControlBar"} classes={'gap-y-4'}>
-            <AppointmentsControlBar onCreated={onCreated} />
+            <AppointmentsControlBar filters={filters} onFiltersChange={onFiltersChange} onCreated={onCreated} />
             <AppointmentsStatstics appointments={appointments} loading={loading} />
         </MainContainer>
     )

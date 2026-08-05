@@ -31,6 +31,22 @@ const formatTimestamp = (timestamp) => {
     return Number.isNaN(date.getTime()) ? String(timestamp) : date.toLocaleString();
 };
 
+const notificationCopy = (notification) => {
+    const copies = {
+        ACCESS_REQUEST_PENDING_ADMIN: ['Patient data request', 'A doctor requested access to a patient record. Review the request.'],
+        ACCESS_REQUEST_PENDING_PATIENT: ['Your consent is required', 'A clinic approved a request for your records. Review it before deciding.'],
+        ACCESS_REQUEST_CONSENT_GRANTED: ['Patient transfer approved', 'The patient approved the transfer request. Open the patient directory for details.'],
+        ACCESS_REQUEST_REJECTED: ['Patient data request declined', 'The patient data request was declined. Open the request for details.'],
+        ACCESS_REQUEST_CONSENT_REVOKED: ['Patient consent revoked', 'Consent for a patient record was revoked. Access has been updated.'],
+    };
+    if (copies[notification.type]) return { title: copies[notification.type][0], body: copies[notification.type][1] };
+    const safeMessage = String(notification.message || 'Open this notification for details.')
+        .replace(/(?:Patient|Doctor)[-_][A-Za-z0-9-]{16,}/gi, 'patient or doctor record')
+        .replace(/\b[a-f0-9]{32,}\b/gi, 'record')
+        .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/gi, 'record');
+    return { title: 'EDR notification', body: safeMessage };
+};
+
 const Notifications = () => {
     const navigate = useNavigate();
     const isSystem = getStoredUser()?.role === "system";
@@ -42,6 +58,8 @@ const Notifications = () => {
     const [pushState, setPushState] = useState("checking");
     const [showDevices, setShowDevices] = useState(false);
     const [devices, setDevices] = useState([]);
+    const [devicesLoading, setDevicesLoading] = useState(false);
+    const [deviceError, setDeviceError] = useState('');
     const unread = notifications.filter((notification) => notification.status === "UNREAD").length;
 
     const loadNotifications = useCallback(async ({ quiet = false } = {}) => {
@@ -57,7 +75,7 @@ const Notifications = () => {
             setNotifications(payload.data || payload || []);
             setError("");
         } catch (loadError) {
-            setError(loadError.message);
+            setError(loadError.message === 'Failed to fetch' ? 'Notifications could not be refreshed. Check your connection and try again.' : loadError.message);
         } finally {
             if (!quiet) setLoading(false);
         }
@@ -148,16 +166,20 @@ const Notifications = () => {
         }
     };
 
+    const loadDevices = async () => {
+        setDevicesLoading(true);
+        setDeviceError('');
+        try {
+            setDevices(await listPushDevices());
+        } catch (deviceError) {
+            setDeviceError(deviceError.message === 'Failed to fetch' ? 'Notification devices could not be loaded. Check your connection and try again.' : deviceError.message);
+        } finally { setDevicesLoading(false); }
+    };
+
     const toggleDevices = async () => {
         const next = !showDevices;
         setShowDevices(next);
-        if (!next) return;
-        try {
-            setDevices(await listPushDevices());
-            setError("");
-        } catch (deviceError) {
-            setError(deviceError.message);
-        }
+        if (next) await loadDevices();
     };
 
     const removeDevice = async (subscriptionID) => {
@@ -209,10 +231,12 @@ const Notifications = () => {
                             </button>
                         </div>
 
-                        {error && <p role="alert" className="border-b bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
+                        {!showDevices && error && <p role="alert" className="border-b bg-red-50 px-4 py-2 text-sm text-red-700 break-words">{error}</p>}
                         {showDevices ? (
-                            <div className="max-h-96 overflow-y-auto">
-                                {devices.length === 0 && <p className="p-6 text-center text-sm text-gray-600">No active notification devices.</p>}
+                            <div className="max-h-96 overflow-x-hidden overflow-y-auto">
+                                {deviceError && <div role="alert" className="border-b bg-red-50 p-4 text-sm text-red-700"><p className="break-words">{deviceError}</p><button type="button" onClick={loadDevices} className="mt-2 font-semibold underline">Retry</button></div>}
+                                {devicesLoading && <p role="status" className="p-6 text-center text-sm text-gray-600">Loading notification devices...</p>}
+                                {!devicesLoading && !deviceError && devices.length === 0 && <p className="p-6 text-center text-sm text-gray-600">No active notification devices.</p>}
                                 {devices.map((device) => (
                                     <div key={device.id} className="flex items-start justify-between gap-3 border-b px-4 py-3">
                                         <div className="min-w-0">
@@ -224,25 +248,28 @@ const Notifications = () => {
                                     </div>
                                 ))}
                             </div>
-                        ) : <div className="max-h-96 overflow-y-auto">
+                        ) : <div className="max-h-96 overflow-x-hidden overflow-y-auto">
                             {loading && <p role="status" className="p-4 text-sm text-gray-600">Loading notifications…</p>}
                             {!loading && notifications.length === 0 && <p className="p-6 text-center text-sm text-gray-600">No notifications yet.</p>}
-                            {!loading && notifications.map((notification) => (
+                            {!loading && notifications.map((notification) => {
+                                const copy = notificationCopy(notification);
+                                return (
                                 <button
                                     key={notification.notificationID}
                                     type="button"
                                     onClick={() => openNotification(notification)}
-                                    className={`block w-full border-b px-4 py-3 text-left hover:bg-blue-50 focus-visible:bg-blue-50 ${notification.status === "UNREAD" ? "bg-blue-50/50" : "bg-white"}`}
+                                    className={`block w-full min-w-0 overflow-hidden border-b px-4 py-3 text-left hover:bg-blue-50 focus-visible:bg-blue-50 ${notification.status === "UNREAD" ? "bg-blue-50/50" : "bg-white"}`}
                                 >
                                     <span className="flex items-start gap-3">
                                         <span aria-hidden="true" className={`mt-1 h-2 w-2 shrink-0 rounded-full ${notification.status === "UNREAD" ? "bg-blue-700" : "bg-transparent"}`} />
-                                        <span>
-                                            <span className="block text-sm font-semibold text-gray-900">{notification.message || "EDR notification"}</span>
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block break-words text-sm font-semibold text-gray-900">{copy.title}</span>
+                                            <span className="mt-1 block break-words text-sm leading-5 text-gray-700">{copy.body}</span>
                                             <span className="mt-1 block text-xs text-gray-500">{formatTimestamp(notification.createdAt)}</span>
                                         </span>
                                     </span>
-                                </button>
-                            ))}
+                                </button>);
+                            })}
                         </div>}
                     </section>
                 )}
@@ -251,5 +278,5 @@ const Notifications = () => {
     );
 };
 
-export { deepLinkForNotification };
+export { deepLinkForNotification, notificationCopy };
 export default Notifications;
