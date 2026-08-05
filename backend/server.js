@@ -56,7 +56,10 @@ const normalizePatient = (row) => ({
     clinicID: row.Clinic_ID,
     doctors: row.Doctors ? (typeof row.Doctors === 'string' ? JSON.parse(row.Doctors) : row.Doctors) : [],
     createdDate: row.Created_Date,
-    modifiedDate: row.Modified_Date
+    modifiedDate: row.Modified_Date,
+    associationStatus: row.Association_Status || 'current',
+    operationalAccess: (row.Association_Status || 'current') === 'current',
+    currentClinicName: row.Current_Clinic_Name || null
 });
 
 const patientHash = (patient) => crypto.createHash('sha256').update(JSON.stringify({
@@ -278,6 +281,9 @@ app.get('/health', (req, res) => {
             AND COLUMN_NAME IN ('Security_Version','Sessions_Invalid_Before'))=2
         AND EXISTS (SELECT 1 FROM Schema_Migration WHERE Migration_ID='2026-07-29-secure-auth-sessions')
         AND EXISTS (SELECT 1 FROM Schema_Migration WHERE Migration_ID='2026-08-03-entity-lifecycle-hardening')
+        AND EXISTS (SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()
+            AND TABLE_NAME='Patient_Clinic_Association')
+        AND EXISTS (SELECT 1 FROM Schema_Migration WHERE Migration_ID='2026-08-05-patient-clinic-transfer')
     ) AS ready`, (error, rows) => {
         if (error) {
             return res.status(503).json({ status: 'not-ready', service: 'database-api', database: false, sessionSchema: false });
@@ -1327,6 +1333,8 @@ app.post('/patients', authenticateToken, requireRoles('admin'), async (req, res)
             JSON.stringify(createBody.medications), JSON.stringify(createBody.insuranceDetails), clinicID,
             JSON.stringify(requestedDoctors)
         ]);
+        await connection.query(`INSERT INTO Patient_Clinic_Association (Patient_ID,Clinic_ID,Association_Status)
+            VALUES (?,?,'current') ON DUPLICATE KEY UPDATE Association_Status='current',Transferred_At=NULL`, [userResult.insertId, clinicID]);
         const patient = { ...createBody, doctors: requestedDoctors, patientID, password: undefined };
         const dataHash = patientHash(patient);
         await provisionFabricIdentity(req, 'patient', patientID, clinicID);
@@ -1356,7 +1364,12 @@ app.post('/patients', authenticateToken, requireRoles('admin'), async (req, res)
 
 app.get('/patients', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
-        const rows = await query(`${PATIENT_SELECT} WHERE Patient.Clinic_ID = ? AND User.IsActive=1 ORDER BY User.Last_Name, User.First_Name`, [req.user.organizationId]);
+        const operationalOnly = String(req.query.operationalOnly || '').toLowerCase() === 'true';
+        const rows = await query(`${PATIENT_SELECT}
+            JOIN Patient_Clinic_Association PCA ON PCA.Patient_ID=Patient.ID AND PCA.Clinic_ID=?
+            WHERE User.IsActive=1 ${operationalOnly ? "AND PCA.Association_Status='current' AND Patient.Clinic_ID=?" : ''}
+            ORDER BY User.Last_Name, User.First_Name`, operationalOnly ? [req.user.organizationId,req.user.organizationId] : [req.user.organizationId]);
+        rows.forEach((row) => { row.Association_Status = Number(row.Clinic_ID) === Number(req.user.organizationId) ? 'current' : 'transferred'; });
         return res.json({ success: true, data: rows.map(normalizePatient) });
     } catch (error) { return sendApiError(res, 500, 'PATIENT_LIST_FAILED', 'Unable to retrieve patients'); }
 });
@@ -1380,7 +1393,11 @@ app.get('/patients/:id', authenticateToken, requireRoles('admin', 'doctor', 'pat
         if (normalizeRole(req.user.role) === 'patient' && req.user.blockchainID !== req.params.id) {
             return sendApiError(res, 403, 'PATIENT_OWNER_MISMATCH', 'Patients may retrieve only their own profile');
         }
-        if (normalizeRole(req.user.role) === 'admin') requireAdminClinic(req, patient.clinicID);
+        if (normalizeRole(req.user.role) === 'admin' && Number(req.user.organizationId) !== Number(patient.clinicID)) {
+            const associations = await query('SELECT Association_Status FROM Patient_Clinic_Association WHERE Patient_ID=? AND Clinic_ID=? LIMIT 1', [rows[0].ID, req.user.organizationId]);
+            if (!associations.length) return sendApiError(res, 403, 'PATIENT_CLINIC_SCOPE_DENIED', 'Patient has no association with the authenticated clinic');
+            patient.associationStatus = 'transferred'; patient.operationalAccess = false;
+        }
         if (normalizeRole(req.user.role) === 'doctor') {
             if (!req.user.blockchainID || !patient.doctors.includes(String(req.user.blockchainID))) {
                 return sendApiError(res, 403, 'PATIENT_ASSIGNMENT_REQUIRED', 'Doctors may retrieve only patients assigned to them');
@@ -1692,8 +1709,47 @@ app.post('/requestAccess', authenticateToken, requireRoles('doctor'), (req, res)
 app.get('/getAllRequestsForPatient/:patientID', authenticateToken, requireRoles('patient'), (req, res) =>
     relayBlockchainJson(req, res, `/getAllRequestsForPatient/${encodeURIComponent(req.user.blockchainID)}`));
 
-app.post('/grantConsent', authenticateToken, requireRoles('patient'), (req, res) =>
-    relayBlockchainJson(req, res, '/grantConsent', 'POST', { ...req.body, patientID: req.user.blockchainID }));
+app.post('/grantConsent', authenticateToken, requireRoles('patient'), async (req, res) => {
+    let connection; let operationID;
+    try {
+        if (!req.body.requestID) return sendApiError(res, 400, 'VALIDATION_ERROR', 'requestID is required');
+        connection = await db.promise().getConnection(); await connection.beginTransaction();
+        const [patients] = await connection.query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID=? AND User.IsActive=1 FOR UPDATE`, [req.user.blockchainID]);
+        if (!patients.length) throw Object.assign(new Error('Active patient not found'), { statusCode:404, code:'PATIENT_NOT_FOUND' });
+        const previousClinicID = Number(patients[0].Clinic_ID);
+        const approvedRequest = await callBlockchain(req, `/transferRequests/${encodeURIComponent(req.body.requestID)}`, 'GET');
+        if (approvedRequest.status !== 'PENDING_PATIENT_CONSENT') throw Object.assign(new Error('This transfer request is not waiting for patient confirmation'), { statusCode:409, code:'TRANSFER_ALREADY_PROCESSED' });
+        if (Number(approvedRequest.dataOriginClinicID) !== previousClinicID) throw Object.assign(new Error('The transfer request no longer matches the patient current clinic'), { statusCode:409, code:'TRANSFER_SOURCE_CHANGED' });
+        const requestedClinicID = Number(approvedRequest.requestingClinicID);
+        if (!requestedClinicID || requestedClinicID === previousClinicID) throw Object.assign(new Error('Approved request does not identify a different destination clinic'), { statusCode:409, code:'PATIENT_TRANSFER_DESTINATION_INVALID' });
+        const [approvedDoctors] = await connection.query(`${DOCTOR_SELECT} WHERE Doctor.Blockchain_ID=? AND Doctor.Clinic_ID=? AND User.IsActive=1 LIMIT 1`, [approvedRequest.doctorID,requestedClinicID]);
+        if (!approvedDoctors.length) throw Object.assign(new Error('The requesting doctor is no longer active in the destination clinic'), { statusCode:409, code:'TRANSFER_DOCTOR_UNAVAILABLE' });
+        operationID = await beginLifecycleOperation(req, 'PATIENT_TRANSFER', 'patient', req.user.blockchainID, previousClinicID, { requestID:req.body.requestID });
+        const ledger = await callBlockchain(req, '/grantConsent', 'POST', { ...req.body, patientID:req.user.blockchainID });
+        const currentClinicID = Number(ledger.currentClinicID);
+        if (currentClinicID !== requestedClinicID || String(ledger.doctorID) !== String(approvedRequest.doctorID)) throw Object.assign(new Error('Ledger transfer result did not match the approved destination'), { statusCode:409, code:'TRANSFER_RESULT_MISMATCH' });
+        const [cancelled] = await connection.query(`UPDATE Appointment SET Status='cancelled',
+            Notes=CONCAT_WS('\n',NULLIF(Notes,''),?),Cancelled_Date=COALESCE(Cancelled_Date,NOW()),Modified_Date=NOW()
+            WHERE Patient_ID=? AND LOWER(COALESCE(Status,'scheduled')) NOT IN ('cancelled','canceled','completed','complete','done','finished')`,
+            [`Automatically cancelled because patient ownership transferred from Clinic ${previousClinicID} to Clinic ${currentClinicID}.`,patients[0].ID]);
+        await connection.query(`INSERT INTO Patient_Clinic_Association (Patient_ID,Clinic_ID,Association_Status,Transfer_Request_ID,Transferred_At)
+            VALUES (?,?,'transferred',?,NOW()) ON DUPLICATE KEY UPDATE Association_Status='transferred',Transfer_Request_ID=VALUES(Transfer_Request_ID),Transferred_At=NOW()`,
+            [patients[0].ID,previousClinicID,String(req.body.requestID)]);
+        await connection.query(`INSERT INTO Patient_Clinic_Association (Patient_ID,Clinic_ID,Association_Status,Transfer_Request_ID,Associated_At,Transferred_At)
+            VALUES (?,?,'current',?,NOW(),NULL) ON DUPLICATE KEY UPDATE Association_Status='current',Transfer_Request_ID=VALUES(Transfer_Request_ID),Associated_At=NOW(),Transferred_At=NULL`,
+            [patients[0].ID,currentClinicID,String(req.body.requestID)]);
+        await connection.query('UPDATE Patient SET Clinic_ID=?,Doctors=?,Modified_Date=NOW() WHERE ID=?', [currentClinicID,JSON.stringify([String(ledger.doctorID)]),patients[0].ID]);
+        await connection.query(`UPDATE User SET Security_Version=Security_Version+1,Sessions_Invalid_Before=NOW(3) WHERE ID=?`, [patients[0].ID]);
+        await revokeManagedAdminSessions(connection, patients[0].ID, 'patient clinic ownership transferred');
+        await connection.commit();
+        await markLifecycleOperation(operationID, 'COMPLETED', 'OWNERSHIP_TRANSFERRED');
+        return res.json({ success:true, data:{ ...ledger, previousClinicID,currentClinicID,appointmentsCancelled:cancelled.affectedRows,operationalOwnerChanged:true }, message:`Patient transferred to Clinic ${currentClinicID}; Clinic ${previousClinicID} retains read-only directory history` });
+    } catch (error) {
+        if (connection) await connection.rollback().catch(()=>{});
+        await markLifecycleOperation(operationID, 'FAILED', 'PATIENT_TRANSFER_FAILED', error).catch(()=>{});
+        return sendApiError(res,error.statusCode||500,error.code||'PATIENT_TRANSFER_FAILED',error.message);
+    } finally { if (connection) connection.release(); }
+});
 
 app.post('/patient/rejectRequest', authenticateToken, requireRoles('patient'), (req, res) =>
     relayBlockchainJson(req, res, '/patient/rejectRequest', 'POST', { ...req.body, patientID: req.user.blockchainID }));
@@ -1840,6 +1896,7 @@ app.post('/appointments', authenticateToken, requireRoles('admin'), async (req, 
             JOIN Doctor ON Doctor.Blockchain_ID=? JOIN User DoctorUser ON DoctorUser.ID=Doctor.ID
             WHERE Patient.Blockchain_ID=? AND PatientUser.IsActive=1 AND DoctorUser.IsActive=1 LIMIT 1`, [doctorID, patientID]);
         if (!rows.length) return sendApiError(res, 404, 'APPOINTMENT_PARTY_NOT_FOUND', 'Patient or doctor not found');
+        if (rows[0].Doctor_Clinic_ID !== null && Number(rows[0].Doctor_Clinic_ID) !== Number(rows[0].Patient_Clinic_ID)) return sendApiError(res, 403, 'APPOINTMENT_CLINIC_MISMATCH', 'Patient and doctor must belong to the same current clinic');
         requireAdminClinic(req, rows[0].Patient_Clinic_ID);
         if (rows[0].Doctor_Clinic_ID === null) {
             const assignedDoctors = typeof rows[0].Patient_Doctors === 'string' ? JSON.parse(rows[0].Patient_Doctors || '[]') : (rows[0].Patient_Doctors || []);

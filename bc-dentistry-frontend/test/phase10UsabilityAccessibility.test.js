@@ -49,7 +49,7 @@ test('patient list and request controls remove placeholders and expose unique na
   const page = read('src/assets/Pages/Patients.jsx').replace(/^\s*\/\/.*$/gm, '');
   const request = read('src/assets/components/Patients/RequestPatientCard.jsx').replace(/^\s*\/\/.*$/gm, '');
   assert.doesNotMatch(page, /PatientsFilters/);
-  assert.match(request, /aria-label="Request access/);
+  assert.match(request, /aria-label="Request patient transfer/);
   assert.doesNotMatch(request, /console\.log/);
 });
 

@@ -7,6 +7,7 @@ import NewPatientDialog from './NewPatientDialog.jsx';
 
 const PatientCard = ({ patientId, fullName, age, gender, insurance, patient, onChanged }) => {
   const isAdmin = getStoredUser()?.role?.toLowerCase() === 'admin';
+  const isOperational = patient?.operationalAccess !== false;
   const [dialog, setDialog] = useState('');
   const [doctors, setDoctors] = useState([]);
   const [doctorID, setDoctorID] = useState('');
@@ -68,12 +69,13 @@ const PatientCard = ({ patientId, fullName, age, gender, insurance, patient, onC
 
   return <div className="patient-card min-h-64 rounded-xl border bg-white p-6 flex flex-col gap-y-2 justify-between">
     <p className="text-sm text-gray-500">ID: {patientId}</p>
+    {!isOperational && <p role="status" className="rounded bg-amber-50 p-2 text-sm font-semibold text-amber-900">Transferred to Clinic {patient?.clinicID}. Historical directory entry — no clinical or administrative actions are permitted.</p>}
     <Link to={`/patients/${patientId}`}><h2 className="text-xl font-bold">{fullName}</h2></Link>
     <div><span className="font-semibold">Age: </span>{age} · {gender}</div>
     <div><span className="font-semibold">Insurance: </span>{insurance}</div>
     <Link className="text-sm font-semibold text-blue-700 underline" to={`/patients/${patientId}`}>View authorized patient record</Link>
     {status.notice && <p role="status" className="rounded bg-green-50 p-2 text-sm text-green-800">{status.notice}</p>}
-    {isAdmin && <div className="flex flex-wrap gap-2 text-sm"><button type="button" onClick={() => setDialog('edit')} className="rounded border p-2">Update</button><button type="button" onClick={() => { setDoctorID(''); setStatus({busy:false,error:'',notice:''}); setDialog('assign'); }} className="rounded border p-2">Assign</button>{(patient?.doctors || []).map((id) => <button key={id} type="button" onClick={() => { setDoctorID(id); setStatus({busy:false,error:'',notice:''}); setDialog('unassign'); }} className="rounded border p-2">Unassign {id}</button>)}<button type="button" onClick={() => { setStatus({busy:false,error:'',notice:''}); setDialog('delete'); }} className="rounded border border-red-600 p-2 text-red-700">Deactivate</button></div>}
+    {isAdmin && isOperational && <div className="flex flex-wrap gap-2 text-sm"><button type="button" onClick={() => setDialog('edit')} className="rounded border p-2">Update</button><button type="button" onClick={() => { setDoctorID(''); setStatus({busy:false,error:'',notice:''}); setDialog('assign'); }} className="rounded border p-2">Assign</button>{(patient?.doctors || []).map((id) => <button key={id} type="button" onClick={() => { setDoctorID(id); setStatus({busy:false,error:'',notice:''}); setDialog('unassign'); }} className="rounded border p-2">Unassign {id}</button>)}<button type="button" onClick={() => { setStatus({busy:false,error:'',notice:''}); setDialog('delete'); }} className="rounded border border-red-600 p-2 text-red-700">Deactivate</button></div>}
     {dialog === 'edit' && <NewPatientDialog patient={patient} onClose={() => setDialog('')} onSaved={() => { setStatus({busy:false,error:'',notice:'Patient updated successfully.'}); onChanged?.(); }} />}
     {dialog === 'assign' && <ActionDialog title={`Assign doctor to ${fullName}`} description="Choose a doctor from this clinic. Repeating an existing assignment is safe and will not create a duplicate." confirmLabel="Assign doctor" busy={status.busy} error={status.error} onClose={() => setDialog('')} onConfirm={assign}><label className="text-sm font-semibold">Doctor<select value={doctorID} onChange={(event) => setDoctorID(event.target.value)} className="mt-2 block w-full rounded-md border p-3"><option value="">Select a doctor</option>{doctors.map((doctor) => { const assigned = (patient?.doctors || []).map(String).includes(String(doctor.doctorID)); return <option key={doctor.doctorID} value={doctor.doctorID}>{doctor.firstName} {doctor.lastName} ({doctor.doctorID}){assigned ? ' — already assigned' : ''}</option>; })}</select></label></ActionDialog>}
     {dialog === 'unassign' && <ActionDialog title={`Unassign doctor from ${fullName}?`} description={`Remove ${doctorID} from both patient and doctor assignment records.`} confirmLabel="Unassign doctor" busy={status.busy} error={status.error} onClose={() => setDialog('')} onConfirm={unassign} />}

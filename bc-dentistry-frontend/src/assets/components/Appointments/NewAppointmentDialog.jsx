@@ -17,7 +17,7 @@ const NewAppointmentDialog = ({ onClose, onCreated }) => {
 
   useEffect(() => {
     firstField.current?.focus();
-    Promise.all(['/clinic/me', '/patients', '/appointment-options/doctors'].map(async (path) => {
+    Promise.all(['/clinic/me', '/patients?operationalOnly=true', '/appointment-options/doctors'].map(async (path) => {
       const response = await fetch(databaseUrl(path), { headers: authHeaders() });
       handleUnauthorizedResponse(response);
       const payload = await response.json();

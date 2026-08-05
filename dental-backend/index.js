@@ -689,6 +689,22 @@ app.get('/getDentalChartData/:id', authenticateToken, requireRoles('admin', 'doc
 app.post('/requestAccess', authenticateToken, requireRoles('doctor'), requireDoctorSelfBody('doctorID'), requestAccessHandler);
 app.post('/grantConsent', authenticateToken, requireRoles('patient'), requirePatientSelfBody('patientID'), grantConsentHandler);
 
+app.get('/transferRequests/:requestID', authenticateToken, requireRoles('patient'), async (req, res) => {
+    try {
+        if (!req.user.blockchainID) {
+            const error = new Error('Authenticated patient is missing a blockchain identity');
+            error.statusCode = 403;
+            throw error;
+        }
+        const result = await withContract(req, (contract) => contract.evaluateTransaction(
+            'ReadTransferRequest', String(req.user.blockchainID), String(req.params.requestID)
+        ));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) {
+        return sendFabricError(res, error);
+    }
+});
+
 app.get('/getPendingRequests', authenticateToken, requireRoles('patient'), async (req, res) => {
     try {
         if (!req.user.blockchainID) {

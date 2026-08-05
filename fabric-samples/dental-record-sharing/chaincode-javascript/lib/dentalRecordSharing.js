@@ -1390,10 +1390,9 @@ class DentalRecordSharing extends Contract {
             }
         }
 
-        // Ensure the patient has data at the requested clinic
-        if (!patient.clinicIDs.includes(parseInt(dataOriginClinicID))) {
-            throw new Error(`Patient ${patientID} does not have data in Clinic ${dataOriginClinicID}`);
-        }
+        const currentOwnerClinicID = Number(patient.clinicID || (patient.clinicIDs || [])[0]);
+        if (currentOwnerClinicID !== Number(dataOriginClinicID)) throw new Error(`Patient ${patientID} is currently owned by Clinic ${currentOwnerClinicID}; transfer must be requested from the current owner`);
+        if (Number(doctor.clinicID) === currentOwnerClinicID) throw new Error(`Patient ${patientID} already belongs to the requesting clinic`);
 
         const request = {
             docType: 'accessRequest',
@@ -1551,32 +1550,48 @@ class DentalRecordSharing extends Contract {
 
         const consentedAt = this._txTimestamp(ctx);
         const identity = this._requireActor(ctx, patientID, 'patient');
-        request.status = 'CONSENT_GRANTED';
+        const previousClinicID = Number(patient.clinicID || request.dataOriginClinicID);
+        const currentClinicID = Number(request.requestingClinicID);
+        if (!currentClinicID || currentClinicID === previousClinicID) throw new Error('Transfer destination must be a different active clinic');
+        const destinationDoctorBytes = await ctx.stub.getState(request.doctorID);
+        if (!destinationDoctorBytes || !destinationDoctorBytes.length) throw new Error(`Doctor ${request.doctorID} not found`);
+        const destinationDoctor = JSON.parse(destinationDoctorBytes.toString());
+        if (Number(destinationDoctor.clinicID) !== currentClinicID || destinationDoctor.isActive === false) throw new Error('Requesting doctor is not active in the destination clinic');
+        request.status = 'TRANSFER_COMPLETED';
         request.patientConsentedAt = consentedAt;
         request.consentActorID = identity.actorID;
         request.consentMSPID = identity.mspID;
         request.consentTxID = ctx.stub.getTxID();
 
-        // Ensure `sharedWith` is initialized
-        if (!patient.sharedWith) {
-            patient.sharedWith = [];
+        request.previousClinicID = previousClinicID;
+        request.currentClinicID = currentClinicID;
+        request.transferredAt = consentedAt;
+        for (const priorDoctorID of Array.isArray(patient.doctors) ? patient.doctors : []) {
+            const priorDoctorBytes = await ctx.stub.getState(String(priorDoctorID));
+            if (priorDoctorBytes && priorDoctorBytes.length) {
+                const priorDoctor = JSON.parse(priorDoctorBytes.toString());
+                priorDoctor.patients = (Array.isArray(priorDoctor.patients) ? priorDoctor.patients : []).filter((id) => String(id) !== String(patientID));
+                await ctx.stub.putState(String(priorDoctorID), Buffer.from(JSON.stringify(priorDoctor)));
+            }
         }
-
-        // Prevent duplicate sharing
-        if (!patient.sharedWith.includes(request.doctorID)) {
-            patient.sharedWith.push(request.doctorID);
-        }
+        destinationDoctor.patients = Array.isArray(destinationDoctor.patients) ? destinationDoctor.patients : [];
+        if (!destinationDoctor.patients.some((id) => String(id) === String(patientID))) destinationDoctor.patients.push(patientID);
+        patient.clinicIDs = [...new Set([...(patient.clinicIDs || []), previousClinicID, currentClinicID])];
+        patient.clinicID = currentClinicID;
+        patient.doctors = [request.doctorID];
+        patient.sharedWith = [];
 
         // Store the updated request and patient data on the ledger
         await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
         await ctx.stub.putState(patient.patientID, Buffer.from(JSON.stringify(patient)));
+        await ctx.stub.putState(request.doctorID, Buffer.from(JSON.stringify(destinationDoctor)));
         const notification = await this._putNotification(ctx, {
             notificationID: `NOTIFICATION:${request.requestID}:DOCTOR_CONSENT_GRANTED`,
             recipientRole: 'doctor',
             recipientActorID: request.doctorID,
             type: 'ACCESS_REQUEST_CONSENT_GRANTED',
             relatedRequestID: request.requestID,
-            message: `Patient ${patientID} granted consent for ${request.dataType}.`,
+            message: `Patient ${patientID} transferred from Clinic ${previousClinicID} to Clinic ${currentClinicID}.`,
             payload: {
                 requestID: request.requestID,
                 patientID,
@@ -1586,7 +1601,7 @@ class DentalRecordSharing extends Contract {
             createdAt: consentedAt,
         });
 
-        return { success: true, message: `Patient ${patientID} granted consent for Doctor ${request.doctorID}.`, notification };
+        return { success:true, patientID,doctorID:request.doctorID,previousClinicID,currentClinicID,requestID,transferred:true, message:`Patient ${patientID} transferred to Clinic ${currentClinicID}.`, notification };
     }
 
 // Get Patient Data for the doctor if authorized
@@ -1651,7 +1666,7 @@ class DentalRecordSharing extends Contract {
             }
     
             // ✅ Filter only requests where the patientID matches and status is "APPROVED" or "REJECTED"
-            if (record.patientID === patientID && ['CONSENT_GRANTED', 'REJECTED'].includes(record.status)) {
+            if (record.patientID === patientID && ['TRANSFER_COMPLETED', 'REJECTED', 'REVOKED'].includes(record.status)) {
                 allRequests.push(record);
             }
             result = await iterator.next();
@@ -1683,6 +1698,19 @@ class DentalRecordSharing extends Contract {
         }
     
         return JSON.stringify(allRequests);
+    }
+
+    async ReadTransferRequest(ctx, patientID, requestID) {
+        this._requireActor(ctx, patientID, 'patient');
+        const requestAsBytes = await ctx.stub.getState(requestID);
+        if (!requestAsBytes || requestAsBytes.length === 0) {
+            throw new Error(`Request ${requestID} not found`);
+        }
+        const request = JSON.parse(requestAsBytes.toString());
+        if (request.docType !== 'accessRequest' || String(request.patientID) !== String(patientID)) {
+            throw new Error(`Patient ${patientID} is not authorized to read request ${requestID}`);
+        }
+        return JSON.stringify(request);
     }
     
     

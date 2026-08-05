@@ -62,7 +62,7 @@ const RequestPatientCard = () => {
 
             const payload = await response.json();
             if (response.ok) {
-                setStatus({ loading: false, error: '', notice: `Request sent successfully. Request ID: ${payload.data.requestID}` });
+                setStatus({ loading: false, error: '', notice: `Transfer request sent successfully. Request ID: ${payload.data.requestID}` });
                 setPatientName(''); setPatientID(''); setClinicID(''); setPurpose(''); setNotes('');
             } else {
                 setStatus({ loading: false, error: payload?.error?.message || 'Failed to request access.', notice: '' });
@@ -75,9 +75,9 @@ const RequestPatientCard = () => {
 
     return (
         <div className="patient-card relative flex flex-col text-center text-gray-400 border border-[.2em] border-dashed border-gray-300 rounded-md p-5 gap-y-3 h-56 justify-between">
-            <button type="button" onClick={expandRequestForm} aria-label="Request access to a patient at another clinic" className="patient-card-btn text-8xl font-extralight">+</button>
+            <button type="button" onClick={expandRequestForm} aria-label="Request patient transfer from another clinic" className="patient-card-btn text-8xl font-extralight">+</button>
             <div>
-                <p>Click here to request data for a specific patient</p>
+                <p>Request transfer of a patient from their current clinic</p>
             </div>
 
             <div ref={requestDataForm} className="request-form flex flex-col gap-y-4 absolute top-0 left-0 w-full h-0 overflow-hidden rounded-md bg-white drop-shadow-xl">
