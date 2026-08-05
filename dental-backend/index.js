@@ -232,12 +232,13 @@ const sendFabricError = (res, error) => {
     const statusCode = error.statusCode
         || (/access denied|not authorized|forbidden|requires .* role|does not match/i.test(message) ? 403 : null)
         || (/does not exist|not found/i.test(message) ? 404 : null)
+        || (/cannot be approved at this stage|not waiting for patient consent|cannot be rejected at this stage|does not have active consent|already (?:processed|approved|rejected|revoked)/i.test(message) ? 409 : null)
         || (/missing required|cannot be rejected at this stage/i.test(message) ? 400 : null)
         || 500;
     res.status(statusCode).json({
         success: false,
         error: {
-            code: error.code || (statusCode === 400 ? 'VALIDATION_ERROR' : statusCode === 403 ? 'FORBIDDEN' : 'BLOCKCHAIN_ERROR'),
+            code: error.code || (statusCode === 409 ? 'ALREADY_PROCESSED' : statusCode === 400 ? 'VALIDATION_ERROR' : statusCode === 403 ? 'FORBIDDEN' : 'BLOCKCHAIN_ERROR'),
             message
         }
     });
@@ -465,6 +466,12 @@ const readPatientHandler = async (req, res) => {
 const requestAccessHandler = async (req, res) => {
     try {
         requireFields(req.body, ['doctorID', 'patientID', 'dataOriginClinicID', 'dataType', 'purpose']);
+        const existingResult = await withContract(req, (contract) => contract.evaluateTransaction(
+            'GetActiveDataAccessRequest', String(req.body.doctorID), String(req.body.patientID),
+            String(req.body.dataOriginClinicID), String(req.body.dataType)
+        ));
+        const existing = parseBufferJson(existingResult);
+        if (existing) return sendSuccess(res, { requestID:existing.requestID, alreadyPending:true, idempotent:true, status:existing.status, message:'An active data-access request already exists; no duplicate request or notification was created' });
         const result = await withContract(req, (contract) => contract.submitTransaction(
             'RequestDataAccess',
             String(req.body.doctorID),
@@ -580,15 +587,25 @@ app.get(['/audit/clinical-access/:patientID', '/getAccessAuditLogs/:patientID'],
 
 app.post('/radiographic-files', authenticateToken, requireRoles('doctor'), express.raw({ type: 'application/octet-stream', limit: radiographicMaxFileBytes }), async (req, res) => {
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) return sendApiError(res, 400, 'FILE_REQUIRED', 'A DICOM or radiographic file is required');
-    const fileID = crypto.randomUUID();
+    const idempotencyKey = String(req.get('Idempotency-Key') || '').trim() || null;
+    if (idempotencyKey && idempotencyKey.length > 128) return sendApiError(res, 400, 'IDEMPOTENCY_KEY_TOO_LONG', 'Idempotency key must not exceed 128 characters');
+    const patientID = req.headers['x-patient-id'];
+    const contentHash = crypto.createHash('sha256').update(req.body).digest('hex');
+    const idHex = idempotencyKey ? crypto.createHash('sha256').update(`${req.user.blockchainID}:${patientID}:${idempotencyKey}`).digest('hex').slice(0, 32) : null;
+    const fileID = idHex ? `${idHex.slice(0,8)}-${idHex.slice(8,12)}-4${idHex.slice(13,16)}-a${idHex.slice(17,20)}-${idHex.slice(20,32)}` : crypto.randomUUID();
     fs.mkdirSync(radiographicStorageRoot, { recursive: true });
     const filePath = path.join(radiographicStorageRoot, fileID);
     try {
-        const patientID = req.headers['x-patient-id'];
         const fileName = req.headers['x-file-name'];
         if (!patientID || !fileName) { const error = new Error('Missing required headers: x-patient-id, x-file-name'); error.statusCode = 400; throw error; }
         const uploaderID = req.user.blockchainID;
         if (!uploaderID) { const error = new Error('Authenticated doctor is missing a blockchain identity'); error.statusCode = 403; throw error; }
+        if (idempotencyKey && fs.existsSync(filePath)) {
+            const existingResult = await withContract(req, (contract) => contract.evaluateTransaction('GetDentalFile', fileID));
+            const existing = parseBufferJson(existingResult);
+            if (existing.sha256 !== contentHash || existing.patientID !== String(patientID)) return sendApiError(res, 409, 'IDEMPOTENCY_KEY_REUSED', 'This idempotency key was already used for a different radiographic file');
+            return sendSuccess(res, { ...existing, alreadyProcessed:true, idempotent:true, message:'This radiographic upload was already processed; the existing file was returned' });
+        }
         await fs.promises.writeFile(filePath, req.body, { flag: 'wx' });
         const sha256 = await sha256File(filePath);
         const metadata = {
@@ -1179,14 +1196,14 @@ app.post('/push/subscriptions', authenticateToken, requireRoles('admin', 'doctor
         requireFields(req.body, ['platform', 'token']);
         const target = notificationTargetFromUser(req.user);
         if (!target.id) return sendApiError(res, 403, 'NOTIFICATION_IDENTITY_REQUIRED', 'Authenticated user is missing a notification identity');
-        const subscriptionID = await registerPushSubscription({
+        const registration = await registerPushSubscription({
             role: target.role,
             recipientID: target.id,
             platform: req.body.platform,
             token: req.body.token,
             deviceLabel: req.body.deviceLabel,
         });
-        return sendSuccess(res, { registered: true, subscriptionID }, 201);
+        return sendSuccess(res, { registered:true, ...registration }, registration.created ? 201 : 200);
     } catch (error) {
         console.error(`Push subscription registration failed: ${error.message}`);
         return sendApiError(res, 503, 'PUSH_SUBSCRIPTION_UNAVAILABLE', 'Push subscription storage is unavailable');

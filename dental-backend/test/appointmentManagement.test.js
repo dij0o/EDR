@@ -47,7 +47,8 @@ test('update and cancel are admin-only and patient-clinic scoped', () => {
   for (const source of [update, cancel]) { assert.match(source, /requireRoles\('admin'\)/); assert.match(source, /requireAdminClinic/); }
   assert.match(update, /APPOINTMENT_CONTEXT_IMMUTABLE/);
   assert.match(update, /APPOINTMENT_SPECIALTY_IMMUTABLE/);
-  assert.match(update, /Status='scheduled'/);
+  assert.match(update, /APPOINTMENT_TERMINAL_STATE/);
+  assert.doesNotMatch(update, /Status='scheduled'/);
   assert.match(cancel, /Status='cancelled'/);
 });
 

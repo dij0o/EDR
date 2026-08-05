@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
-import { databaseUrl, jsonHeaders } from '../config/api.js';
+import { apiPayloadMessage, databaseUrl, jsonHeaders } from '../config/api.js';
 import ActionDialog from '../components/ActionDialog.jsx';
 
 const blankAdmin = { firstName:'', lastName:'', email:'', contactNumber:'', password:'' };
 const initial = { name:'', address:'', description:'', coordinates:'', type:'Dental Clinic', admin:{ ...blankAdmin } };
-const message = (payload, fallback) => payload?.error?.message || payload?.error || fallback;
 const clinicLimits = { name:255, address:1000, description:2000, coordinates:255, type:100 };
 const adminLimits = { firstName:100, lastName:100, email:254, contactNumber:25, password:72 };
 
@@ -25,7 +24,7 @@ export default function Clinics() {
   const request=async(path,options={})=>{
     const response=await fetch(databaseUrl(path),{headers:jsonHeaders(),...options});
     const payload=await response.json();
-    if(!response.ok) throw new Error(message(payload,'Request failed'));
+    if(!response.ok) throw new Error(apiPayloadMessage(payload,'Request failed.'));
     return payload;
   };
   const load=async()=>{ try { const payload=await request('/clinics'); setClinics(payload.data||[]); } catch(e){setError(e.message);} };

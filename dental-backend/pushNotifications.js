@@ -92,6 +92,10 @@ const registerPushSubscription = async ({ role, recipientID, platform, token, de
     if (!recipientID || !token) throw new Error('Recipient identity and push token are required');
 
     await ensureSchema();
+    const [existingRows] = await getPool().execute(
+        'SELECT Push_Subscription_ID,Active FROM Push_Subscription WHERE Push_Token=? LIMIT 1',
+        [String(token)]
+    );
     const [result] = await getPool().execute(
         `INSERT INTO Push_Subscription
             (Recipient_Role, Recipient_ID, Platform, Push_Token, Device_Label, Active, Last_Error)
@@ -106,7 +110,9 @@ const registerPushSubscription = async ({ role, recipientID, platform, token, de
             Last_Error = NULL`,
         [normalizedRole, String(recipientID), normalizedPlatform, String(token), deviceLabel ? String(deviceLabel) : null]
     );
-    return result.insertId;
+    const existed = existingRows.length > 0;
+    const reactivated = existed && !Boolean(existingRows[0].Active);
+    return { subscriptionID:result.insertId, existing:existed && !reactivated, reactivated, created:!existed };
 };
 
 const unregisterPushSubscription = async ({ role, recipientID, token }) => {

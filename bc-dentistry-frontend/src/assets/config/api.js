@@ -20,6 +20,34 @@ const buildUrl = (baseUrl, path) => {
 
 export const databaseUrl = (path) => buildUrl(DATABASE_API_URL, path);
 
+const API_CODE_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+
+export const humanizeApiCode = (code) => {
+    if (typeof code !== 'string' || !code.trim()) return '';
+    const value = code.trim();
+    if (!API_CODE_PATTERN.test(value)) return value;
+    const words = value.toLowerCase().replace(/_/g, ' ');
+    return `${words.charAt(0).toUpperCase()}${words.slice(1)}.`;
+};
+
+export const apiPayloadMessage = (payload, fallback = 'Request failed.') => {
+    const candidates = [
+        payload?.message,
+        payload?.error?.message,
+        typeof payload?.error === 'string' ? payload.error : undefined,
+        payload?.detail,
+        payload?.error?.code,
+        payload?.code,
+    ];
+    const selected = candidates.find((candidate) => typeof candidate === 'string' && candidate.trim());
+    return humanizeApiCode(selected || fallback) || fallback;
+};
+
+export const apiRequestErrorMessage = (error, fallback = 'Request failed.') => {
+    if (error?.response?.data) return apiPayloadMessage(error.response.data, fallback);
+    return humanizeApiCode(error?.message || fallback) || fallback;
+};
+
 axios.defaults.withCredentials = true;
 const nativeFetch = window.fetch.bind(window);
 let refreshPromise = null;

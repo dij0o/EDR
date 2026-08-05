@@ -40,6 +40,7 @@ export default function RadiographicFiles({ patientID, canUpload }) {
       await axios.post(databaseUrl("/radiographic-files"), file, { headers: authHeaders({
         "Content-Type": "application/octet-stream", "x-patient-id": patientID,
         "x-file-name": file.name, "x-file-media-type": file.type || "application/octet-stream",
+        "Idempotency-Key": `${patientID}:${file.name}:${file.size}:${file.lastModified}`,
       }) });
       setMessage("Upload complete.");
       await loadFiles();

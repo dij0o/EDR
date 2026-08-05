@@ -928,8 +928,9 @@ app.patch('/clinics/:id', authenticateToken, requireRoles('system'), async (req,
             return res.json({success:true,message:'Clinic profile updated; previously deactivated users require explicit reactivation workflows'});
         }
         connection=await db.promise().getConnection();await connection.beginTransaction();
-        const [organizations]=await connection.query('SELECT Organization_ID FROM Organization WHERE Organization_ID=? FOR UPDATE',[clinicID]);
+        const [organizations]=await connection.query('SELECT Organization_ID,IsActive FROM Organization WHERE Organization_ID=? FOR UPDATE',[clinicID]);
         if(!organizations.length)throw Object.assign(new Error('Clinic not found'),{statusCode:404,code:'CLINIC_NOT_FOUND'});
+        if(!organizations[0].IsActive){await connection.rollback();return res.json({success:true,data:{clinicID,deactivated:true,alreadyInactive:true,idempotent:true},message:'Clinic is already inactive; no lifecycle changes were repeated'});}
         const [doctors]=await connection.query(`${DOCTOR_SELECT} WHERE Doctor.Clinic_ID=? AND User.IsActive=1 FOR UPDATE`,[clinicID]);
         const [patients]=await connection.query(`${PATIENT_SELECT} WHERE Patient.Clinic_ID=? AND User.IsActive=1 FOR UPDATE`,[clinicID]);
         const [admins]=await connection.query('SELECT User.ID FROM Admin JOIN User ON User.ID=Admin.User_ID WHERE Admin.Organization_ID=? AND User.IsActive=1 FOR UPDATE',[clinicID]);
@@ -1213,6 +1214,7 @@ app.delete('/doctors/:id', authenticateToken, requireRoles('admin'), async (req,
     let connection; let operationID;
     try { connection = await db.promise().getConnection(); await connection.beginTransaction(); const [rows] = await connection.query(`${DOCTOR_SELECT} WHERE Doctor.Blockchain_ID=? FOR UPDATE`, [req.params.id]);
         if (!rows.length) { const error = new Error('Doctor not found'); error.statusCode = 404; throw error; } requireAdminClinic(req, rows[0].Clinic_ID);
+        if (!rows[0].IsActive) { await connection.rollback(); return res.json({ success:true, data:{ doctorID:req.params.id, deactivated:true, alreadyInactive:true, idempotent:true }, message:'Doctor is already inactive; no lifecycle changes were repeated' }); }
         const [assigned] = await connection.query(`${PATIENT_SELECT} WHERE Patient.Clinic_ID=? AND User.IsActive=1 AND JSON_CONTAINS(Patient.Doctors,JSON_QUOTE(?)) FOR UPDATE`, [rows[0].Clinic_ID, req.params.id]);
         const [replacementRows] = await connection.query(`${DOCTOR_SELECT} WHERE Doctor.Clinic_ID=? AND Doctor.Blockchain_ID<>? AND User.IsActive=1`, [rows[0].Clinic_ID, req.params.id]);
         const replacementDoctorID = req.body?.replacementDoctorID ? String(req.body.replacementDoctorID) : null;
@@ -1444,6 +1446,22 @@ app.post('/patients/:id/assign', authenticateToken, requireRoles('admin'), async
             error.statusCode = 403;
             throw error;
         }
+        const requestedDoctorID = String(req.body.doctorID);
+        if ((current.doctors || []).map(String).includes(requestedDoctorID)) {
+            const dataHash = patientHash(current);
+            await callBlockchain(req, '/assignPatientToDoctor', 'POST', {
+                patientID: req.params.id,
+                doctorID: requestedDoctorID,
+                dataHash,
+                modifiedDate: new Date().toISOString(),
+            });
+            await connection.commit();
+            return res.json({
+                success: true,
+                data: { patientID: req.params.id, doctors: current.doctors, alreadyAssigned: true, idempotent: true },
+                message: `Patient is already assigned to doctor ${requestedDoctorID}; no duplicate was created`,
+            });
+        }
         const doctors = [...new Set([...(current.doctors || []), String(req.body.doctorID)])];
         operationID = await beginLifecycleOperation(req, 'PATIENT_ASSIGN', 'assignment', `${req.params.id}:${req.body.doctorID}`, current.clinicID, req.body);
         await connection.query('UPDATE Patient SET Doctors=?, Modified_Date=NOW() WHERE ID=?', [JSON.stringify(doctors), rows[0].ID]);
@@ -1505,6 +1523,7 @@ app.delete('/patients/:id', authenticateToken, requireRoles('admin'), async (req
         const [rows] = await connection.query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID = ? FOR UPDATE`, [req.params.id]);
         if (!rows.length) { const error = new Error('Patient not found'); error.statusCode = 404; throw error; }
         requireAdminClinic(req, rows[0].Clinic_ID);
+        if (!rows[0].IsActive) { await connection.rollback(); return res.json({ success:true, data:{ patientID:req.params.id, deactivated:true, alreadyInactive:true, idempotent:true }, message:'Patient is already inactive; no lifecycle changes were repeated' }); }
         operationID = await beginLifecycleOperation(req, 'PATIENT_DEACTIVATE', 'patient', req.params.id, rows[0].Clinic_ID, {});
         const [appointmentImpact] = await connection.query('SELECT Appointment_ID,Status FROM Appointment WHERE Patient_ID=? FOR UPDATE', [rows[0].ID]);
         const [clinicalImpact] = await connection.query('SELECT COUNT(*) AS total FROM Clinical_Record WHERE Patient_Blockchain_ID=?', [req.params.id]);
@@ -1546,10 +1565,20 @@ app.post(['/clinical-records', '/addMedicalRecord', '/addDentalChartEntry'], aut
         const authorizedPatients = await query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID=? AND User.IsActive=1
             AND JSON_CONTAINS(Patient.Doctors,JSON_QUOTE(?)) LIMIT 1`, [req.body.patientID, String(req.user.blockchainID)]);
         if (!authorizedPatients.length) return sendApiError(res, 403, 'PATIENT_ASSIGNMENT_REQUIRED', 'Clinical records may be written only for an active assigned patient');
-        const recordID = `Clinical-${crypto.randomUUID()}`;
+        const idempotencyKey = String(req.get('Idempotency-Key') || req.body.idempotencyKey || '').trim() || null;
+        if (idempotencyKey && idempotencyKey.length > 128) return sendApiError(res, 400, 'IDEMPOTENCY_KEY_TOO_LONG', 'Idempotency key must not exceed 128 characters');
         const dataHash = clinicalHash(req.body.payload);
+        const recordID = idempotencyKey
+            ? `Clinical-${crypto.createHash('sha256').update(`${req.user.blockchainID}:${req.body.patientID}:${recordType}:${idempotencyKey}`).digest('hex').slice(0, 48)}`
+            : `Clinical-${crypto.randomUUID()}`;
         const createdAt = new Date().toISOString();
         connection = await db.promise().getConnection(); await connection.beginTransaction();
+        const [replay] = await connection.query('SELECT * FROM Clinical_Record WHERE Record_ID=? FOR UPDATE', [recordID]);
+        if (replay.length) {
+            if (String(replay[0].Data_Hash) !== dataHash) throw Object.assign(new Error('This idempotency key was already used for different clinical record content'), { statusCode:409, code:'IDEMPOTENCY_KEY_REUSED' });
+            await connection.rollback();
+            return res.json({ success:true, data:{ recordID, recordType:replay[0].Record_Type, patientID:replay[0].Patient_Blockchain_ID, payload:typeof replay[0].Payload==='string'?JSON.parse(replay[0].Payload):replay[0].Payload, dataHash:replay[0].Data_Hash, createdAt:replay[0].Created_Date }, alreadyProcessed:true, idempotent:true, message:'This clinical record request was already processed; the existing record was returned' });
+        }
         await connection.query('INSERT INTO Clinical_Record (Record_ID, Patient_Blockchain_ID, Record_Type, Payload, Data_Hash, Created_By_Doctor_ID, Created_Date) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [recordID, req.body.patientID, recordType, JSON.stringify(req.body.payload), dataHash, req.user.blockchainID, createdAt.slice(0, 19).replace('T', ' ')]);
         await callBlockchain(req, '/clinical-record-metadata', 'POST', { recordID, recordType, patientID: req.body.patientID, offChainRef: `mysql:Clinical_Record/${recordID}`, dataHash, doctorID: req.user.blockchainID, createdAt });
@@ -1713,6 +1742,7 @@ app.post('/radiographic-files', authenticateToken, requireRoles('doctor'),
                 'x-patient-id': patientID,
                 'x-file-name': req.get('x-file-name') || '',
                 'x-file-media-type': req.get('x-file-media-type') || 'application/octet-stream',
+                'idempotency-key': req.get('Idempotency-Key') || '',
             });
             const payload = await response.json().catch(() => ({}));
             return res.status(response.status).json(payload);
@@ -1796,6 +1826,9 @@ app.get('/appointments', authenticateToken, requireRoles('admin', 'doctor', 'pat
 app.post('/appointments', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
         const { patientID, doctorID, appointmentDateTime, specialty, meetingFor, notes } = req.body;
+        const idempotencyKey = String(req.get('Idempotency-Key') || req.body.idempotencyKey || '').trim() || null;
+        if (idempotencyKey && idempotencyKey.length > 128) return sendApiError(res, 400, 'IDEMPOTENCY_KEY_TOO_LONG', 'Idempotency key must not exceed 128 characters');
+        const storedIdempotencyKey = idempotencyKey ? crypto.createHash('sha256').update(`${req.user.organizationId}:${req.user.id}:${idempotencyKey}`).digest('hex') : null;
         if (![patientID, doctorID, appointmentDateTime, meetingFor].every(Boolean)) return sendApiError(res, 400, 'VALIDATION_ERROR', 'patientID, doctorID, appointmentDateTime, and meetingFor are required');
         requireTextLimit(meetingFor, 'Appointment reason', 255, 'APPOINTMENT_REASON_TOO_LONG');
         requireTextLimit(notes, 'Appointment notes', 2000, 'APPOINTMENT_NOTES_TOO_LONG');
@@ -1815,17 +1848,37 @@ app.post('/appointments', authenticateToken, requireRoles('admin'), async (req, 
         const authoritativeSpecialty = rows[0].Doctor_Specialty;
         if (!authoritativeSpecialty) return sendApiError(res, 409, 'DOCTOR_SPECIALTY_REQUIRED', 'Selected doctor has no configured specialty');
         if (specialty !== undefined && String(specialty) !== String(authoritativeSpecialty)) return sendApiError(res, 400, 'APPOINTMENT_SPECIALTY_MISMATCH', 'Appointment specialty must match the selected doctor');
-        const result = await query(`INSERT INTO Appointment (Meeting_For, Doctor_ID, Patient_ID, Date, Appointment_Date_Time, Specialty, Status, Notes, Modified_Date)
-            VALUES (?, ?, ?, DATE(?), ?, ?, 'scheduled', ?, NOW())`, [meetingFor, rows[0].Doctor_DB_ID, rows[0].Patient_DB_ID, appointmentDateTime, appointmentDateTime, authoritativeSpecialty, notes || null]);
+        if (idempotencyKey) {
+            const replay = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Idempotency_Key=? LIMIT 1`, [storedIdempotencyKey]);
+            if (replay.length) {
+                const sameRequest = String(replay[0].Patient_ID) === String(patientID)
+                    && String(replay[0].Doctor_ID) === String(doctorID)
+                    && new Date(replay[0].Appointment_Date_Time).getTime() === scheduledAt.getTime()
+                    && String(replay[0].Meeting_For) === String(meetingFor);
+                if (!sameRequest) return sendApiError(res, 409, 'IDEMPOTENCY_KEY_REUSED', 'This idempotency key was already used for a different appointment request');
+                return res.json({ success:true, data:replay[0], alreadyProcessed:true, idempotent:true, message:'This appointment request was already processed; the existing appointment was returned' });
+            }
+        }
+        const conflicts = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_Date_Time=?
+            AND (Appointment.Doctor_ID=? OR Appointment.Patient_ID=?)
+            AND LOWER(COALESCE(Appointment.Status,'scheduled')) NOT IN ('cancelled','canceled','completed','complete','done','finished') LIMIT 1`,
+            [appointmentDateTime, rows[0].Doctor_DB_ID, rows[0].Patient_DB_ID]);
+        if (conflicts.length) return sendApiError(res, 409, 'DUPLICATE_APPOINTMENT_SLOT', 'The selected doctor or patient already has an active appointment at this time');
+        const result = await query(`INSERT INTO Appointment (Meeting_For, Doctor_ID, Patient_ID, Date, Appointment_Date_Time, Specialty, Status, Notes, Modified_Date, Idempotency_Key)
+            VALUES (?, ?, ?, DATE(?), ?, ?, 'scheduled', ?, NOW(), ?)`, [meetingFor, rows[0].Doctor_DB_ID, rows[0].Patient_DB_ID, appointmentDateTime, appointmentDateTime, authoritativeSpecialty, notes || null, storedIdempotencyKey]);
         const created = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [result.insertId]);
         return res.status(201).json({ success: true, data: created[0] });
-    } catch (error) { return sendApiError(res, error.statusCode || 500, error.code || 'APPOINTMENT_CREATE_FAILED', error.message); }
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') return sendApiError(res, 409, 'DUPLICATE_APPOINTMENT', 'This appointment request or active booking slot already exists');
+        return sendApiError(res, error.statusCode || 500, error.code || 'APPOINTMENT_CREATE_FAILED', error.message);
+    }
 });
 
 app.put('/appointments/:id', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
         const existing = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [req.params.id]);
         if (!existing.length) return sendApiError(res, 404, 'APPOINTMENT_NOT_FOUND', 'Appointment not found');
+        if (['cancelled','canceled','completed','complete','done','finished'].includes(String(existing[0].Status || '').toLowerCase())) return sendApiError(res, 409, 'APPOINTMENT_TERMINAL_STATE', 'Cancelled or completed appointments cannot be edited; create a new appointment to reschedule');
         const scope = await query('SELECT Patient.Clinic_ID AS Patient_Clinic_ID FROM Appointment JOIN Patient ON Appointment.Patient_ID=Patient.ID WHERE Appointment.Appointment_ID=?', [req.params.id]);
         requireAdminClinic(req, scope[0].Patient_Clinic_ID);
         if (['patientID', 'doctorID', 'clinicID'].some((field) => req.body[field] !== undefined)) return sendApiError(res, 400, 'APPOINTMENT_CONTEXT_IMMUTABLE', 'Patient, doctor, and clinic require a dedicated rescheduling workflow');
@@ -1835,7 +1888,7 @@ app.put('/appointments/:id', authenticateToken, requireRoles('admin'), async (re
         requireTextLimit(req.body.notes ?? existing[0].Notes, 'Appointment notes', 2000, 'APPOINTMENT_NOTES_TOO_LONG');
         const scheduledAt = new Date(appointmentDateTime);
         if (req.body.appointmentDateTime !== undefined && (Number.isNaN(scheduledAt.getTime()) || scheduledAt <= new Date())) throw validationError('INVALID_APPOINTMENT_DATE', 'Appointment date and time must be valid and in the future');
-        await query(`UPDATE Appointment SET Meeting_For=?, Date=DATE(?), Appointment_Date_Time=?, Notes=?, Status='scheduled', Modified_Date=NOW() WHERE Appointment_ID=?`,
+        await query(`UPDATE Appointment SET Meeting_For=?, Date=DATE(?), Appointment_Date_Time=?, Notes=?, Modified_Date=NOW() WHERE Appointment_ID=?`,
             [req.body.meetingFor || existing[0].Meeting_For, appointmentDateTime, appointmentDateTime, req.body.notes ?? existing[0].Notes, req.params.id]);
         const updated = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [req.params.id]);
         return res.json({ success: true, data: updated[0] });
@@ -1845,9 +1898,14 @@ app.put('/appointments/:id', authenticateToken, requireRoles('admin'), async (re
 app.patch('/appointments/:id/cancel', authenticateToken, requireRoles('admin'), async (req, res) => {
     try {
         requireTextLimit(req.body.reason, 'Cancellation reason', 1000, 'CANCELLATION_REASON_TOO_LONG');
-        const rows = await query(`SELECT Patient.Clinic_ID FROM Appointment JOIN Patient ON Appointment.Patient_ID=Patient.ID WHERE Appointment.Appointment_ID=?`, [req.params.id]);
+        const rows = await query(`SELECT Patient.Clinic_ID,Appointment.Status,Appointment.Cancelled_Date FROM Appointment JOIN Patient ON Appointment.Patient_ID=Patient.ID WHERE Appointment.Appointment_ID=?`, [req.params.id]);
         if (!rows.length) return sendApiError(res, 404, 'APPOINTMENT_NOT_FOUND', 'Appointment not found');
         requireAdminClinic(req, rows[0].Clinic_ID);
+        if (['cancelled','canceled'].includes(String(rows[0].Status || '').toLowerCase())) {
+            const cancelled = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [req.params.id]);
+            return res.json({ success:true, data:cancelled[0], alreadyCancelled:true, idempotent:true, message:'Appointment was already cancelled; the original cancellation was preserved' });
+        }
+        if (['completed','complete','done','finished'].includes(String(rows[0].Status || '').toLowerCase())) return sendApiError(res, 409, 'APPOINTMENT_ALREADY_COMPLETED', 'Completed appointments cannot be cancelled');
         await query("UPDATE Appointment SET Status='cancelled', Notes=COALESCE(?, Notes), Cancelled_Date=NOW(), Modified_Date=NOW() WHERE Appointment_ID=?", [req.body.reason || null, req.params.id]);
         const cancelled = await query(`${APPOINTMENT_SELECT} WHERE Appointment.Appointment_ID=?`, [req.params.id]);
         return res.json({ success: true, data: cancelled[0] });

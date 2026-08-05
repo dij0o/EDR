@@ -68,3 +68,14 @@ test('identity and profile validation is enforced before legacy Fabric updates',
     assert.match(api, /requireLegacyProfileBounds\(req\.body, 'doctor'\)/);
     for (const code of ['INVALID_EMAIL', 'INVALID_CONTACT_NUMBER', 'INVALID_EMIRATES_ID']) assert.match(api, new RegExp(code));
 });
+
+test('duplicate patient assignment is explicitly idempotent across database and ledger', () => {
+    const route = dbApi.match(/app\.post\('\/patients\/:id\/assign'[\s\S]*?\n\}\);/)[0];
+    assert.match(route, /alreadyAssigned: true, idempotent: true/);
+    assert.match(route, /no duplicate was created/);
+    assert.ok(route.indexOf('alreadyAssigned: true') < route.indexOf("beginLifecycleOperation(req, 'PATIENT_ASSIGN'"));
+    const assignment = chaincode.match(/async assignPatientToDoctor[\s\S]*?\n    \}/)[0];
+    assert.match(assignment, /doctor\.patients\.includes\(patientID\) && patient\.doctors\.includes\(doctorID\)/);
+    assert.match(assignment, /alreadyAssigned: true/);
+    assert.match(assignment, /idempotent: true/);
+});

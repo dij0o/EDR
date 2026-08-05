@@ -13,6 +13,7 @@ const NewAppointmentDialog = ({ onClose, onCreated }) => {
   const [saving, setSaving] = useState(false);
   const dialog = useRef(null);
   const firstField = useRef(null);
+  const idempotencyKey = useRef(crypto.randomUUID());
 
   useEffect(() => {
     firstField.current?.focus();
@@ -40,7 +41,7 @@ const NewAppointmentDialog = ({ onClose, onCreated }) => {
   const submit = async (event) => {
     event.preventDefault(); setSaving(true); setError('');
     try {
-      const response = await fetch(databaseUrl('/appointments'), { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(form) });
+      const response = await fetch(databaseUrl('/appointments'), { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json', 'Idempotency-Key':idempotencyKey.current }), body: JSON.stringify(form) });
       handleUnauthorizedResponse(response);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error?.message || 'Unable to create appointment');

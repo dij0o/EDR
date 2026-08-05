@@ -78,6 +78,9 @@ test('patient management uses complete themed workflows without browser dialogs'
   assert.match(patientCard, /appointment-options\/doctors/);
   assert.match(patientCard, /title=\{`Deactivate \$\{fullName\}\?`\}/);
   assert.match(patientCard, /patients\/\$\{encodeURIComponent\(patientId\)\}\/unassign/);
+  assert.match(patientCard, /result\?\.message \|\| 'Doctor assigned successfully\.'/);
+  assert.match(patientCard, /already assigned/);
+  assert.match(patientCard, /will not create a duplicate/);
   assert.match(patientDialog, /method: isEditing \? 'PUT' : 'POST'/);
   assert.match(patientDialog, /clinic\/me/);
   assert.match(patientDialog, /appointment-options\/doctors/);
@@ -131,6 +134,24 @@ test('patient deactivation previews dependencies and explains preserved history'
   assert.match(card, /retain ledger history/);
 });
 
+test('API errors are rendered as human-readable text instead of raw objects or codes', () => {
+  const api = read('src/assets/config/api.js');
+  const clinics = read('src/assets/Pages/Clinics.jsx');
+  const doctors = read('src/assets/Pages/Doctors.jsx');
+  const signup = read('src/assets/Pages/Signup.jsx');
+  const patientCard = read('src/assets/components/Patients/PatientCard.jsx');
+  assert.match(api, /export const humanizeApiCode/);
+  assert.match(api, /replace\(\/_\/g, ' '\)/);
+  assert.match(api, /payload\?\.error\?\.message/);
+  assert.match(api, /export const apiPayloadMessage/);
+  assert.match(api, /export const apiRequestErrorMessage/);
+  assert.match(clinics, /apiPayloadMessage\(payload/);
+  assert.match(doctors, /apiPayloadMessage\(payload/);
+  assert.match(signup, /apiRequestErrorMessage\(err/);
+  assert.doesNotMatch(signup, /setError\(err\.response\?\.data\?\.error/);
+  assert.match(patientCard, /result\?\.message \|\| 'Doctor unassigned successfully\.'/);
+});
+
 test('doctor and clinic deactivation require dependency-aware confirmation', () => {
   const doctors = read('src/assets/Pages/Doctors.jsx');
   const clinics = read('src/assets/Pages/Clinics.jsx');
@@ -148,4 +169,13 @@ test('lab results uses a full-width responsive page instead of the legacy twelve
   assert.match(page, /sm:grid-cols-2/);
   assert.match(page, /min-w-\[52rem\]/);
   assert.doesNotMatch(page, /<MainContainer/);
+});
+
+test('retryable web writes send stable idempotency keys', () => {
+  const appointment = read('src/assets/components/Appointments/NewAppointmentDialog.jsx');
+  const clinical = read('src/assets/components/Patient/ClinicalRecords.jsx');
+  const radiographic = read('src/assets/components/Patient/RadiographicFiles.jsx');
+  assert.match(appointment, /Idempotency-Key/);
+  assert.match(clinical, /Idempotency-Key/);
+  assert.match(radiographic, /Idempotency-Key/);
 });

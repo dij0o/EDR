@@ -4,7 +4,7 @@ import Input from '../components/Input';
 import LoginSignUpBtn from '../components/LoginSignUpBtn';
 import LoginOption from '../components/LoginOption';
 import axios from 'axios';
-import { databaseUrl, jsonHeaders } from '../config/api.js';
+import { apiRequestErrorMessage, databaseUrl, jsonHeaders } from '../config/api.js';
 const Signup = () => {
 
     
@@ -62,7 +62,7 @@ const Signup = () => {
             navigate('/login');
         } catch (err) {
             console.error(err);
-            setError(err.response?.data?.error || 'Registration failed');
+            setError(apiRequestErrorMessage(err, 'Registration failed.'));
         }
     };
     

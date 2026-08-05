@@ -1239,6 +1239,16 @@ class DentalRecordSharing extends Contract {
         if (sharedClinics.length === 0) {
             throw new Error(`Doctor ${doctorID} and Patient ${patientID} do not belong to the same clinic`);
         }
+
+        const alreadyAssigned = doctor.patients.includes(patientID) && patient.doctors.includes(doctorID);
+        if (alreadyAssigned) {
+            return {
+                success: true,
+                alreadyAssigned: true,
+                idempotent: true,
+                message: `Patient ${patientID} is already assigned to Doctor ${doctorID}; no duplicate was created`,
+            };
+        }
     
         // ✅ Prevent duplicate assignment
         if (!doctor.patients.includes(patientID)) {
@@ -1259,7 +1269,7 @@ class DentalRecordSharing extends Contract {
         patient.modifiedDate = modifiedDate || patient.modifiedDate || patient.createdDate || '';
         await ctx.stub.putState(patientID, Buffer.from(stringify(sortKeysRecursive(patient))));
     
-        return { success: true, message: `Patient ${patientID} assigned to Doctor ${doctorID}` };
+        return { success: true, alreadyAssigned: false, idempotent: false, message: `Patient ${patientID} assigned to Doctor ${doctorID}` };
     }
 
     async unassignPatientFromDoctor(ctx, patientID, doctorID, dataHash, modifiedDate) {
@@ -1274,6 +1284,9 @@ class DentalRecordSharing extends Contract {
         this._requireAdminClinic(ctx, clinicID);
         this._requireAdminClinic(ctx, doctor.clinicID);
         if (String(clinicID) !== String(doctor.clinicID)) throw new Error('Doctor and patient clinic mismatch');
+        const patientAssigned = (Array.isArray(patient.doctors) ? patient.doctors : []).some((id) => String(id) === String(doctorID));
+        const doctorAssigned = (Array.isArray(doctor.patients) ? doctor.patients : []).some((id) => String(id) === String(patientID));
+        if (!patientAssigned && !doctorAssigned) return JSON.stringify({ patientID, doctorID, unassigned:true, alreadyUnassigned:true, idempotent:true, message:'Patient was already unassigned; ledger state was not rewritten' });
         patient.doctors = (Array.isArray(patient.doctors) ? patient.doctors : []).filter((id) => String(id) !== String(doctorID));
         doctor.patients = (Array.isArray(doctor.patients) ? doctor.patients : []).filter((id) => String(id) !== String(patientID));
         if (dataHash) {
@@ -1283,7 +1296,7 @@ class DentalRecordSharing extends Contract {
         patient.modifiedDate = modifiedDate || patient.modifiedDate || patient.createdDate || '';
         await ctx.stub.putState(patientID, Buffer.from(stringify(sortKeysRecursive(patient))));
         await ctx.stub.putState(doctorID, Buffer.from(stringify(sortKeysRecursive(doctor))));
-        return JSON.stringify({ patientID, doctorID, unassigned: true });
+        return JSON.stringify({ patientID, doctorID, unassigned:true, alreadyUnassigned:false, idempotent:false, message:'Patient unassigned from doctor' });
     }
     
     // Doctor: Get all Patients assigned to the doctor
@@ -1336,6 +1349,17 @@ class DentalRecordSharing extends Contract {
 
     //     return request.requestID;
     // }
+    async GetActiveDataAccessRequest(ctx, doctorID, patientID, dataOriginClinicID, dataType) {
+        this._requireActor(ctx, doctorID, 'doctor');
+        const key = ctx.stub.createCompositeKey('ACTIVE_ACCESS_REQUEST', [String(doctorID), String(patientID), String(dataOriginClinicID), String(dataType)]);
+        const requestIDBytes = await ctx.stub.getState(key);
+        if (!requestIDBytes || !requestIDBytes.length) return JSON.stringify(null);
+        const requestBytes = await ctx.stub.getState(requestIDBytes.toString());
+        if (!requestBytes || !requestBytes.length) return JSON.stringify(null);
+        const request = JSON.parse(requestBytes.toString());
+        return JSON.stringify(['PENDING_ADMIN_APPROVAL','PENDING_PATIENT_CONSENT','CONSENT_GRANTED'].includes(request.status) ? request : null);
+    }
+
     async RequestDataAccess(ctx, doctorID, patientID, dataOriginClinicID, dataType, purpose, detailsJson) {
         this._requireActor(ctx, doctorID, 'doctor');
         const doctorAsBytes = await ctx.stub.getState(doctorID);
@@ -1355,6 +1379,16 @@ class DentalRecordSharing extends Contract {
         detailsJson = detailsJson || '{}';
         const details = this._parseDetailsJson(detailsJson);
         const requestedAt = this._txTimestamp(ctx);
+        const activeRequestKey = ctx.stub.createCompositeKey('ACTIVE_ACCESS_REQUEST', [String(doctorID), String(patientID), String(dataOriginClinicID), String(dataType)]);
+        const activeRequestIDBytes = await ctx.stub.getState(activeRequestKey);
+        if (activeRequestIDBytes && activeRequestIDBytes.length) {
+            const existingRequestID = activeRequestIDBytes.toString();
+            const existingBytes = await ctx.stub.getState(existingRequestID);
+            if (existingBytes && existingBytes.length) {
+                const existing = JSON.parse(existingBytes.toString());
+                if (['PENDING_ADMIN_APPROVAL','PENDING_PATIENT_CONSENT','CONSENT_GRANTED'].includes(existing.status)) return existing.requestID;
+            }
+        }
 
         // Ensure the patient has data at the requested clinic
         if (!patient.clinicIDs.includes(parseInt(dataOriginClinicID))) {
@@ -1386,6 +1420,7 @@ class DentalRecordSharing extends Contract {
         };
 
         await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
+        await ctx.stub.putState(activeRequestKey, Buffer.from(request.requestID));
         await this._putNotification(ctx, {
             notificationID: `NOTIFICATION:${request.requestID}:ADMIN_REVIEW`,
             recipientRole: 'admin',
@@ -1833,10 +1868,11 @@ class DentalRecordSharing extends Contract {
         }
         const notification = JSON.parse(notificationBytes.toString());
         this._requireNotificationOwner(ctx, notification);
+        if (notification.status === 'READ') return JSON.stringify({ ...notification, alreadyRead:true, idempotent:true, message:'Notification was already marked as read' });
         notification.status = 'READ';
         notification.readAt = this._txTimestamp(ctx);
         await ctx.stub.putState(notification.notificationID, Buffer.from(JSON.stringify(notification)));
-        return JSON.stringify(notification);
+        return JSON.stringify({ ...notification, alreadyRead:false, idempotent:false });
     }
 
     async _addClinicalMetadata(ctx, recordType, recordID, patientID, offChainRef, dataHash, doctorID, createdAt) {
@@ -1846,10 +1882,16 @@ class DentalRecordSharing extends Contract {
         const patient = JSON.parse(patientBytes.toString());
         this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor');
         if (!/^[a-f0-9]{64}$/i.test(dataHash)) throw new Error('Clinical record SHA-256 hash must contain 64 hexadecimal characters');
+        const existingBytes = await ctx.stub.getState(`CLINICAL:${recordID}`);
+        if (existingBytes && existingBytes.length) {
+            const existing = JSON.parse(existingBytes.toString());
+            if (existing.patientID !== patientID || existing.recordType !== recordType || existing.dataHash !== dataHash.toLowerCase()) throw new Error(`IDEMPOTENCY_KEY_REUSED: Clinical record ${recordID} already exists with different content`);
+            return JSON.stringify({ ...existing, alreadyProcessed:true, idempotent:true, message:'Clinical record metadata was already committed' });
+        }
         const metadata = { docType: 'clinicalRecordMetadata', recordType, recordID, patientID, offChainRef, dataHash: dataHash.toLowerCase(), doctorID, createdAt };
         await ctx.stub.putState(`CLINICAL:${recordID}`, Buffer.from(JSON.stringify(metadata)));
         patient.clinicalRecordIDs = Array.isArray(patient.clinicalRecordIDs) ? patient.clinicalRecordIDs : [];
-        patient.clinicalRecordIDs.push(recordID);
+        if (!patient.clinicalRecordIDs.includes(recordID)) patient.clinicalRecordIDs.push(recordID);
         await ctx.stub.putState(patientID, Buffer.from(JSON.stringify(patient)));
         return JSON.stringify(metadata);
     }
@@ -1937,6 +1979,12 @@ class DentalRecordSharing extends Contract {
         if (!/^[a-f0-9]{64}$/i.test(sha256)) {
             throw new Error('SHA-256 hash must contain exactly 64 hexadecimal characters');
         }
+        const existingBytes = await ctx.stub.getState(`RADFILE:${fileID}`);
+        if (existingBytes && existingBytes.length) {
+            const existing = JSON.parse(existingBytes.toString());
+            if (existing.patientID !== patientID || existing.sha256 !== sha256.toLowerCase()) throw new Error(`IDEMPOTENCY_KEY_REUSED: Radiographic file ${fileID} already exists with different content`);
+            return JSON.stringify({ ...existing, alreadyProcessed:true, idempotent:true, message:'Radiographic file metadata was already committed' });
+        }
         const fileEntry = {
             docType: 'radiographicFileMetadata',
             fileID,
@@ -1951,7 +1999,7 @@ class DentalRecordSharing extends Contract {
         };
         await ctx.stub.putState(`RADFILE:${fileID}`, Buffer.from(JSON.stringify(fileEntry)));
         patient.dentalFileIDs = Array.isArray(patient.dentalFileIDs) ? patient.dentalFileIDs : [];
-        patient.dentalFileIDs.push(fileID);
+        if (!patient.dentalFileIDs.includes(fileID)) patient.dentalFileIDs.push(fileID);
         await ctx.stub.putState(patientID, Buffer.from(JSON.stringify(patient)));
         return JSON.stringify(fileEntry);
     }
