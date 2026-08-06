@@ -4,6 +4,24 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { sha256File, verifyFileIntegrity } = require('../radiographicIntegrity');
+const { validateRadiographicFile } = require('../radiographicFileValidation');
+
+const dicomBytes = () => Buffer.concat([Buffer.alloc(128), Buffer.from('DICM'), Buffer.from('test data')]);
+
+test('radiographic upload validation accepts only matching DICOM, JPEG, and PNG content', () => {
+  assert.deepEqual(validateRadiographicFile({ bytes: dicomBytes(), fileName: 'scan.dcm', mediaType: 'application/dicom' }),
+    { valid: true, format: 'dicom', mediaType: 'application/dicom' });
+  assert.equal(validateRadiographicFile({ bytes: Buffer.from([0xff, 0xd8, 0xff, 0xe0]), fileName: 'x.jpg', mediaType: 'image/jpeg' }).valid, true);
+  assert.equal(validateRadiographicFile({ bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), fileName: 'x.png', mediaType: 'image/png' }).valid, true);
+});
+
+test('radiographic upload validation rejects executables and spoofed metadata', () => {
+  const executable = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(256)]);
+  assert.equal(validateRadiographicFile({ bytes: executable, fileName: 'test.exe', mediaType: 'application/octet-stream' }).valid, false);
+  assert.equal(validateRadiographicFile({ bytes: executable, fileName: 'test.dcm', mediaType: 'application/dicom' }).valid, false);
+  assert.equal(validateRadiographicFile({ bytes: dicomBytes(), fileName: 'test.exe', mediaType: 'application/dicom' }).valid, false);
+  assert.equal(validateRadiographicFile({ bytes: dicomBytes(), fileName: 'test.dcm', mediaType: 'image/png' }).valid, false);
+});
 
 test('upload hash generation and successful verification use SHA-256 file bytes', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'edr-dicom-'));

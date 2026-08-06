@@ -9,6 +9,7 @@ const {
     sqlDate, sessionTtls, signAccessToken, verifyAccessToken, createSession,
     setWebSessionCookies, clearWebSessionCookies, parseCookies, base64UrlSecret,
 } = require('./sessionService');
+const { validateRadiographicFile } = require('./radiographicFileValidation');
 
 const app = express();
 const BLOCKCHAIN_API_URL = process.env.BLOCKCHAIN_API_URL?.replace(/\/+$/, '');
@@ -1839,13 +1840,19 @@ app.post('/radiographic-files', authenticateToken, requireRoles('doctor'),
         try {
             const patientID = String(req.get('x-patient-id') || '');
             if (!patientID) return sendApiError(res, 400, 'PATIENT_REQUIRED', 'x-patient-id is required');
+            const fileValidation = validateRadiographicFile({
+                bytes: req.body,
+                fileName: req.get('x-file-name'),
+                mediaType: req.get('x-file-media-type'),
+            });
+            if (!fileValidation.valid) return sendApiError(res, 415, 'UNSUPPORTED_RADIOGRAPHIC_FILE_TYPE', `${fileValidation.reason}. Only DICOM, JPEG, and PNG radiographic files are supported`);
             const authorizedPatients = await query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID=? AND User.IsActive=1
                 AND JSON_CONTAINS(Patient.Doctors,JSON_QUOTE(?)) LIMIT 1`, [patientID, String(req.user.blockchainID || '')]);
             if (!authorizedPatients.length) return sendApiError(res, 403, 'PATIENT_ASSIGNMENT_REQUIRED', 'Radiographic files may be uploaded only for an active assigned patient');
             const response = await callBlockchainResponse(req, '/radiographic-files', 'POST', req.body, 'application/octet-stream', {
                 'x-patient-id': patientID,
                 'x-file-name': req.get('x-file-name') || '',
-                'x-file-media-type': req.get('x-file-media-type') || 'application/octet-stream',
+                'x-file-media-type': fileValidation.mediaType,
                 'idempotency-key': req.get('Idempotency-Key') || '',
             });
             const payload = await response.json().catch(() => ({}));

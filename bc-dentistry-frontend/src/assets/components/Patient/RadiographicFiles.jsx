@@ -35,6 +35,12 @@ export default function RadiographicFiles({ patientID, canUpload }) {
   const upload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    if (![".dcm", ".jpg", ".jpeg", ".png"].includes(extension)) {
+      setMessage("Only DICOM, JPEG, and PNG radiographic files are supported.");
+      event.target.value = "";
+      return;
+    }
     setMessage("Uploading and anchoring SHA-256 metadata…");
     try {
       await axios.post(databaseUrl("/radiographic-files"), file, { headers: authHeaders({
@@ -52,7 +58,7 @@ export default function RadiographicFiles({ patientID, canUpload }) {
     <div className="flex items-center justify-between gap-4">
       <h2 className="text-xl font-bold">DICOM & Radiographic Integrity</h2>
       {canUpload && <label className="cursor-pointer bg-blue-600 text-white rounded px-4 py-2">
-        Upload file<input className="hidden" type="file" accept=".dcm,application/dicom,image/*" onChange={upload} />
+        Upload file<input className="hidden" type="file" accept=".dcm,.jpg,.jpeg,.png,application/dicom,image/jpeg,image/png" onChange={upload} />
       </label>}
     </div>
     {message && <p className="mt-2 text-sm">{message}</p>}

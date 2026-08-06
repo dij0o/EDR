@@ -10,6 +10,7 @@ const { createSessionAuthenticator, verifySessionSchema } = require('./sessionAu
 const { fabricIdentityForUser } = require('./fabricIdentity');
 const { enrollIdentity, retireIdentity } = require('./fabricEnrollment');
 const { sha256File, verifyFileIntegrity } = require('./radiographicIntegrity');
+const { validateRadiographicFile } = require('./radiographicFileValidation');
 const {
     pushStatus,
     registerPushSubscription,
@@ -587,6 +588,12 @@ app.get(['/audit/clinical-access/:patientID', '/getAccessAuditLogs/:patientID'],
 
 app.post('/radiographic-files', authenticateToken, requireRoles('doctor'), express.raw({ type: 'application/octet-stream', limit: radiographicMaxFileBytes }), async (req, res) => {
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) return sendApiError(res, 400, 'FILE_REQUIRED', 'A DICOM or radiographic file is required');
+    const fileValidation = validateRadiographicFile({
+        bytes: req.body,
+        fileName: req.headers['x-file-name'],
+        mediaType: req.headers['x-file-media-type'],
+    });
+    if (!fileValidation.valid) return sendApiError(res, 415, 'UNSUPPORTED_RADIOGRAPHIC_FILE_TYPE', `${fileValidation.reason}. Only DICOM, JPEG, and PNG radiographic files are supported`);
     const idempotencyKey = String(req.get('Idempotency-Key') || '').trim() || null;
     if (idempotencyKey && idempotencyKey.length > 128) return sendApiError(res, 400, 'IDEMPOTENCY_KEY_TOO_LONG', 'Idempotency key must not exceed 128 characters');
     const patientID = req.headers['x-patient-id'];
@@ -610,7 +617,7 @@ app.post('/radiographic-files', authenticateToken, requireRoles('doctor'), expre
         const sha256 = await sha256File(filePath);
         const metadata = {
             fileID, patientID: String(patientID), storageReference: `filesystem:${fileID}`,
-            fileName: String(fileName), mediaType: String(req.headers['x-file-media-type'] || 'application/octet-stream'), fileSize: req.body.length,
+            fileName: String(fileName), mediaType: fileValidation.mediaType, fileSize: req.body.length,
             sha256, uploaderID: String(uploaderID), uploadedAt: new Date().toISOString()
         };
         const result = await withContract(req, (contract) => contract.submitTransaction(
