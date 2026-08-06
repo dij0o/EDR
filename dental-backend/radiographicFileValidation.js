@@ -18,7 +18,16 @@ const validateRadiographicFile = ({ bytes, fileName, mediaType }) => {
   const name = String(fileName || '').trim();
   const claimedMediaType = String(mediaType || 'application/octet-stream').split(';', 1)[0].trim().toLowerCase();
   const detectedFormat = detectRadiographicFormat(bytes);
-  if (!detectedFormat) return { valid: false, reason: 'The file content is not a supported DICOM, JPEG, or PNG radiographic file' };
+  if (!detectedFormat) {
+    if (path.extname(name).toLowerCase() === '.dcm' || claimedMediaType === 'application/dicom') {
+      return {
+        valid: false,
+        code: 'CORRUPT_OR_UNREADABLE_DICOM',
+        reason: 'This DICOM file is corrupt, unreadable, or does not contain a valid DICOM header',
+      };
+    }
+    return { valid: false, reason: 'The file content is not a supported DICOM, JPEG, or PNG radiographic file' };
+  }
 
   const rules = FORMATS[detectedFormat];
   const extension = path.extname(name).toLowerCase();

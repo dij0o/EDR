@@ -14,6 +14,7 @@ export default function RadiographicFiles({ patientID, canUpload }) {
   const [files, setFiles] = useState([]);
   const [statuses, setStatuses] = useState({});
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState("status");
   const [selectedFile, setSelectedFile] = useState(null);
 
   const loadFiles = async () => {
@@ -38,10 +39,12 @@ export default function RadiographicFiles({ patientID, canUpload }) {
     const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
     if (![".dcm", ".jpg", ".jpeg", ".png"].includes(extension)) {
       setMessage("Only DICOM, JPEG, and PNG radiographic files are supported.");
+      setMessageType("error");
       event.target.value = "";
       return;
     }
     setMessage("Uploading and anchoring SHA-256 metadata…");
+    setMessageType("status");
     try {
       await axios.post(databaseUrl("/radiographic-files"), file, { headers: authHeaders({
         "Content-Type": "application/octet-stream", "x-patient-id": patientID,
@@ -49,8 +52,12 @@ export default function RadiographicFiles({ patientID, canUpload }) {
         "Idempotency-Key": `${patientID}:${file.name}:${file.size}:${file.lastModified}`,
       }) });
       setMessage("Upload complete.");
+      setMessageType("status");
       await loadFiles();
-    } catch (error) { setMessage(error.response?.data?.error?.message || "Upload failed."); }
+    } catch (error) {
+      setMessage(error.response?.data?.error?.message || "The file could not be uploaded. It may be corrupt or unreadable.");
+      setMessageType("error");
+    }
     event.target.value = "";
   };
 
@@ -61,7 +68,7 @@ export default function RadiographicFiles({ patientID, canUpload }) {
         Upload file<input className="hidden" type="file" accept=".dcm,.jpg,.jpeg,.png,application/dicom,image/jpeg,image/png" onChange={upload} />
       </label>}
     </div>
-    {message && <p className="mt-2 text-sm">{message}</p>}
+    {message && <p role={messageType === "error" ? "alert" : "status"} className={`mt-2 text-sm ${messageType === "error" ? "text-red-700" : ""}`}>{message}</p>}
     {!files.length ? <p className="mt-4 text-slate-500">No radiographic files recorded.</p> :
       <div className="mt-4 grid gap-3">{files.map((file) => <div key={file.fileID} className="border rounded p-3">
         <div className="flex flex-wrap justify-between gap-2">

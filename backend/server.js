@@ -1845,7 +1845,7 @@ app.post('/radiographic-files', authenticateToken, requireRoles('doctor'),
                 fileName: req.get('x-file-name'),
                 mediaType: req.get('x-file-media-type'),
             });
-            if (!fileValidation.valid) return sendApiError(res, 415, 'UNSUPPORTED_RADIOGRAPHIC_FILE_TYPE', `${fileValidation.reason}. Only DICOM, JPEG, and PNG radiographic files are supported`);
+            if (!fileValidation.valid) return sendApiError(res, 415, fileValidation.code || 'UNSUPPORTED_RADIOGRAPHIC_FILE_TYPE', fileValidation.reason);
             const authorizedPatients = await query(`${PATIENT_SELECT} WHERE Patient.Blockchain_ID=? AND User.IsActive=1
                 AND JSON_CONTAINS(Patient.Doctors,JSON_QUOTE(?)) LIMIT 1`, [patientID, String(req.user.blockchainID || '')]);
             if (!authorizedPatients.length) return sendApiError(res, 403, 'PATIENT_ASSIGNMENT_REQUIRED', 'Radiographic files may be uploaded only for an active assigned patient');

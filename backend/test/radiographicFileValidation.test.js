@@ -11,6 +11,8 @@ test('application API rejects executable bytes even when their headers are spoof
     mediaType: 'application/dicom',
   });
   assert.equal(result.valid, false);
+  assert.equal(result.code, 'CORRUPT_OR_UNREADABLE_DICOM');
+  assert.match(result.reason, /corrupt, unreadable/);
 });
 
 test('application API validates before authorization query or private-service relay', () => {
@@ -18,5 +20,5 @@ test('application API validates before authorization query or private-service re
   const route = source.match(/app\.post\('\/radiographic-files'[\s\S]*?app\.get\('\/radiographic-files\/:fileID\/content'/)[0];
   assert.ok(route.indexOf('validateRadiographicFile') < route.indexOf('authorizedPatients'));
   assert.ok(route.indexOf('validateRadiographicFile') < route.indexOf("callBlockchainResponse(req, '/radiographic-files'"));
-  assert.match(route, /415, 'UNSUPPORTED_RADIOGRAPHIC_FILE_TYPE'/);
+  assert.match(route, /fileValidation\.code \|\| 'UNSUPPORTED_RADIOGRAPHIC_FILE_TYPE'/);
 });

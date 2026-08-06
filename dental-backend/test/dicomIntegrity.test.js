@@ -23,6 +23,17 @@ test('radiographic upload validation rejects executables and spoofed metadata', 
   assert.equal(validateRadiographicFile({ bytes: dicomBytes(), fileName: 'test.dcm', mediaType: 'image/png' }).valid, false);
 });
 
+test('corrupt DICOM returns a controlled, readable validation error', () => {
+  const result = validateRadiographicFile({
+    bytes: Buffer.from('not a readable DICOM file'),
+    fileName: 'corrupt.dcm',
+    mediaType: 'application/dicom',
+  });
+  assert.equal(result.valid, false);
+  assert.equal(result.code, 'CORRUPT_OR_UNREADABLE_DICOM');
+  assert.match(result.reason, /corrupt, unreadable/);
+});
+
 test('upload hash generation and successful verification use SHA-256 file bytes', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'edr-dicom-'));
   const file = path.join(dir, 'scan.dcm');

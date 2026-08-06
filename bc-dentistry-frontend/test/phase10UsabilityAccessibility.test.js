@@ -32,6 +32,9 @@ test('DICOM viewer securely streams real records and loads Cornerstone lazily', 
   assert.match(viewer, /radiographic-files\/\$\{encodeURIComponent\(file\.fileID\)\}\/content/);
   assert.match(viewer, /import\('@cornerstonejs\/core'\)/);
   assert.match(viewer, /renderingEngine\?\.destroy\(\)/);
+  assert.match(viewer, /This DICOM file is corrupt or unreadable and cannot be displayed/);
+  assert.match(viewer, /state\.status === 'image' \|\| state\.status === 'error'/);
+  assert.match(files, /role=\{messageType === "error" \? "alert" : "status"\}/);
   assert.doesNotMatch(viewer, /0002\.DCM|X-Ray Sample/);
 });
 

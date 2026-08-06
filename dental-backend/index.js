@@ -593,7 +593,7 @@ app.post('/radiographic-files', authenticateToken, requireRoles('doctor'), expre
         fileName: req.headers['x-file-name'],
         mediaType: req.headers['x-file-media-type'],
     });
-    if (!fileValidation.valid) return sendApiError(res, 415, 'UNSUPPORTED_RADIOGRAPHIC_FILE_TYPE', `${fileValidation.reason}. Only DICOM, JPEG, and PNG radiographic files are supported`);
+    if (!fileValidation.valid) return sendApiError(res, 415, fileValidation.code || 'UNSUPPORTED_RADIOGRAPHIC_FILE_TYPE', fileValidation.reason);
     const idempotencyKey = String(req.get('Idempotency-Key') || '').trim() || null;
     if (idempotencyKey && idempotencyKey.length > 128) return sendApiError(res, 400, 'IDEMPOTENCY_KEY_TOO_LONG', 'Idempotency key must not exceed 128 characters');
     const patientID = req.headers['x-patient-id'];
