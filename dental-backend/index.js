@@ -835,8 +835,14 @@ app.delete('/doctor/:id', authenticateToken, requireRoles('admin'), async (req, 
 app.post('/admin/rejectRequest', authenticateToken, requireRoles('admin'), requireAdminClinicBody('adminClinicID'), async (req, res) => {
     try {
         requireFields(req.body, ['adminID', 'adminClinicID', 'requestID', 'rejectionReason']);
-        const result = await withContract(req, (contract) => contract.submitTransaction('RejectRequest', String(req.body.adminID), String(req.body.requestID), String(req.body.rejectionReason)));
+        const rejectionReason = String(req.body.rejectionReason).trim();
+        if (!rejectionReason) return sendApiError(res, 400, 'REJECTION_REASON_REQUIRED', 'A rejection reason is required');
+        if (Array.from(rejectionReason).length > 1000) return sendApiError(res, 400, 'REJECTION_REASON_TOO_LONG', 'Rejection reason must be 1000 characters or fewer');
+        const result = await withContract(req, (contract) => contract.submitTransaction('RejectRequest', String(req.body.adminID), String(req.body.requestID), rejectionReason));
         const response = parseBufferJson(result);
+        if (response.requestID !== req.body.requestID || response.status !== 'REJECTED' || response.accessGranted !== false) {
+            return sendApiError(res, 502, 'INVALID_REJECTION_RESULT', 'The ledger did not return the expected rejected transition');
+        }
         await dispatchNotificationPush(response.notification);
         return sendSuccess(res, response);
     } catch (error) { return sendFabricError(res, error); }

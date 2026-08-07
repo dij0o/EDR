@@ -179,6 +179,35 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(result.notification.type).to.equal('ACCESS_REQUEST_PENDING_PATIENT');
     });
 
+    it('rejects a pending request without granting patient access', async () => {
+        const ctx = context('admin', 'Admin2', 'Org1MSP', '2');
+        const request = { requestID: 'request-1', docType: 'accessRequest', workflowType: 'REFERRAL', doctorID: 'Doctor1', patientID: 'Patient1', dataOriginClinicID: 2, dataType: 'Medical Records', status: 'PENDING_ADMIN_APPROVAL' };
+        ctx.stub.getState.callsFake(async (key) => key === request.requestID ? Buffer.from(JSON.stringify(request)) : Buffer.alloc(0));
+
+        const result = await contract.RejectRequest(ctx, 'body-supplied-admin', request.requestID, '  Insufficient clinical justification  ');
+
+        expect(result.status).to.equal('REJECTED');
+        expect(result.accessGranted).to.equal(false);
+        expect(result.rejectedBy).to.equal('Admin2');
+        expect(result.rejectedRole).to.equal('admin');
+        expect(result.rejectionReason).to.equal('Insufficient clinical justification');
+        const requestWrite = ctx.stub.putState.getCalls().find((call) => call.args[0] === request.requestID);
+        const stored = JSON.parse(requestWrite.args[1].toString());
+        expect(stored.status).to.equal('REJECTED');
+        expect(stored.rejectedBy).to.equal('Admin2');
+        expect(result.notification.recipientActorID).to.equal(request.doctorID);
+        expect(result.notification.type).to.equal('ACCESS_REQUEST_REJECTED');
+    });
+
+    it('prevents an admin from another clinic rejecting the pending request', async () => {
+        const ctx = context('admin', 'Admin1', 'Org1MSP', '1');
+        const request = { requestID: 'request-1', doctorID: 'Doctor1', patientID: 'Patient1', dataOriginClinicID: 2, status: 'PENDING_ADMIN_APPROVAL' };
+        ctx.stub.getState.resolves(Buffer.from(JSON.stringify(request)));
+
+        await expectReject(contract.RejectRequest(ctx, 'Admin1', request.requestID, 'Clinic policy'), 'not authorized for clinic 2');
+        expect(ctx.stub.putState.called).to.equal(false);
+    });
+
     it('grants scoped access without transferring the patient or replacing assigned doctors', async () => {
         const ctx = context('patient', 'Patient1', 'Org1MSP', '2');
         const request = { requestID: 'request-1', docType: 'accessRequest', workflowType: 'REFERRAL', doctorID: 'Doctor1', patientID: 'Patient1', dataType: 'Medical Records', status: 'PENDING_PATIENT_CONSENT' };

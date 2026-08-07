@@ -1726,12 +1726,21 @@ app.post('/approveRequest', authenticateToken, requireRoles('admin'), (req, res)
         adminClinicID: req.user.organizationId,
     }));
 
-app.post('/admin/rejectRequest', authenticateToken, requireRoles('admin'), (req, res) =>
-    relayBlockchainJson(req, res, '/admin/rejectRequest', 'POST', {
-        ...req.body,
-        adminID: req.user.blockchainID || req.user.id,
-        adminClinicID: req.user.organizationId,
-    }));
+app.post('/admin/rejectRequest', authenticateToken, requireRoles('admin'), (req, res) => {
+    try {
+        const rejectionReason = String(req.body.rejectionReason || '').trim();
+        if (!rejectionReason) return sendApiError(res, 400, 'REJECTION_REASON_REQUIRED', 'A rejection reason is required');
+        requireTextLimit(rejectionReason, 'Rejection reason', 1000, 'REJECTION_REASON_TOO_LONG');
+        return relayBlockchainJson(req, res, '/admin/rejectRequest', 'POST', {
+            ...req.body,
+            rejectionReason,
+            adminID: req.user.blockchainID || req.user.id,
+            adminClinicID: req.user.organizationId,
+        });
+    } catch (error) {
+        return sendApiError(res, error.statusCode || 400, error.code || 'INVALID_REJECTION_REASON', error.message);
+    }
+});
 
 app.post(['/requestDataAccess', '/requestAccess'], authenticateToken, requireRoles('doctor'), async (req, res) => {
     try {

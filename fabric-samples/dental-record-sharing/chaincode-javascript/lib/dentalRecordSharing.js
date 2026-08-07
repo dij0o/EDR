@@ -1825,6 +1825,9 @@ class DentalRecordSharing extends Contract {
     }
 
     async RejectRequest(ctx, actorID, requestID, rejectionReason) {
+        rejectionReason = String(rejectionReason || '').trim();
+        if (!rejectionReason) throw new Error('A rejection reason is required.');
+        if (Array.from(rejectionReason).length > 1000) throw new Error('Rejection reason must be 1000 characters or fewer.');
         const requestAsBytes = await ctx.stub.getState(requestID);
         if (!requestAsBytes || requestAsBytes.length === 0) {
             throw new Error(`Request ${requestID} not found`);
@@ -1835,6 +1838,7 @@ class DentalRecordSharing extends Contract {
         let rejectedRole;
         if (request.status === 'PENDING_ADMIN_APPROVAL') {
             this._requireAdminClinic(ctx, request.dataOriginClinicID);
+            actorID = ctx.clientIdentity.getAttributeValue('actorID') || actorID;
             rejectedRole = 'admin';
         } else if (request.status === 'PENDING_PATIENT_CONSENT') {
             this._requireActor(ctx, actorID, 'patient');
@@ -1869,7 +1873,21 @@ class DentalRecordSharing extends Contract {
                 },
                 createdAt: rejectedAt,
             });
-            return { success: true, message: `Request ${requestID} was rejected by ${actorID}.`, notification };
+            return {
+                success: true,
+                requestID: request.requestID,
+                patientID: request.patientID,
+                doctorID: request.doctorID,
+                dataOriginClinicID: request.dataOriginClinicID,
+                status: request.status,
+                accessGranted: false,
+                rejectedBy: request.rejectedBy,
+                rejectedRole: request.rejectedRole,
+                rejectionReason: request.rejectionReason,
+                rejectedAt: request.rejectedAt,
+                message: `Request ${requestID} was rejected by ${actorID}.`,
+                notification,
+            };
         } else {
             throw new Error(`Request ${requestID} cannot be rejected at this stage.`);
         }

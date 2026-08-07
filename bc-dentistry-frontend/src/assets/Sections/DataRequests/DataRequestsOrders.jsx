@@ -86,14 +86,15 @@ const DataRequestsOrders = ({ onChanged }) => {
                 body: JSON.stringify({ adminID, requestID, adminClinicID, rejectionReason }),
             });
             const data = await response.json();
+            const result = data.data || data;
 
-            if (response.ok) {
+            if (response.ok && result.status === 'REJECTED' && result.accessGranted === false) {
                 setFeedback({ error: '', notice: `Request ${requestID} rejected.` });
                 setRejecting(null);
                 setOnHoldRequests((requests) => requests.filter((request) => request.requestID !== requestID));
                 onChanged?.();
             } else {
-                setFeedback({ error: data?.error?.message || data.message || 'Failed to reject request.', notice: '' });
+                setFeedback({ error: data?.error?.message || data.message || 'The request was not moved to the rejected state.', notice: '' });
             }
         } catch (error) {
             console.error('Failed to reject request:', error);
