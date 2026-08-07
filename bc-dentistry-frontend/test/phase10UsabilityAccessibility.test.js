@@ -77,6 +77,23 @@ test('patient login uses an owner-scoped route and admin patient creation is mou
   assert.doesNotMatch(dialog, /document\.getElementById|window\.location\.hash|translate-y/);
 });
 
+test('patient web requests expose pending consent, granted consent, history, and explicit revocation', () => {
+  const app = read('src/App.jsx');
+  const nav = read('src/assets/Sections/Navbar.jsx');
+  const requests = read('src/assets/Pages/PatientDataRequests.jsx');
+  assert.match(app, /path="\/patient-requests"/);
+  assert.match(app, /roles=\{\['patient'\]\}/);
+  assert.match(nav, /Patient-Requests/);
+  assert.match(requests, /getAllRequestsForPatient/);
+  assert.match(requests, /Waiting for your consent/);
+  assert.match(requests, /Granted consent/);
+  assert.match(requests, /Decision history/);
+  assert.match(requests, /\/grantConsent/);
+  assert.match(requests, /\/patient\/rejectRequest/);
+  assert.match(requests, /\/patient\/revokeConsent/);
+  assert.doesNotMatch(requests, /patient\.patientID|Patient blockchain ID/);
+});
+
 test('patient management uses complete themed workflows without browser dialogs', () => {
   const patientCard = read('src/assets/components/Patients/PatientCard.jsx');
   const patientDialog = read('src/assets/components/Patients/NewPatientDialog.jsx');

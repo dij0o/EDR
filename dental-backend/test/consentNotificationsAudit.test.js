@@ -52,6 +52,9 @@ test('admin and patient decisions create notifications and support revocation', 
   assert.match(chaincode, /request\.status = 'REVOKED'/);
   assert.match(chaincode, /ACCESS_REQUEST_CONSENT_REVOKED/);
   assert.match(api, /app\.post\('\/patient\/revokeConsent'/);
+  assert.match(api, /response\.status !== 'REVOKED' \|\| response\.accessGranted !== false/);
+  assert.match(chaincode, /status: request\.status,[\s\S]*accessGranted: false,[\s\S]*revokedAt: request\.revokedAt/);
+  assert.match(api, /notification\.recipientRole === 'patient' && notification\.relatedRequestID\) return `\/patient-requests/);
   assert.match(api, /submitTransaction\(\s*'RevokeConsent'/);
   assert.match(mobileApproved, /revokeConsent/);
   assert.match(mobileApproved, /\/patient\/revokeConsent/);

@@ -408,6 +408,7 @@ const notificationDeepLink = (notification) => {
     if (notification.recipientRole === 'doctor' && notification.payload?.patientID) {
         return `/patients/${encodeURIComponent(notification.payload.patientID)}${query}`;
     }
+    if (notification.recipientRole === 'patient' && notification.relatedRequestID) return `/patient-requests${query}`;
     if (notification.recipientRole === 'patient') return `/my-record${query}`;
     return '/dashboard';
 };
@@ -853,6 +854,9 @@ app.post('/patient/rejectRequest', authenticateToken, requireRoles('patient'), r
         requireFields(req.body, ['patientID', 'requestID', 'rejectionReason']);
         const result = await withContract(req, (contract) => contract.submitTransaction('RejectRequest', String(req.body.patientID), String(req.body.requestID), String(req.body.rejectionReason)));
         const response = parseBufferJson(result);
+        if (response.requestID !== req.body.requestID || response.status !== 'REJECTED' || response.accessGranted !== false) {
+            return sendApiError(res, 502, 'INVALID_REJECTION_RESULT', 'The ledger did not return the expected rejected transition');
+        }
         await dispatchNotificationPush(response.notification);
         return sendSuccess(res, response);
     } catch (error) { return sendFabricError(res, error); }
@@ -1196,6 +1200,9 @@ app.post('/patient/revokeConsent', authenticateToken, requireRoles('patient'), r
             String(req.body.revocationReason || 'Patient revoked consent')
         ));
         const response = parseBufferJson(result);
+        if (response.requestID !== req.body.requestID || response.status !== 'REVOKED' || response.accessGranted !== false) {
+            return sendApiError(res, 502, 'INVALID_REVOCATION_RESULT', 'The ledger did not return the expected revoked transition');
+        }
         await dispatchNotificationPush(response.notification);
         return sendSuccess(res, response);
     } catch (error) { return sendFabricError(res, error); }

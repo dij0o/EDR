@@ -26,6 +26,7 @@ const Navbar = () => {
         { title: "My Record", link:'My-Record', icon: Icon3 },
         { title: "Appointments", link:'Appointments', icon: Icon2 },
         { title: "Lab Results", link:'LabResults', icon: Icon4 },
+        { title: "Data Requests", link:'Patient-Requests', icon: Icon5 },
     ] : [
         { title: "Dashboard", link:'Dashboard', icon: Icon1 },
         { title: "Appointments", link:'Appointments', icon: Icon2 },

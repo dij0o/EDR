@@ -12,6 +12,7 @@ import Login from './assets/Pages/Login.jsx';
 import Clinics from './assets/Pages/Clinics.jsx';
 import ChangePassword from './assets/Pages/ChangePassword.jsx';
 import Sessions from './assets/Pages/Sessions.jsx';
+import PatientDataRequests from './assets/Pages/PatientDataRequests.jsx';
 import Navbar from "./assets/Sections/Navbar.jsx"
 import Topbar from "./assets/Sections/Topbar.jsx"
 import { getStoredUser, getStoredUserRole } from "./assets/utils/auth.js";
@@ -80,6 +81,7 @@ function App() {
           <Route path="/my-record" element={<ProtectedRoute roles={['patient']}><Suspense fallback={<div role="status">Loading patient record…</div>}><PatientSelfRecord/></Suspense></ProtectedRoute>} />
           <Route path="/doctors" element={<ProtectedRoute roles={['admin']}><Doctors/></ProtectedRoute>} />
           <Route path="/datarequests" element={<ProtectedRoute roles={['admin']}><DataRequests/></ProtectedRoute>} />
+          <Route path="/patient-requests" element={<ProtectedRoute roles={['patient']}><PatientDataRequests/></ProtectedRoute>} />
           <Route path="/labresults" element={<ProtectedRoute roles={['admin','doctor','patient']}><LabResults/></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute roles={['admin','doctor']}><Settings/></ProtectedRoute>} />
           <Route path="/info" element={<ProtectedRoute roles={['admin','doctor']}><Info/></ProtectedRoute>} />

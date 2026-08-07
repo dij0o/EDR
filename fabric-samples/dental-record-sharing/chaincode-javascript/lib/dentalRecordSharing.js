@@ -1930,7 +1930,18 @@ class DentalRecordSharing extends Contract {
             createdAt: revokedAt,
         });
 
-        return { success: true, message: `Patient ${patientID} revoked consent for Doctor ${request.doctorID}.`, notification };
+        return {
+            success: true,
+            requestID: request.requestID,
+            patientID: request.patientID,
+            doctorID: request.doctorID,
+            status: request.status,
+            accessGranted: false,
+            revokedAt: request.revokedAt,
+            revocationReason: request.revocationReason,
+            message: `Patient ${patientID} revoked consent for Doctor ${request.doctorID}.`,
+            notification,
+        };
     }
 
     async CompleteReferral(ctx, doctorID, requestID, completionSummary) {
