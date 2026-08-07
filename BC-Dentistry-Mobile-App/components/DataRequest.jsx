@@ -6,7 +6,7 @@ import { CustomButton, DataRequestElement, AccesptReject, StatusUpdateLoading } 
 
 
 
-const DataRequest = ({type, from, to, status, id, about, date, time, optionsVisible = true}) => {
+const DataRequest = ({type, from, to, status, id, about, date, time, optionsVisible = true, onStatusChanged}) => {
 
     const requestCard = useRef()
 
@@ -118,7 +118,7 @@ const DataRequest = ({type, from, to, status, id, about, date, time, optionsVisi
                         {/* <AccesptReject func={changeStatus} /> */}
                         
                         
-                    <AccesptReject requestID={id} patientID={to} updateStatus={setCurrentStatus} setCardStatus={setIsExpanded} requestLoadingStatus={requestLoading} setrequestLoadingFunc={setRequestLoading} expandCardFunc={expandCard} />
+                    <AccesptReject requestID={id} patientID={to} updateStatus={setCurrentStatus} onStatusChanged={onStatusChanged} setCardStatus={setIsExpanded} requestLoadingStatus={requestLoading} setrequestLoadingFunc={setRequestLoading} expandCardFunc={expandCard} />
 
 
                 </>

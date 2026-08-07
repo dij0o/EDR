@@ -47,7 +47,7 @@ const ProceedRequests = () => {
     }
   }
 
-  const grantedRequests = requests.filter((request) => request.status === 'CONSENT_GRANTED')
+  const grantedRequests = requests.filter((request) => request.status === 'CONSENT_GRANTED' || request.lifecycleStatus === 'ACTIVE')
 
   return (
     <SafeAreaView>
