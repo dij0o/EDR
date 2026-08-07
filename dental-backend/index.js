@@ -591,8 +591,8 @@ app.get('/clinical-records/:patientID/:recordType', authenticateToken, requireRo
         if (!['medical', 'dental'].includes(req.params.recordType)) return sendApiError(res, 400, 'VALIDATION_ERROR', 'recordType must be medical or dental');
         const transaction = req.params.recordType === 'medical' ? 'GetMedicalRecords' : 'GetAllDentalChartData';
         const result = await withContract(req, (contract) => contract.evaluateTransaction(transaction, String(req.params.patientID)));
-        await withContract(req, (contract) => contract.submitTransaction('LogClinicalAccess', String(req.params.patientID), String(req.params.recordType), String(req.query.purpose || 'clinical care')));
-        return sendSuccess(res, parseBufferJson(result));
+        const accessLogResult = await withContract(req, (contract) => contract.submitTransaction('LogClinicalAccess', String(req.params.patientID), String(req.params.recordType), String(req.query.purpose || 'clinical care')));
+        return sendSuccess(res, { records: parseBufferJson(result), accessLog: parseBufferJson(accessLogResult) });
     } catch (error) { return sendFabricError(res, error); }
 });
 
@@ -690,7 +690,8 @@ app.get('/radiographic-files/:fileID/content', authenticateToken, requireRoles('
         const verification = await verifyFileIntegrity(filePath, metadata.sha256);
         if (verification.status === 'missing file') return sendApiError(res, 404, 'FILE_NOT_FOUND', 'The radiographic file is missing from private storage');
         if (verification.status !== 'verified') return sendApiError(res, 409, 'INTEGRITY_CHECK_FAILED', 'The radiographic file failed integrity verification and will not be streamed');
-        await withContract(req, (contract) => contract.submitTransaction('LogClinicalAccess', String(metadata.patientID), 'radiographic', String(req.query.purpose || 'radiographic image view')));
+        const accessLogResult = await withContract(req, (contract) => contract.submitTransaction('LogClinicalAccess', String(metadata.patientID), 'radiographic', String(req.query.purpose || 'radiographic image view')));
+        const accessLog = parseBufferJson(accessLogResult);
         const stat = await fs.promises.stat(filePath);
         const mediaType = /^image\/(jpeg|png|webp)$/i.test(metadata.mediaType) ? metadata.mediaType : 'application/dicom';
         const safeName = path.basename(String(metadata.fileName || `${fileID}.dcm`));
@@ -700,6 +701,7 @@ app.get('/radiographic-files/:fileID/content', authenticateToken, requireRoles('
         res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(safeName)}`);
         res.setHeader('Cache-Control', 'private, no-store');
         res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-Access-Transaction-ID', accessLog.transactionID);
         const stream = fs.createReadStream(filePath);
         stream.on('error', (error) => { if (!res.headersSent) sendFabricError(res, error); else res.destroy(error); });
         stream.pipe(res);

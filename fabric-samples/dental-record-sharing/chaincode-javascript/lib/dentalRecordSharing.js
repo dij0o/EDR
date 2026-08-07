@@ -1971,18 +1971,30 @@ class DentalRecordSharing extends Contract {
         return { success:true, requestID, status:request.status, completedAt:request.completedAt, accessClosed:true, notification };
     }
     
-    async LogAccess(ctx, doctorID, patientID) {
+    async LogAccess(ctx, doctorID, patientID, docType, accessMetadataJson) {
         this._requireRole(ctx, 'system');
+        docType = String(docType || 'clinicalAccessLog');
+        const accessMetadata = this._parseDetailsJson(accessMetadataJson || '{}');
+        const transactionID = ctx.stub.getTxID();
         const logEntry = {
-            logID: ctx.stub.getTxID(),
-            doctorID: doctorID,
-            patientID: patientID,
-            timestamp: new Date().toISOString(),
+            docType: 'clinicalAccessLog',
+            logID: `ACCESS:${transactionID}`,
+            transactionID,
+            actorID: doctorID,
+            actorRole: 'doctor',
+            doctorID,
+            patientID,
+            recordType: accessMetadata.recordType || docType,
+            purpose: accessMetadata.purpose || 'authorized clinical access',
+            requestID: accessMetadata.requestID || null,
+            accessBasis: accessMetadata.accessBasis || 'system-verified',
+            accessMetadata,
+            timestamp: this._txTimestamp(ctx),
         };
     
         await ctx.stub.putState(logEntry.logID, Buffer.from(JSON.stringify(logEntry)));
     
-        return { success: true, message: `Access logged for Doctor ${doctorID} and Patient ${patientID}` };
+        return JSON.stringify({ ...logEntry, success: true, message: `Access logged for Doctor ${doctorID} and Patient ${patientID}` });
     }
 
     async GetNotificationsForActor(ctx, recipientRole, recipientID, statusFilter) {
@@ -2105,7 +2117,10 @@ class DentalRecordSharing extends Contract {
             }
         }
         const timestamp = this._txTimestamp(ctx);
-        const logEntry = { docType: 'clinicalAccessLog', logID: `ACCESS:${ctx.stub.getTxID()}`, actorID, actorRole: identity.role, patientID, recordType, purpose, requestID, accessBasis, timestamp };
+        const transactionID = ctx.stub.getTxID();
+        const doctorID = identity.role === 'doctor' ? actorID : null;
+        const accessMetadata = { recordType, purpose, requestID, accessBasis };
+        const logEntry = { docType: 'clinicalAccessLog', logID: `ACCESS:${transactionID}`, transactionID, actorID, actorRole: identity.role, doctorID, patientID, recordType, purpose, requestID, accessBasis, accessMetadata, timestamp };
         await ctx.stub.putState(logEntry.logID, Buffer.from(JSON.stringify(logEntry)));
         return JSON.stringify(logEntry);
     }

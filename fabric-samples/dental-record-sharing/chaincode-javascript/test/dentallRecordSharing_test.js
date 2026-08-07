@@ -252,6 +252,37 @@ describe('Phase 2 chaincode identity enforcement', () => {
         );
     });
 
+    it('stores a queryable deterministic access log with transaction evidence', async () => {
+        const ctx = context('system', 'System1');
+
+        const result = JSON.parse(await contract.LogAccess(ctx, 'Doctor1', 'Patient1', 'medical', JSON.stringify({ purpose:'treatment review', accessBasis:'assignment' })));
+
+        expect(result.docType).to.equal('clinicalAccessLog');
+        expect(result.logID).to.equal('ACCESS:tx-1');
+        expect(result.transactionID).to.equal('tx-1');
+        expect(result.doctorID).to.equal('Doctor1');
+        expect(result.patientID).to.equal('Patient1');
+        expect(result.recordType).to.equal('medical');
+        expect(result.accessMetadata.purpose).to.equal('treatment review');
+        expect(result.timestamp).to.equal('2026-07-12T16:00:00.000Z');
+        expect(ctx.stub.putState.firstCall.args[0]).to.equal('ACCESS:tx-1');
+    });
+
+    it('automatically logs an authorized doctor clinical read with its access basis', async () => {
+        const ctx = context('doctor', 'Doctor1');
+        const patient = { patientID:'Patient1', doctors:['Doctor1'] };
+        ctx.stub.getState.callsFake(async (key) => key === 'Patient1' ? Buffer.from(JSON.stringify(patient)) : Buffer.alloc(0));
+
+        const result = JSON.parse(await contract.LogClinicalAccess(ctx, 'Patient1', 'dental', 'treatment planning'));
+
+        expect(result.transactionID).to.equal('tx-1');
+        expect(result.doctorID).to.equal('Doctor1');
+        expect(result.patientID).to.equal('Patient1');
+        expect(result.accessBasis).to.equal('assignment');
+        expect(result.accessMetadata.recordType).to.equal('dental');
+        expect(ctx.stub.putState.firstCall.args[0]).to.equal('ACCESS:tx-1');
+    });
+
     it('rejects a doctor writing records for an unassigned patient', async () => {
         const ctx = context('doctor', 'Doctor1');
         ctx.stub.getState.resolves(Buffer.from(JSON.stringify({

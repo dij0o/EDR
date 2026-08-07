@@ -35,6 +35,11 @@ test('doctor and patient reads are access checked and automatically logged on-ch
   assert.match(api, /submitTransaction\('LogClinicalAccess'/);
   assert.match(chaincode, /async LogClinicalAccess/);
   assert.match(chaincode, /docType: 'clinicalAccessLog'/);
+  assert.match(chaincode, /transactionID/);
+  assert.match(chaincode, /doctorID/);
+  assert.match(chaincode, /accessMetadata/);
+  assert.match(api, /accessLog: parseBufferJson\(accessLogResult\)/);
+  assert.match(db, /accessEvidence/);
   assert.match(api, /clinical-access-logs\/:patientID/);
   assert.match(db, /getMedicalRecords\/:id/);
   assert.match(db, /getDentalChartData\/:id/);

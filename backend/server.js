@@ -1643,14 +1643,16 @@ app.post(['/clinical-records', '/addMedicalRecord', '/addDentalChartEntry'], aut
 app.get(['/patients/:id/clinical-records/:recordType', '/getMedicalRecords/:id', '/getDentalChartData/:id'], authenticateToken, requireRoles('doctor', 'patient'), async (req, res) => {
     try {
         const recordType = req.path.startsWith('/getDentalChartData') ? 'dental' : (req.params.recordType || 'medical');
-        const metadata = await callBlockchain(req, `/clinical-records/${encodeURIComponent(req.params.id)}/${recordType}?purpose=${encodeURIComponent(req.query.purpose || 'clinical care')}`, 'GET');
-        if (!metadata.length) return res.json({ success: true, data: [] });
+        const clinicalResult = await callBlockchain(req, `/clinical-records/${encodeURIComponent(req.params.id)}/${recordType}?purpose=${encodeURIComponent(req.query.purpose || 'clinical care')}`, 'GET');
+        const metadata = Array.isArray(clinicalResult) ? clinicalResult : clinicalResult.records || [];
+        const accessEvidence = Array.isArray(clinicalResult) ? null : clinicalResult.accessLog || null;
+        if (!metadata.length) return res.json({ success: true, data: [], accessEvidence });
         const ids = metadata.map((item) => item.recordID);
         const placeholders = ids.map(() => '?').join(',');
         const rows = await query(`SELECT * FROM Clinical_Record WHERE Record_ID IN (${placeholders}) ORDER BY Created_Date DESC`, ids);
         const byID = new Map(metadata.map((item) => [item.recordID, item]));
         const records = rows.map((row) => ({ ...byID.get(row.Record_ID), payload: typeof row.Payload === 'string' ? JSON.parse(row.Payload) : row.Payload, dataHash: row.Data_Hash, createdAt: row.Created_Date }));
-        return res.json({ success: true, data: records });
+        return res.json({ success: true, data: records, accessEvidence });
     } catch (error) { return sendApiError(res, error.statusCode || 500, 'CLINICAL_RECORD_READ_FAILED', error.message); }
 });
 
@@ -1864,6 +1866,7 @@ app.get('/radiographic-files/:fileID/content', authenticateToken, requireRoles('
         }
         res.set('Content-Type', response.headers.get('content-type') || 'application/octet-stream');
         res.set('Content-Disposition', response.headers.get('content-disposition') || 'inline');
+        if (response.headers.get('x-access-transaction-id')) res.set('X-Access-Transaction-ID', response.headers.get('x-access-transaction-id'));
         return res.send(Buffer.from(await response.arrayBuffer()));
     } catch (error) {
         return sendApiError(res, error.statusCode || 503, 'BLOCKCHAIN_SERVICE_UNAVAILABLE', error.message);
