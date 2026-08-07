@@ -1118,7 +1118,7 @@
                 "url": "{{databaseApiBaseUrl}}/requestDataAccess",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"doctorID\": \"{{doctorId}}\",\n  \"patientID\": \"{{patientId}}\",\n  \"dataOriginClinicID\": \"{{clinicId}}\",\n  \"dataType\": \"Medical and Dental Records\",\n  \"purpose\": \"Specialist referral\",\n  \"reason\": \"Specialist referral\",\n  \"urgency\": \"routine\",\n  \"expiresAt\": \"2026-12-31T23:59:59.000Z\",\n  \"notes\": \"Postman example referral\"\n}",
+                  "raw": "{\n  \"patientLookupType\": \"email\",\n  \"patientLookupValue\": \"{{patientEmail}}\",\n  \"dataType\": \"Medical and Dental Records\",\n  \"purpose\": \"Specialist referral\",\n  \"reason\": \"Specialist referral\",\n  \"urgency\": \"routine\",\n  \"expiresAt\": \"2026-12-31T23:59:59.000Z\",\n  \"notes\": \"Postman example referral\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"

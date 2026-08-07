@@ -1736,24 +1736,31 @@ app.post('/admin/rejectRequest', authenticateToken, requireRoles('admin'), (req,
 app.post(['/requestDataAccess', '/requestAccess'], authenticateToken, requireRoles('doctor'), async (req, res) => {
     try {
         if (!req.user.blockchainID) return sendApiError(res, 403, 'DOCTOR_IDENTITY_REQUIRED', 'Authenticated doctor is missing a blockchain identity');
-        if (!req.body.patientID) return sendApiError(res,400,'VALIDATION_ERROR','Patient ID is required');
-        if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(String(req.body.patientID))) return sendApiError(res,400,'INVALID_PATIENT_ID','Enter a valid Patient ID containing only letters, numbers, hyphens, or underscores');
+        const lookupType = String(req.body.patientLookupType || '').toLowerCase();
+        const lookupValue = String(req.body.patientLookupValue || '').trim();
+        if (!req.body.patientID && (!['email','phone','emiratesid'].includes(lookupType) || !lookupValue)) return sendApiError(res,400,'VALIDATION_ERROR','Enter the patient email, phone number, or Emirates ID');
+        if (req.body.patientID && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(String(req.body.patientID))) return sendApiError(res,400,'INVALID_PATIENT_ID','Enter a valid Patient ID containing only letters, numbers, hyphens, or underscores');
         if (!req.body.dataType || !req.body.purpose) return sendApiError(res,400,'VALIDATION_ERROR','Data type and clinical purpose are required');
         requireTextLimit(req.body.dataType,'Data type',100,'DATA_TYPE_TOO_LONG');
         requireTextLimit(req.body.purpose,'Clinical purpose',500,'REQUEST_PURPOSE_TOO_LONG');
         requireTextLimit(req.body.notes,'Request notes',1000,'REQUEST_NOTES_TOO_LONG');
-        const rows = await query(`SELECT Patient.Clinic_ID,Doctor.Clinic_ID AS Doctor_Clinic_ID
+        requireTextLimit(lookupValue,'Patient lookup value',254,'PATIENT_LOOKUP_TOO_LONG');
+        if (!req.body.patientID && lookupType === 'email') validateEmail(lookupValue);
+        if (!req.body.patientID && lookupType === 'phone') validateContactNumber(lookupValue);
+        if (!req.body.patientID && lookupType === 'emiratesid') validateEmiratesID(lookupValue);
+        const rows = await query(`SELECT Patient.Blockchain_ID,Patient.Clinic_ID,Doctor.Clinic_ID AS Doctor_Clinic_ID
             FROM Patient JOIN User PatientUser ON PatientUser.ID=Patient.ID AND PatientUser.IsActive=1
             JOIN Organization ON Organization.Organization_ID=Patient.Clinic_ID AND Organization.IsActive=1
             JOIN Doctor ON Doctor.Blockchain_ID=? JOIN User DoctorUser ON DoctorUser.ID=Doctor.ID AND DoctorUser.IsActive=1
-            WHERE Patient.Blockchain_ID=? LIMIT 1`, [req.user.blockchainID,req.body.patientID]);
-        if (!rows.length) return sendApiError(res,404,'PATIENT_NOT_FOUND','No active patient was found for that Patient ID');
+            WHERE ${req.body.patientID ? 'Patient.Blockchain_ID=?' : lookupType === 'email' ? 'LOWER(PatientUser.Email)=LOWER(?)' : lookupType === 'phone' ? 'PatientUser.Contact_Number=?' : 'Patient.Emirates_ID=?'} LIMIT 2`, [req.user.blockchainID,req.body.patientID || lookupValue]);
+        if (rows.length !== 1) return sendApiError(res,404,'PATIENT_NOT_FOUND','No unique active patient matched the supplied details');
         if (Number(rows[0].Clinic_ID) === Number(rows[0].Doctor_Clinic_ID)) return sendApiError(res,409,'DATA_ACCESS_NOT_REQUIRED','This patient belongs to your clinic; use the normal assigned-patient workflow instead');
         if (req.body.dataOriginClinicID !== undefined && Number(req.body.dataOriginClinicID) !== Number(rows[0].Clinic_ID)) {
             return sendApiError(res, 409, 'DATA_ORIGIN_CLINIC_MISMATCH', `Patient data is held by Clinic ${rows[0].Clinic_ID}, not Clinic ${req.body.dataOriginClinicID}`);
         }
         return relayBlockchainJson(req, res, '/requestDataAccess', 'POST', {
-            ...req.body, doctorID:req.user.blockchainID, dataOriginClinicID:Number(rows[0].Clinic_ID),
+            ...req.body, patientID:rows[0].Blockchain_ID, doctorID:req.user.blockchainID, dataOriginClinicID:Number(rows[0].Clinic_ID),
+            patientLookupType:undefined, patientLookupValue:undefined,
         });
     } catch (error) { return sendApiError(res,error.statusCode||500,error.code||'DATA_ACCESS_REQUEST_FAILED',error.message); }
 });

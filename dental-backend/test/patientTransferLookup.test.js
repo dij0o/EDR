@@ -18,6 +18,18 @@ test('application API does not expose cross-clinic patient discovery', () => {
   assert.doesNotMatch(api, /app\.get\('\/patients\/(?:search|lookup)/);
 });
 
+test('referral lookup uses an exact familiar identifier and returns no patient directory result', () => {
+  const start = api.indexOf("app.post(['/requestDataAccess', '/requestAccess']");
+  const source = api.slice(start, api.indexOf("app.get('/referrals'", start));
+  assert.match(source, /\['email','phone','emiratesid'\]\.includes\(lookupType\)/);
+  assert.match(source, /LOWER\(PatientUser\.Email\)=LOWER\(\?\)/);
+  assert.match(source, /PatientUser\.Contact_Number=\?/);
+  assert.match(source, /Patient\.Emirates_ID=\?/);
+  assert.match(source, /patientID:rows\[0\]\.Blockchain_ID/);
+  assert.match(source, /dataOriginClinicID:Number\(rows\[0\]\.Clinic_ID\)/);
+  assert.doesNotMatch(source, /First_Name|Last_Name/);
+});
+
 test('canonical request API derives current clinic and prevents client tenant override', () => {
   const start = api.indexOf("app.post(['/requestDataAccess', '/requestAccess']");
   const source = api.slice(start, api.indexOf("app.get('/getAllRequestsForPatient", start));

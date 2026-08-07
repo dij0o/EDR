@@ -25,8 +25,12 @@ test('access requests capture who, what, when, why, and notify admins', () => {
   assert.match(applicationApi, /doctorID:req\.user\.blockchainID/);
   assert.match(applicationApi, /DATA_ORIGIN_CLINIC_MISMATCH/);
   assert.match(doctorRequest, /databaseUrl\('\/requestDataAccess'\)/);
-  assert.match(doctorRequest, /Patient blockchain ID/);
-  assert.match(doctorRequest, /Data-origin clinic ID/);
+  assert.match(doctorRequest, /Find patient by/);
+  assert.match(doctorRequest, /Patient identifier/);
+  assert.match(doctorRequest, /patientLookupType/);
+  assert.match(doctorRequest, /patientLookupValue/);
+  assert.doesNotMatch(doctorRequest, /Patient blockchain ID/);
+  assert.doesNotMatch(doctorRequest, /Data-origin clinic ID/);
   assert.match(doctorRequest, /Clinical purpose/);
   assert.match(doctorRequest, /Referral access expires/);
 });

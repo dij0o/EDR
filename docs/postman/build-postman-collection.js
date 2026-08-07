@@ -178,7 +178,7 @@ const web = [
         { body: { adminID: '{{userId}}', requestID: '{{requestId}}', adminClinicID: '{{clinicId}}', rejectionReason: 'Request does not meet clinic policy' } }),
       request('Request Patient Data Access', 'POST', db, '/requestDataAccess',
         'Doctor initiates a purpose-bound request to access a patient record held by another clinic.',
-        { body: { doctorID: '{{doctorId}}', patientID: '{{patientId}}', dataOriginClinicID: '{{clinicId}}', dataType: 'Medical and Dental Records', purpose: 'Specialist referral', reason: 'Specialist referral', urgency: 'routine', expiresAt: '2026-12-31T23:59:59.000Z', notes: 'Postman example referral' } }),
+        { body: { patientLookupType: 'email', patientLookupValue: '{{patientEmail}}', dataType: 'Medical and Dental Records', purpose: 'Specialist referral', reason: 'Specialist referral', urgency: 'routine', expiresAt: '2026-12-31T23:59:59.000Z', notes: 'Postman example referral' } }),
       request('List My Referrals', 'GET', db, '/referrals', 'Lists referral requests for the authenticated receiving doctor.'),
       request('Complete Referral', 'POST', db, '/referrals/{{requestId}}/complete',
         'Receiving doctor closes an active referral. This ends prospective cross-clinic access while preserving the referral history and completion summary.',
