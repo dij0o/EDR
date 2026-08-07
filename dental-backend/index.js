@@ -233,7 +233,7 @@ const sendFabricError = (res, error) => {
     const statusCode = error.statusCode
         || (/access denied|not authorized|forbidden|requires .* role|does not match/i.test(message) ? 403 : null)
         || (/does not exist|not found/i.test(message) ? 404 : null)
-        || (/cannot be approved at this stage|not waiting for patient consent|cannot be rejected at this stage|does not have active consent|already (?:processed|approved|rejected|revoked)/i.test(message) ? 409 : null)
+        || (/cannot be approved at this stage|not waiting for patient consent|cannot be rejected at this stage|does not have active consent|already (?:processed|approved|rejected|revoked)|was rejected and cannot be resubmitted/i.test(message) ? 409 : null)
         || (/missing required|cannot be rejected at this stage/i.test(message) ? 400 : null)
         || 500;
     res.status(statusCode).json({

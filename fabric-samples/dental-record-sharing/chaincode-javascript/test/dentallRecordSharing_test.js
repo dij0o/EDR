@@ -199,6 +199,43 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(result.notification.type).to.equal('ACCESS_REQUEST_REJECTED');
     });
 
+    it('keeps an admin-rejected request terminal and prevents an identical new request', async () => {
+        const ctx = context('doctor', 'Doctor1', 'Org1MSP', '1');
+        const doctor = { doctorID: 'Doctor1', firstName: 'Alice', lastName: 'Wong', clinicID: 1, worksAt: 'Clinic 1' };
+        const patient = { patientID: 'Patient1', clinicID: 2, clinicIDs: [2], doctors: ['Doctor2'], sharedWith: [] };
+        const rejected = { requestID: 'request-rejected', doctorID: 'Doctor1', patientID: 'Patient1', dataOriginClinicID: 2, dataType: 'Medical Records', status: 'REJECTED', rejectedRole: 'admin' };
+        ctx.stub.getState.callsFake(async (key) => {
+            if (key === 'Doctor1') return Buffer.from(JSON.stringify(doctor));
+            if (key === 'Patient1') return Buffer.from(JSON.stringify(patient));
+            if (key === 'request-rejected') return Buffer.from(JSON.stringify(rejected));
+            if (key === 'ACTIVE_ACCESS_REQUEST:Doctor1:Patient1:2') return Buffer.from(rejected.requestID);
+            return Buffer.alloc(0);
+        });
+
+        await expectReject(
+            contract.RequestDataAccess(ctx, 'Doctor1', 'Patient1', '2', 'Medical Records', 'Specialist review', '{}'),
+            'was rejected and cannot be resubmitted'
+        );
+        expect(ctx.stub.putState.called).to.equal(false);
+        expect(rejected.status).to.equal('REJECTED');
+    });
+
+    it('denies patient data after admin rejection and preserves the rejected request', async () => {
+        const ctx = context('doctor', 'Doctor1', 'Org1MSP', '1');
+        const patient = { patientID: 'Patient1', doctors: ['Doctor2'], sharedWith: [] };
+        const rejected = { requestID: 'request-rejected', docType: 'accessRequest', workflowType: 'REFERRAL', doctorID: 'Doctor1', patientID: 'Patient1', dataOriginClinicID: 2, status: 'REJECTED' };
+        ctx.stub.getState.callsFake(async (key) => key === 'Patient1' ? Buffer.from(JSON.stringify(patient)) : Buffer.alloc(0));
+        let yielded = false;
+        ctx.stub.getStateByRange.resolves({
+            next: sinon.stub().callsFake(async () => yielded ? { done: true } : (yielded = true, { done: false, value: { value: Buffer.from(JSON.stringify(rejected)) } })),
+            close: sinon.stub().resolves(),
+        });
+
+        await expectReject(contract.GetPatientData(ctx, 'Doctor1', 'Patient1'), 'has no active referral');
+        expect(ctx.stub.putState.called).to.equal(false);
+        expect(rejected.status).to.equal('REJECTED');
+    });
+
     it('prevents an admin from another clinic rejecting the pending request', async () => {
         const ctx = context('admin', 'Admin1', 'Org1MSP', '1');
         const request = { requestID: 'request-1', doctorID: 'Doctor1', patientID: 'Patient1', dataOriginClinicID: 2, status: 'PENDING_ADMIN_APPROVAL' };

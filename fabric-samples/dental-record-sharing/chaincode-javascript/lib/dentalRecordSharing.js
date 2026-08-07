@@ -1405,11 +1405,14 @@ class DentalRecordSharing extends Contract {
         if (typeof ctx.stub.getStateByPartialCompositeKey === 'function') {
             const iterator = await ctx.stub.getStateByPartialCompositeKey('ACTIVE_ACCESS_REQUEST', attributes);
             try {
-                while (true) {
+                let done = false;
+                while (!done) {
                     const item = await iterator.next();
-                    if (item.done) break;
-                    const requestID = item.value?.value?.toString();
-                    if (requestID && !candidateIDs.includes(requestID)) candidateIDs.push(requestID);
+                    done = item.done;
+                    if (!done) {
+                        const requestID = item.value?.value?.toString();
+                        if (requestID && !candidateIDs.includes(requestID)) candidateIDs.push(requestID);
+                    }
                 }
             } finally {
                 await iterator.close();
@@ -1452,6 +1455,21 @@ class DentalRecordSharing extends Contract {
         const activeRequestKey = ctx.stub.createCompositeKey('ACTIVE_ACCESS_REQUEST', [String(doctorID), String(patientID), String(dataOriginClinicID)]);
         const existing = await this._findActiveDataAccessRequest(ctx, doctorID, patientID, dataOriginClinicID);
         if (existing) return existing.requestID;
+
+        // A rejection is a terminal decision for this care relationship. Keep the
+        // relationship index pointing at the rejected ledger record so an ordinary
+        // create call cannot erase the decision by starting the same workflow again.
+        // Any future reconsideration must use an explicit, separately audited flow.
+        const indexedRequestID = await ctx.stub.getState(activeRequestKey);
+        if (indexedRequestID && indexedRequestID.length) {
+            const indexedRequestBytes = await ctx.stub.getState(indexedRequestID.toString());
+            if (indexedRequestBytes && indexedRequestBytes.length) {
+                const indexedRequest = JSON.parse(indexedRequestBytes.toString());
+                if (indexedRequest.status === 'REJECTED') {
+                    throw new Error(`Access request ${indexedRequest.requestID} was rejected and cannot be resubmitted as a new request`);
+                }
+            }
+        }
 
         const patientClinicIDs = [...new Set([
             ...(Array.isArray(patient.clinicIDs) ? patient.clinicIDs : []),
