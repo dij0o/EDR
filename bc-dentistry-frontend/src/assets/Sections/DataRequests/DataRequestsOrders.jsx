@@ -48,6 +48,9 @@ const DataRequestsOrders = ({ onChanged }) => {
     }, [adminClinicID]);
 
     const handleApproveRequest = async (requestID) => {
+        if (busy) return;
+        setBusy(true);
+        setFeedback({ error: '', notice: '' });
         try {
             const response = await fetch(databaseUrl('/approveRequest'), {
                 method: 'POST',
@@ -56,16 +59,19 @@ const DataRequestsOrders = ({ onChanged }) => {
             });
             const data = await response.json();
 
-            if (response.ok) {
+            const result = data.data || data;
+            if (response.ok && result.status === 'PENDING_PATIENT_CONSENT') {
                 setFeedback({ error: '', notice: `Data-access request ${requestID} approved. Patient consent is now required before access is granted.` });
                 setOnHoldRequests((requests) => requests.filter((request) => request.requestID !== requestID));
                 onChanged?.();
             } else {
-                setFeedback({ error: data?.error?.message || data.message || 'Failed to approve request.', notice: '' });
+                setFeedback({ error: data?.error?.message || data.message || 'The request was not moved to patient consent.', notice: '' });
             }
         } catch (error) {
             console.error('Failed to approve request:', error);
             setFeedback({ error: 'Error approving request. Please try again later.', notice: '' });
+        } finally {
+            setBusy(false);
         }
     };
 
@@ -110,6 +116,7 @@ const DataRequestsOrders = ({ onChanged }) => {
                             header={request.header}
                             details={request.description}
                             type={request.type}
+                            busy={busy}
                             onApprove={() => handleApproveRequest(request.requestID)}
                             onReject={() => { setRejectionReason('Request does not meet clinic policy'); setFeedback({error:'',notice:''}); setRejecting(request.requestID); }}
                         />

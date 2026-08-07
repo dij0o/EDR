@@ -1117,6 +1117,9 @@ app.post('/approveRequest', authenticateToken, requireRoles('admin'), requireAdm
 
         console.log("Approval Response:", result.toString());
         const response = JSON.parse(result.toString());
+        if (response.requestID !== requestID || response.status !== 'PENDING_PATIENT_CONSENT') {
+            return sendApiError(res, 502, 'INVALID_APPROVAL_RESULT', 'The ledger did not return the expected patient-consent transition');
+        }
         await dispatchNotificationPush(response.notification);
         res.status(200).json(response);
         await gateway.disconnect();

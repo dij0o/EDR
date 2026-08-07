@@ -1534,7 +1534,7 @@ class DentalRecordSharing extends Contract {
         const request = JSON.parse(requestAsBytes.toString());
     
         // ✅ Ensure the admin is approving a request for their clinic's data
-        if (request.dataOriginClinicID !== adminClinicID) {
+        if (Number(request.dataOriginClinicID) !== adminClinicID) {
             throw new Error(`Admin from Clinic ${adminClinicID} is not authorized to approve this request.`);
         }
     
@@ -1567,7 +1567,18 @@ class DentalRecordSharing extends Contract {
             createdAt: approvedAt,
         });
     
-        return { success: true, message: `Request ${requestID} approved by Admin from Clinic ${adminClinicID}.`, notification };
+        return {
+            success: true,
+            requestID: request.requestID,
+            patientID: request.patientID,
+            doctorID: request.doctorID,
+            dataOriginClinicID: request.dataOriginClinicID,
+            status: request.status,
+            adminID: request.adminID,
+            adminApprovedAt: request.adminApprovedAt,
+            message: `Request ${requestID} approved by Admin from Clinic ${adminClinicID}.`,
+            notification,
+        };
     }
 
     //Admin gets all request related to clinic

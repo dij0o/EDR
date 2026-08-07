@@ -162,6 +162,23 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(result.requestID).to.equal('request-legacy');
     });
 
+    it('moves an authorized clinic request to the patient consent queue', async () => {
+        const ctx = context('admin', 'Admin2', 'Org1MSP', '2');
+        const request = { requestID: 'request-1', docType: 'accessRequest', workflowType: 'REFERRAL', doctorID: 'Doctor1', patientID: 'Patient1', dataOriginClinicID: '2', dataType: 'Medical Records', doctorName: 'Alice Wong', status: 'PENDING_ADMIN_APPROVAL' };
+        ctx.stub.getState.callsFake(async (key) => key === request.requestID ? Buffer.from(JSON.stringify(request)) : Buffer.alloc(0));
+
+        const result = await contract.ApproveRequest(ctx, 'Admin2', request.requestID, '2');
+
+        expect(result.requestID).to.equal(request.requestID);
+        expect(result.patientID).to.equal(request.patientID);
+        expect(result.status).to.equal('PENDING_PATIENT_CONSENT');
+        expect(result.adminApprovedAt).to.be.a('string');
+        const requestWrite = ctx.stub.putState.getCalls().find((call) => call.args[0] === request.requestID);
+        expect(JSON.parse(requestWrite.args[1].toString()).status).to.equal('PENDING_PATIENT_CONSENT');
+        expect(result.notification.recipientActorID).to.equal(request.patientID);
+        expect(result.notification.type).to.equal('ACCESS_REQUEST_PENDING_PATIENT');
+    });
+
     it('grants scoped access without transferring the patient or replacing assigned doctors', async () => {
         const ctx = context('patient', 'Patient1', 'Org1MSP', '2');
         const request = { requestID: 'request-1', docType: 'accessRequest', workflowType: 'REFERRAL', doctorID: 'Doctor1', patientID: 'Patient1', dataType: 'Medical Records', status: 'PENDING_PATIENT_CONSENT' };

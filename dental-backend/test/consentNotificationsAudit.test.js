@@ -36,6 +36,8 @@ test('access requests capture who, what, when, why, and notify admins', () => {
 });
 
 test('admin and patient decisions create notifications and support revocation', () => {
+  assert.match(api, /response\.requestID !== requestID \|\| response\.status !== 'PENDING_PATIENT_CONSENT'/);
+  assert.match(chaincode, /requestID: request\.requestID,[\s\S]*status: request\.status,[\s\S]*adminApprovedAt: request\.adminApprovedAt/);
   assert.match(chaincode, /ACCESS_REQUEST_PENDING_PATIENT/);
   assert.match(chaincode, /consentTxID/);
   assert.match(chaincode, /consentMSPID/);
