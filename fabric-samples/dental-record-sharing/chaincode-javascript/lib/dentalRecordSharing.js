@@ -80,7 +80,7 @@ class DentalRecordSharing extends Contract {
         return { ...identity, clinicID };
     }
 
-    _requirePatientRecordAccess(ctx, patientID, patient, ...allowedRoles) {
+    async _requirePatientRecordAccess(ctx, patientID, patient, recordType, ...allowedRoles) {
         const identity = this._requireRole(ctx, ...allowedRoles);
         if (identity.role === 'admin' || identity.role === 'system') {
             return identity;
@@ -95,9 +95,12 @@ class DentalRecordSharing extends Contract {
         }
         if (identity.role === 'doctor') {
             const assignedDoctors = Array.isArray(patient.doctors) ? patient.doctors : [];
-            const sharedDoctors = Array.isArray(patient.sharedWith) ? patient.sharedWith : [];
-            if (!assignedDoctors.includes(actorID) && !sharedDoctors.includes(actorID)) {
-                throw new Error(`Access denied: Doctor ${actorID} is not assigned or consented for patient ${patientID}.`);
+            if (!assignedDoctors.includes(actorID)) {
+                const referral = await this._findActiveReferralRequest(ctx, patientID, actorID, recordType);
+                if (!referral) {
+                    throw new Error(`Access denied: Doctor ${actorID} has no active referral for ${recordType || 'the requested records'} of patient ${patientID}.`);
+                }
+                return { ...identity, actorID, accessBasis: 'referral', requestID: referral.requestID, referral };
             }
         }
         return { ...identity, actorID };
@@ -170,7 +173,7 @@ class DentalRecordSharing extends Contract {
                             && record.patientID === patientID
                             && record.doctorID === doctorID
                             && record.requestID !== excludeRequestID
-                            && record.status === 'CONSENT_GRANTED'
+                            && record.status === 'ACTIVE'
                         ) {
                             return record;
                         }
@@ -187,6 +190,47 @@ class DentalRecordSharing extends Contract {
             if (iterator.close) {
                 await iterator.close();
             }
+        }
+        return null;
+    }
+
+    _referralAllowsRecordType(request, recordType) {
+        if (!recordType) return true;
+        const normalized = String(recordType).toLowerCase();
+        const requested = Array.isArray(request.requestedRecordTypes) ? request.requestedRecordTypes : [request.dataType];
+        return requested.some((value) => {
+            const scope = String(value || '').toLowerCase();
+            return scope.includes('medical and dental')
+                || scope.includes('dental and medical')
+                || scope.includes(normalized);
+        });
+    }
+
+    async _findActiveReferralRequest(ctx, patientID, doctorID, recordType) {
+        const now = Date.parse(this._txTimestamp(ctx));
+        const iterator = await ctx.stub.getStateByRange('', '');
+        try {
+            for (;;) {
+                const result = await iterator.next();
+                if (result.value && result.value.value) {
+                    try {
+                        const request = JSON.parse(result.value.value.toString());
+                        const notExpired = !request.expiresAt || Date.parse(request.expiresAt) > now;
+                        if (request.docType === 'accessRequest'
+                            && request.workflowType === 'REFERRAL'
+                            && request.patientID === patientID
+                            && request.doctorID === doctorID
+                            && request.status === 'ACTIVE'
+                            && notExpired
+                            && this._referralAllowsRecordType(request, recordType)) return request;
+                    } catch (error) {
+                        // Ignore unrelated or malformed world-state values.
+                    }
+                }
+                if (result.done) break;
+            }
+        } finally {
+            if (iterator.close) await iterator.close();
         }
         return null;
     }
@@ -804,7 +848,7 @@ class DentalRecordSharing extends Contract {
             throw new Error(`The patient ${id} does not exist`);
         }
         const patient = JSON.parse(patientJSON.toString());
-        this._requirePatientRecordAccess(ctx, id, patient, 'admin', 'doctor', 'patient', 'system');
+        await this._requirePatientRecordAccess(ctx, id, patient, null, 'admin', 'doctor', 'patient', 'system');
         return patientJSON.toString();
     }
 
@@ -964,8 +1008,8 @@ class DentalRecordSharing extends Contract {
                 if (isDoctor) value.patients = [];
                 if (isPatient) value.doctors = [];
                 await ctx.stub.putState(record.key, Buffer.from(stringify(sortKeysRecursive(value)))); actorsDeactivated += 1;
-            } else if ((String(value.dataOriginClinicID || '') === clinic || doctorIDs.has(String(value.doctorID || ''))) && ['PENDING_ADMIN_APPROVAL','PENDING_PATIENT_CONSENT','CONSENT_GRANTED'].includes(value.status)) {
-                value.status = value.status === 'CONSENT_GRANTED' ? 'CONSENT_REVOKED' : 'CANCELLED';
+            } else if ((String(value.dataOriginClinicID || '') === clinic || doctorIDs.has(String(value.doctorID || ''))) && ['PENDING_ADMIN_APPROVAL','PENDING_PATIENT_CONSENT','ACTIVE'].includes(value.status)) {
+                value.status = value.status === 'ACTIVE' ? 'REVOKED' : 'CANCELLED';
                 value.revocationReason = 'Clinic deactivated'; value.modifiedDate = deactivatedAt;
                 await ctx.stub.putState(record.key, Buffer.from(stringify(sortKeysRecursive(value)))); requestsCancelled += 1;
             }
@@ -1110,7 +1154,7 @@ class DentalRecordSharing extends Contract {
         }
 
         const patient = JSON.parse(patientJSON.toString());
-        this._requirePatientRecordAccess(ctx, patientID, patient, 'admin', 'doctor', 'patient', 'system');
+        await this._requirePatientRecordAccess(ctx, patientID, patient, null, 'admin', 'doctor', 'patient', 'system');
         const dentalChartEntry = patient.dentalChart.find(entry => entry.Site === site && entry.Suf === surface);
 
         if (!dentalChartEntry) {
@@ -1128,7 +1172,7 @@ class DentalRecordSharing extends Contract {
         }
 
         const patient = JSON.parse(patientJSON.toString());
-        this._requirePatientRecordAccess(ctx, patientID, patient, 'admin', 'doctor', 'patient', 'system');
+        await this._requirePatientRecordAccess(ctx, patientID, patient, null, 'admin', 'doctor', 'patient', 'system');
 
         return JSON.stringify(patient.dentalChart);
     }
@@ -1146,7 +1190,7 @@ class DentalRecordSharing extends Contract {
         // Retrieve the patient's current data
         const patientAsBytes = await ctx.stub.getState(patientID);
         const patient = JSON.parse(patientAsBytes.toString());
-        this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor');
+        await this._requirePatientRecordAccess(ctx, patientID, patient, 'medical', 'doctor');
 
         // If medicalRecords does not exist, initialize it as an empty array
         if (!patient.medicalRecords) {
@@ -1178,7 +1222,7 @@ class DentalRecordSharing extends Contract {
         }
 
         const patient = JSON.parse(patientAsBytes.toString());
-        this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor', 'patient');
+        await this._requirePatientRecordAccess(ctx, patientID, patient, 'dental', 'doctor', 'patient');
         return patient.medicalRecords || []; // Return the medical records or an empty array
     }
 
@@ -1357,7 +1401,7 @@ class DentalRecordSharing extends Contract {
         const requestBytes = await ctx.stub.getState(requestIDBytes.toString());
         if (!requestBytes || !requestBytes.length) return JSON.stringify(null);
         const request = JSON.parse(requestBytes.toString());
-        return JSON.stringify(['PENDING_ADMIN_APPROVAL','PENDING_PATIENT_CONSENT','CONSENT_GRANTED'].includes(request.status) ? request : null);
+        return JSON.stringify(['PENDING_ADMIN_APPROVAL','PENDING_PATIENT_CONSENT','ACTIVE'].includes(request.status) ? request : null);
     }
 
     async RequestDataAccess(ctx, doctorID, patientID, dataOriginClinicID, dataType, purpose, detailsJson) {
@@ -1386,16 +1430,25 @@ class DentalRecordSharing extends Contract {
             const existingBytes = await ctx.stub.getState(existingRequestID);
             if (existingBytes && existingBytes.length) {
                 const existing = JSON.parse(existingBytes.toString());
-                if (['PENDING_ADMIN_APPROVAL','PENDING_PATIENT_CONSENT','CONSENT_GRANTED'].includes(existing.status)) return existing.requestID;
+                if (['PENDING_ADMIN_APPROVAL','PENDING_PATIENT_CONSENT','ACTIVE'].includes(existing.status)) return existing.requestID;
             }
         }
 
-        const currentOwnerClinicID = Number(patient.clinicID || (patient.clinicIDs || [])[0]);
-        if (currentOwnerClinicID !== Number(dataOriginClinicID)) throw new Error(`Patient ${patientID} is currently owned by Clinic ${currentOwnerClinicID}; transfer must be requested from the current owner`);
-        if (Number(doctor.clinicID) === currentOwnerClinicID) throw new Error(`Patient ${patientID} already belongs to the requesting clinic`);
+        const patientClinicIDs = [...new Set([
+            ...(Array.isArray(patient.clinicIDs) ? patient.clinicIDs : []),
+            patient.clinicID,
+        ].filter((clinicID) => clinicID !== undefined && clinicID !== null).map(Number))];
+        const originClinicID = Number(dataOriginClinicID);
+        if (!patientClinicIDs.includes(originClinicID)) {
+            throw new Error(`Patient ${patientID} does not have data in Clinic ${dataOriginClinicID}`);
+        }
+        if (Number(doctor.clinicID) === originClinicID) {
+            throw new Error(`Doctor ${doctorID} already belongs to Clinic ${dataOriginClinicID}; cross-clinic access is not required`);
+        }
 
         const request = {
             docType: 'accessRequest',
+            workflowType: 'REFERRAL',
             requestID: ctx.stub.getTxID(),
             doctorID,
             doctorName: `${doctor.firstName} ${doctor.lastName}`,
@@ -1407,12 +1460,19 @@ class DentalRecordSharing extends Contract {
             dataOriginClinicID: parseInt(dataOriginClinicID), // Where the data exists
             holdingClinicID: parseInt(dataOriginClinicID),
             dataType: String(dataType || 'Dental and Medical Records'),
+            requestedRecordTypes: Array.isArray(details.requestedRecordTypes) && details.requestedRecordTypes.length
+                ? details.requestedRecordTypes.map(String)
+                : [String(dataType || 'Dental and Medical Records')],
             purpose: String(purpose || 'clinical consultation'),
             reason: String(details.reason || purpose || 'clinical consultation'),
             requestedAt,
             requestedBy: doctorID,
             adminApprovedAt: null,
             patientConsentedAt: null,
+            activatedAt: null,
+            expiresAt: details.expiresAt || null,
+            completedAt: null,
+            completionSummary: null,
             revokedAt: null,
             details,
             status: 'PENDING_ADMIN_APPROVAL',
@@ -1550,48 +1610,22 @@ class DentalRecordSharing extends Contract {
 
         const consentedAt = this._txTimestamp(ctx);
         const identity = this._requireActor(ctx, patientID, 'patient');
-        const previousClinicID = Number(patient.clinicID || request.dataOriginClinicID);
-        const currentClinicID = Number(request.requestingClinicID);
-        if (!currentClinicID || currentClinicID === previousClinicID) throw new Error('Transfer destination must be a different active clinic');
-        const destinationDoctorBytes = await ctx.stub.getState(request.doctorID);
-        if (!destinationDoctorBytes || !destinationDoctorBytes.length) throw new Error(`Doctor ${request.doctorID} not found`);
-        const destinationDoctor = JSON.parse(destinationDoctorBytes.toString());
-        if (Number(destinationDoctor.clinicID) !== currentClinicID || destinationDoctor.isActive === false) throw new Error('Requesting doctor is not active in the destination clinic');
-        request.status = 'TRANSFER_COMPLETED';
+        request.status = 'ACTIVE';
         request.patientConsentedAt = consentedAt;
+        request.activatedAt = consentedAt;
         request.consentActorID = identity.actorID;
         request.consentMSPID = identity.mspID;
         request.consentTxID = ctx.stub.getTxID();
 
-        request.previousClinicID = previousClinicID;
-        request.currentClinicID = currentClinicID;
-        request.transferredAt = consentedAt;
-        for (const priorDoctorID of Array.isArray(patient.doctors) ? patient.doctors : []) {
-            const priorDoctorBytes = await ctx.stub.getState(String(priorDoctorID));
-            if (priorDoctorBytes && priorDoctorBytes.length) {
-                const priorDoctor = JSON.parse(priorDoctorBytes.toString());
-                priorDoctor.patients = (Array.isArray(priorDoctor.patients) ? priorDoctor.patients : []).filter((id) => String(id) !== String(patientID));
-                await ctx.stub.putState(String(priorDoctorID), Buffer.from(JSON.stringify(priorDoctor)));
-            }
-        }
-        destinationDoctor.patients = Array.isArray(destinationDoctor.patients) ? destinationDoctor.patients : [];
-        if (!destinationDoctor.patients.some((id) => String(id) === String(patientID))) destinationDoctor.patients.push(patientID);
-        patient.clinicIDs = [...new Set([...(patient.clinicIDs || []), previousClinicID, currentClinicID])];
-        patient.clinicID = currentClinicID;
-        patient.doctors = [request.doctorID];
-        patient.sharedWith = [];
-
         // Store the updated request and patient data on the ledger
         await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
-        await ctx.stub.putState(patient.patientID, Buffer.from(JSON.stringify(patient)));
-        await ctx.stub.putState(request.doctorID, Buffer.from(JSON.stringify(destinationDoctor)));
         const notification = await this._putNotification(ctx, {
             notificationID: `NOTIFICATION:${request.requestID}:DOCTOR_CONSENT_GRANTED`,
             recipientRole: 'doctor',
             recipientActorID: request.doctorID,
             type: 'ACCESS_REQUEST_CONSENT_GRANTED',
             relatedRequestID: request.requestID,
-            message: `Patient ${patientID} transferred from Clinic ${previousClinicID} to Clinic ${currentClinicID}.`,
+            message: `Patient ${patientID} granted consent for ${request.dataType}.`,
             payload: {
                 requestID: request.requestID,
                 patientID,
@@ -1601,28 +1635,19 @@ class DentalRecordSharing extends Contract {
             createdAt: consentedAt,
         });
 
-        return { success:true, patientID,doctorID:request.doctorID,previousClinicID,currentClinicID,requestID,transferred:true, message:`Patient ${patientID} transferred to Clinic ${currentClinicID}.`, notification };
+        return {
+            success: true,
+            patientID,
+            doctorID: request.doctorID,
+            requestID,
+            status: request.status,
+            accessGranted: true,
+            operationalOwnerChanged: false,
+            message: `Patient ${patientID} granted data access to Doctor ${request.doctorID}.`,
+            notification,
+        };
     }
 
-// Get Patient Data for the doctor if authorized
-    // async GetPatientData(ctx, doctorID, patientID) {
-    //     const patientAsBytes = await ctx.stub.getState(patientID);
-    //     if (!patientAsBytes || patientAsBytes.length === 0) {
-    //         throw new Error(`Patient ${patientID} not found`);
-    //     }
-
-    //     const patient = JSON.parse(patientAsBytes.toString());
-
-    //     // Check if the doctor has access
-    //     if (!patient.sharedWith || !patient.sharedWith.includes(doctorID)) {
-    //         throw new Error(`Doctor ${doctorID} is not authorized to access patient ${patientID}'s data`);
-    //     }
-
-    //     return JSON.stringify({
-    //         medicalHistory: patient.medicalHistory,
-    //         dentalHistory: patient.dentalHistory,
-    //     });
-    // }
     async GetPendingRequestsForPatient(ctx, patientID) {
         this._requireActor(ctx, patientID, 'patient');
         const allRequests = [];
@@ -1666,7 +1691,7 @@ class DentalRecordSharing extends Contract {
             }
     
             // ✅ Filter only requests where the patientID matches and status is "APPROVED" or "REJECTED"
-            if (record.patientID === patientID && ['TRANSFER_COMPLETED', 'REJECTED', 'REVOKED'].includes(record.status)) {
+            if (record.patientID === patientID && ['ACTIVE', 'COMPLETED', 'REVOKED', 'EXPIRED', 'REJECTED'].includes(record.status)) {
                 allRequests.push(record);
             }
             result = await iterator.next();
@@ -1692,7 +1717,9 @@ class DentalRecordSharing extends Contract {
     
             // ✅ Retrieve all requests related to the given patient
             if (record.docType === 'accessRequest' && record.patientID === patientID) {
-                allRequests.push(record);
+                allRequests.push(record.status === 'ACTIVE'
+                    ? { ...record, status:'CONSENT_GRANTED', lifecycleStatus:'ACTIVE' }
+                    : { ...record, lifecycleStatus:record.status });
             }
             result = await iterator.next();
         }
@@ -1700,7 +1727,30 @@ class DentalRecordSharing extends Contract {
         return JSON.stringify(allRequests);
     }
 
-    async ReadTransferRequest(ctx, patientID, requestID) {
+    async GetRequestsForDoctor(ctx, doctorID) {
+        this._requireActor(ctx, doctorID, 'doctor');
+        const requests = [];
+        const iterator = await ctx.stub.getStateByRange('', '');
+        try {
+            for (;;) {
+                const result = await iterator.next();
+                if (result.value && result.value.value) {
+                    try {
+                        const record = JSON.parse(result.value.value.toString());
+                        if (record.docType === 'accessRequest' && record.doctorID === doctorID) requests.push(record);
+                    } catch (error) {
+                        // Ignore unrelated world-state values.
+                    }
+                }
+                if (result.done) break;
+            }
+        } finally {
+            if (iterator.close) await iterator.close();
+        }
+        return JSON.stringify(requests);
+    }
+
+    async ReadDataAccessRequest(ctx, patientID, requestID) {
         this._requireActor(ctx, patientID, 'patient');
         const requestAsBytes = await ctx.stub.getState(requestID);
         if (!requestAsBytes || requestAsBytes.length === 0) {
@@ -1711,6 +1761,10 @@ class DentalRecordSharing extends Contract {
             throw new Error(`Patient ${patientID} is not authorized to read request ${requestID}`);
         }
         return JSON.stringify(request);
+    }
+
+    async ReadTransferRequest(ctx, patientID, requestID) {
+        return this.ReadDataAccessRequest(ctx, patientID, requestID);
     }
     
     
@@ -1724,8 +1778,14 @@ class DentalRecordSharing extends Contract {
         const patient = JSON.parse(patientAsBytes.toString());
 
         // ✅ Check if the doctor has been granted access
-        if (!patient.sharedWith || !patient.sharedWith.includes(doctorID)) {
-            throw new Error(`Doctor ${doctorID} is not authorized to access patient ${patientID}'s data.`);
+        const access = await this._requirePatientRecordAccess(ctx, patientID, patient, null, 'doctor');
+
+        if (access.accessBasis === 'referral') {
+            return JSON.stringify({
+                medicalRecords: this._referralAllowsRecordType(access.referral, 'medical') ? patient.medicalRecords : undefined,
+                dentalChart: this._referralAllowsRecordType(access.referral, 'dental') ? patient.dentalChart : undefined,
+                referralID: access.requestID,
+            });
         }
 
         return JSON.stringify({
@@ -1796,28 +1856,16 @@ class DentalRecordSharing extends Contract {
         if (request.patientID !== patientID) {
             throw new Error(`Patient ${patientID} is not authorized to revoke this request.`);
         }
-        if (request.status !== 'CONSENT_GRANTED') {
-            throw new Error(`Request ${requestID} does not have active consent.`);
+        if (request.status !== 'ACTIVE') {
+            throw new Error(`Request ${requestID} is not an active referral.`);
         }
-
-        const patientAsBytes = await ctx.stub.getState(patientID);
-        if (!patientAsBytes || patientAsBytes.length === 0) {
-            throw new Error(`Patient ${patientID} not found`);
-        }
-        const patient = JSON.parse(patientAsBytes.toString());
         const revokedAt = this._txTimestamp(ctx);
-        request.status = 'CONSENT_REVOKED';
+        request.status = 'REVOKED';
         request.revokedAt = revokedAt;
         request.revocationReason = revocationReason;
         request.revocationTxID = ctx.stub.getTxID();
 
-        const otherConsent = await this._findGrantedConsentRequest(ctx, patientID, request.doctorID, requestID);
-        if (!otherConsent && Array.isArray(patient.sharedWith)) {
-            patient.sharedWith = patient.sharedWith.filter((doctorID) => doctorID !== request.doctorID);
-        }
-
         await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
-        await ctx.stub.putState(patient.patientID, Buffer.from(JSON.stringify(patient)));
         const notification = await this._putNotification(ctx, {
             notificationID: `NOTIFICATION:${request.requestID}:DOCTOR_CONSENT_REVOKED`,
             recipientRole: 'doctor',
@@ -1835,6 +1883,33 @@ class DentalRecordSharing extends Contract {
         });
 
         return { success: true, message: `Patient ${patientID} revoked consent for Doctor ${request.doctorID}.`, notification };
+    }
+
+    async CompleteReferral(ctx, doctorID, requestID, completionSummary) {
+        this._requireActor(ctx, doctorID, 'doctor');
+        const requestBytes = await ctx.stub.getState(requestID);
+        if (!requestBytes || !requestBytes.length) throw new Error(`Request ${requestID} not found`);
+        const request = JSON.parse(requestBytes.toString());
+        if (request.workflowType !== 'REFERRAL' || request.doctorID !== doctorID) {
+            throw new Error(`Doctor ${doctorID} is not authorized to complete referral ${requestID}`);
+        }
+        if (request.status !== 'ACTIVE') throw new Error(`Referral ${requestID} is not active`);
+        if (!String(completionSummary || '').trim()) throw new Error('A referral completion summary is required');
+        request.status = 'COMPLETED';
+        request.completedAt = this._txTimestamp(ctx);
+        request.completedBy = doctorID;
+        request.completionSummary = String(completionSummary).trim();
+        request.completionTxID = ctx.stub.getTxID();
+        await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
+        const notification = await this._putNotification(ctx, {
+            notificationID: `NOTIFICATION:${request.requestID}:REFERRAL_COMPLETED`,
+            recipientRole: 'admin', recipientClinicID: request.dataOriginClinicID,
+            type: 'REFERRAL_COMPLETED', relatedRequestID: request.requestID,
+            message: `Referral ${request.requestID} was completed by Doctor ${doctorID}.`,
+            payload: { requestID: request.requestID, patientID: request.patientID, doctorID },
+            createdAt: request.completedAt,
+        });
+        return { success:true, requestID, status:request.status, completedAt:request.completedAt, accessClosed:true, notification };
     }
     
     async LogAccess(ctx, doctorID, patientID) {
@@ -1908,7 +1983,7 @@ class DentalRecordSharing extends Contract {
         const patientBytes = await ctx.stub.getState(patientID);
         if (!patientBytes || patientBytes.length === 0) throw new Error(`Patient ${patientID} does not exist`);
         const patient = JSON.parse(patientBytes.toString());
-        this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor');
+        const access = await this._requirePatientRecordAccess(ctx, patientID, patient, recordType, 'doctor');
         if (!/^[a-f0-9]{64}$/i.test(dataHash)) throw new Error('Clinical record SHA-256 hash must contain 64 hexadecimal characters');
         const existingBytes = await ctx.stub.getState(`CLINICAL:${recordID}`);
         if (existingBytes && existingBytes.length) {
@@ -1916,7 +1991,9 @@ class DentalRecordSharing extends Contract {
             if (existing.patientID !== patientID || existing.recordType !== recordType || existing.dataHash !== dataHash.toLowerCase()) throw new Error(`IDEMPOTENCY_KEY_REUSED: Clinical record ${recordID} already exists with different content`);
             return JSON.stringify({ ...existing, alreadyProcessed:true, idempotent:true, message:'Clinical record metadata was already committed' });
         }
-        const metadata = { docType: 'clinicalRecordMetadata', recordType, recordID, patientID, offChainRef, dataHash: dataHash.toLowerCase(), doctorID, createdAt };
+        const doctorBytes = await ctx.stub.getState(doctorID);
+        const doctor = doctorBytes && doctorBytes.length ? JSON.parse(doctorBytes.toString()) : {};
+        const metadata = { docType: 'clinicalRecordMetadata', recordType, recordID, patientID, offChainRef, dataHash: dataHash.toLowerCase(), doctorID, originClinicID:doctor.clinicID || null, referralID:access.requestID || null, createdAt };
         await ctx.stub.putState(`CLINICAL:${recordID}`, Buffer.from(JSON.stringify(metadata)));
         patient.clinicalRecordIDs = Array.isArray(patient.clinicalRecordIDs) ? patient.clinicalRecordIDs : [];
         if (!patient.clinicalRecordIDs.includes(recordID)) patient.clinicalRecordIDs.push(recordID);
@@ -1938,7 +2015,7 @@ class DentalRecordSharing extends Contract {
         const patientBytes = await ctx.stub.getState(patientID);
         if (!patientBytes || patientBytes.length === 0) throw new Error(`Patient ${patientID} does not exist`);
         const patient = JSON.parse(patientBytes.toString());
-        this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor', 'patient');
+        await this._requirePatientRecordAccess(ctx, patientID, patient, recordType, 'doctor', 'patient');
         const records = [];
         for (const id of patient.clinicalRecordIDs || []) {
             const bytes = await ctx.stub.getState(`CLINICAL:${id}`);
@@ -1955,19 +2032,17 @@ class DentalRecordSharing extends Contract {
         const patientBytes = await ctx.stub.getState(patientID);
         if (!patientBytes || patientBytes.length === 0) throw new Error(`Patient ${patientID} does not exist`);
         const patient = JSON.parse(patientBytes.toString());
-        const identity = this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor', 'patient');
+        const identity = await this._requirePatientRecordAccess(ctx, patientID, patient, recordType, 'doctor', 'patient');
         const actorID = identity.actorID;
         const assignedDoctors = Array.isArray(patient.doctors) ? patient.doctors : [];
-        const sharedDoctors = Array.isArray(patient.sharedWith) ? patient.sharedWith : [];
         let accessBasis = identity.role === 'patient' ? 'owner' : identity.role;
         let requestID = null;
         if (identity.role === 'doctor') {
             if (assignedDoctors.includes(actorID)) {
                 accessBasis = 'assignment';
-            } else if (sharedDoctors.includes(actorID)) {
-                accessBasis = 'consent';
-                const consentRequest = await this._findGrantedConsentRequest(ctx, patientID, actorID);
-                requestID = consentRequest ? consentRequest.requestID : null;
+            } else if (identity.accessBasis === 'referral') {
+                accessBasis = 'referral';
+                requestID = identity.requestID;
             }
         }
         const timestamp = this._txTimestamp(ctx);
@@ -2002,7 +2077,7 @@ class DentalRecordSharing extends Contract {
 
         const patientAsBytes = await ctx.stub.getState(patientID);
         const patient = JSON.parse(patientAsBytes.toString());
-        this._requirePatientRecordAccess(ctx, patientID, patient, 'doctor');
+        await this._requirePatientRecordAccess(ctx, patientID, patient, 'dicom', 'doctor');
 
         if (!/^[a-f0-9]{64}$/i.test(sha256)) {
             throw new Error('SHA-256 hash must contain exactly 64 hexadecimal characters');
@@ -2044,7 +2119,7 @@ class DentalRecordSharing extends Contract {
         }
 
         const patient = JSON.parse(patientJSON.toString());
-        this._requirePatientRecordAccess(ctx, patientID, patient, 'admin', 'doctor', 'patient', 'system');
+        await this._requirePatientRecordAccess(ctx, patientID, patient, 'dicom', 'admin', 'doctor', 'patient', 'system');
         const files = [];
         for (const fileID of patient.dentalFileIDs || []) {
             const bytes = await ctx.stub.getState(`RADFILE:${fileID}`);
@@ -2060,7 +2135,7 @@ class DentalRecordSharing extends Contract {
         const patientBytes = await ctx.stub.getState(file.patientID);
         if (!patientBytes || patientBytes.length === 0) throw new Error(`The patient ${file.patientID} does not exist`);
         const patient = JSON.parse(patientBytes.toString());
-        this._requirePatientRecordAccess(ctx, file.patientID, patient, 'admin', 'doctor', 'patient', 'system');
+        await this._requirePatientRecordAccess(ctx, file.patientID, patient, 'dicom', 'admin', 'doctor', 'patient', 'system');
         return JSON.stringify(file);
     }
 

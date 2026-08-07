@@ -61,7 +61,7 @@ test('upload, on-chain metadata and access routes are source guarded', () => {
   assert.match(api, /app\.post\('\/radiographic-files', authenticateToken, requireRoles\('doctor'\)/);
   assert.match(api, /submitTransaction\(\s*'AddDentalFileMetadata'/);
   assert.match(api, /storageReference: `filesystem:\$\{fileID\}`/);
-  assert.match(chaincode, /_requirePatientRecordAccess\(ctx, patientID, patient, 'doctor'\)/);
+  assert.match(chaincode, /_requirePatientRecordAccess\(ctx, patientID, patient, 'dicom', 'doctor'\)/);
   assert.match(chaincode, /sha256: sha256\.toLowerCase\(\)/);
   const metadataTransaction = chaincode.match(/async AddDentalFileMetadata[\s\S]*?async addDentalFile/)[0];
   assert.doesNotMatch(metadataTransaction, /fileContent|fileBytes|base64/);

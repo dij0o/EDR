@@ -4,12 +4,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Lo from '../images/icons/calendar.svg';
 import { authHeaders, databaseUrl } from '../config/api.js';
 import { getStoredUser } from '../utils/auth.js';
+import RequestDataAccessDialog from '../components/Patients/RequestDataAccessDialog.jsx';
 
 const Patients = () => {
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isAddPatientOpen, setAddPatientOpen] = useState(false);
+  const [isRequestAccessOpen, setRequestAccessOpen] = useState(false);
   const addPatientButton = useRef(null);
   const user = getStoredUser();
   const role = user?.role?.toLowerCase();
@@ -37,9 +39,11 @@ const Patients = () => {
       <div className="flex w-full items-center justify-between rounded-xl border bg-white px-4 py-4">
         <h1 className="patients-header text-2xl font-bold">Patients</h1>
         {role === 'admin' && <div className="new-patient flex w-fit items-center gap-x-3 rounded-md bg-gradient-to-r from-blue-800 to-blue-950 px-3 py-2 text-white"><img className="h-5 w-5" src={Lo} alt="" /><button ref={addPatientButton} type="button" onClick={() => setAddPatientOpen(true)} id="addNewPatientBtn">Add a new Patient</button></div>}
+        {role === 'doctor' && <button type="button" onClick={() => setRequestAccessOpen(true)} className="rounded-md bg-blue-900 px-4 py-2 font-semibold text-white">Request cross-clinic data access</button>}
       </div>
       {error && <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-red-800">{error}</div>}
       {loading ? <div role="status" className="rounded-xl border p-4 text-center">Loading patients…</div> : <PatientsCards patients={patients} role={role} isAddPatientOpen={isAddPatientOpen} onCloseAddPatient={closeAddPatient} onChanged={fetchPatients} />}
+      {isRequestAccessOpen && <RequestDataAccessDialog onClose={() => setRequestAccessOpen(false)} />}
     </div>
   </div>;
 };

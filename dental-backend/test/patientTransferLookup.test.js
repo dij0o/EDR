@@ -10,18 +10,20 @@ const patientCards = fs.readFileSync(path.join(root, 'bc-dentistry-frontend', 's
 
 test('doctor directory is sourced only from the assigned-patients self route', () => {
   assert.match(patientsPage, /role === 'doctor'.*\/doctor\/me\/assigned-patients/);
-  assert.doesNotMatch(patientCards, /RequestPatientCard|patients\/search|patients\/lookup/);
+  assert.doesNotMatch(patientCards, /patients\/search|patients\/lookup/);
+  assert.match(patientsPage, /RequestDataAccessDialog/);
 });
 
 test('application API does not expose cross-clinic patient discovery', () => {
   assert.doesNotMatch(api, /app\.get\('\/patients\/(?:search|lookup)/);
 });
 
-test('legacy request API derives current clinic and prevents client tenant override', () => {
-  const start = api.indexOf("app.post('/requestAccess'");
+test('canonical request API derives current clinic and prevents client tenant override', () => {
+  const start = api.indexOf("app.post(['/requestDataAccess', '/requestAccess']");
   const source = api.slice(start, api.indexOf("app.get('/getAllRequestsForPatient", start));
   assert.match(source, /dataOriginClinicID:Number\(rows\[0\]\.Clinic_ID\)/);
   assert.match(source, /doctorID:req\.user\.blockchainID/);
-  assert.match(source, /PATIENT_ALREADY_IN_CLINIC/);
+  assert.match(source, /DATA_ACCESS_NOT_REQUIRED/);
+  assert.match(source, /DATA_ORIGIN_CLINIC_MISMATCH/);
   assert.match(source, /REQUEST_PURPOSE_TOO_LONG/);
 });

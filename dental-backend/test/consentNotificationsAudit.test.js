@@ -8,9 +8,11 @@ const chaincode = fs.readFileSync(path.resolve(__dirname, '..', '..', 'fabric-sa
 const webRequests = fs.readFileSync(path.resolve(__dirname, '..', '..', 'bc-dentistry-frontend', 'src', 'assets', 'Pages', 'DataRequests.jsx'), 'utf8');
 const mobileRequests = fs.readFileSync(path.resolve(__dirname, '..', '..', 'BC-Dentistry-Mobile-App', 'app', '(tabs)', 'requests.jsx'), 'utf8');
 const mobileApproved = fs.readFileSync(path.resolve(__dirname, '..', '..', 'BC-Dentistry-Mobile-App', 'app', 'proceedRequests.jsx'), 'utf8');
+const doctorRequest = fs.readFileSync(path.resolve(__dirname, '..', '..', 'bc-dentistry-frontend', 'src', 'assets', 'components', 'Patients', 'RequestDataAccessDialog.jsx'), 'utf8');
+const applicationApi = fs.readFileSync(path.resolve(__dirname, '..', '..', 'backend', 'server.js'), 'utf8');
 
 test('access requests capture who, what, when, why, and notify admins', () => {
-  assert.match(api, /requireFields\(req\.body, \['doctorID', 'patientID', 'dataOriginClinicID', 'dataType', 'purpose'\]\)/);
+  assert.match(api, /requireFields\(req\.body, \['doctorID', 'patientID', 'dataOriginClinicID', 'dataType', 'purpose', 'expiresAt'\]\)/);
   assert.match(api, /'RequestDataAccess'[\s\S]*String\(req\.body\.dataType\)[\s\S]*String\(req\.body\.purpose\)[\s\S]*JSON\.stringify\(accessRequestDetails\(req\.body\)\)/);
   assert.match(chaincode, /async RequestDataAccess\(ctx, doctorID, patientID, dataOriginClinicID, dataType, purpose, detailsJson\)/);
   assert.match(chaincode, /dataType = dataType \|\| 'Dental and Medical Records'/);
@@ -19,20 +21,42 @@ test('access requests capture who, what, when, why, and notify admins', () => {
   assert.match(chaincode, /purpose: String\(purpose/);
   assert.match(chaincode, /ACCESS_REQUEST_PENDING_ADMIN/);
   assert.match(api, /accessRequestDetails\(req\.body\)/);
+  assert.match(applicationApi, /app\.post\(\['\/requestDataAccess', '\/requestAccess'\]/);
+  assert.match(applicationApi, /doctorID:req\.user\.blockchainID/);
+  assert.match(applicationApi, /DATA_ORIGIN_CLINIC_MISMATCH/);
+  assert.match(doctorRequest, /databaseUrl\('\/requestDataAccess'\)/);
+  assert.match(doctorRequest, /Patient blockchain ID/);
+  assert.match(doctorRequest, /Data-origin clinic ID/);
+  assert.match(doctorRequest, /Clinical purpose/);
+  assert.match(doctorRequest, /Referral access expires/);
 });
 
 test('admin and patient decisions create notifications and support revocation', () => {
   assert.match(chaincode, /ACCESS_REQUEST_PENDING_PATIENT/);
   assert.match(chaincode, /consentTxID/);
   assert.match(chaincode, /consentMSPID/);
+  assert.match(chaincode, /request\.status = 'ACTIVE'/);
+  assert.match(chaincode, /operationalOwnerChanged: false/);
   assert.match(chaincode, /async RevokeConsent\(ctx, patientID, requestID, revocationReason\)/);
   assert.match(chaincode, /revocationReason = revocationReason \|\| 'Patient revoked consent'/);
-  assert.match(chaincode, /CONSENT_REVOKED/);
+  assert.match(chaincode, /request\.status = 'REVOKED'/);
   assert.match(chaincode, /ACCESS_REQUEST_CONSENT_REVOKED/);
   assert.match(api, /app\.post\('\/patient\/revokeConsent'/);
   assert.match(api, /submitTransaction\(\s*'RevokeConsent'/);
   assert.match(mobileApproved, /revokeConsent/);
   assert.match(mobileApproved, /\/patient\/revokeConsent/);
+});
+
+test('referrals are scoped, expiring, and closable by the receiving doctor', () => {
+  assert.match(chaincode, /workflowType: 'REFERRAL'/);
+  assert.match(chaincode, /requestedRecordTypes/);
+  assert.match(chaincode, /expiresAt/);
+  assert.match(chaincode, /async CompleteReferral/);
+  assert.match(chaincode, /request\.status = 'COMPLETED'/);
+  assert.match(chaincode, /originClinicID:doctor\.clinicID/);
+  assert.match(chaincode, /referralID:access\.requestID/);
+  assert.match(api, /app\.post\('\/referrals\/:requestID\/complete'/);
+  assert.match(applicationApi, /app\.post\('\/referrals\/:requestID\/complete'/);
 });
 
 test('notification and audit APIs are exposed to authenticated owners', () => {
@@ -53,4 +77,5 @@ test('patient-facing request details are sourced from request data', () => {
   assert.match(mobileRequests, /request\.requestedAt/);
   assert.match(webRequests, /Purpose:/);
   assert.doesNotMatch(webRequests, /DataRequestsData/);
+  assert.match(chaincode, /status:'CONSENT_GRANTED', lifecycleStatus:'ACTIVE'/);
 });

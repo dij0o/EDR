@@ -27,7 +27,7 @@ test('medical and dental SRS routes enforce doctor identity and complete fields'
   assert.match(db, /Radiographic files may be uploaded only for an active assigned patient/);
   assert.match(api, /clinical-record-metadata'.*requireRoles\('doctor'\).*requireDoctorSelfBody\('doctorID'\)/s);
   assert.match(chaincode, /async AddDentalChartEntry/);
-  assert.match(chaincode, /_requirePatientRecordAccess\(ctx, patientID, patient, 'doctor'\)/);
+  assert.match(chaincode, /_requirePatientRecordAccess\(ctx, patientID, patient, recordType, 'doctor'\)/);
 });
 
 test('doctor and patient reads are access checked and automatically logged on-chain', () => {

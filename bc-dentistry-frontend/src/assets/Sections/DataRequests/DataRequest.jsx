@@ -10,9 +10,9 @@ const DataRequest = ({ id, type, fileType, dataType, description, requester, sta
 
     // Determine text color based on status
     const getStatusColor = () => {
-        if (status === "CONSENT_GRANTED") return "text-green-600 font-bold";
+        if (status === "ACTIVE" || status === "COMPLETED") return "text-green-600 font-bold";
         if (status === "PENDING_PATIENT_CONSENT" || status === "PENDING_ADMIN_APPROVAL") return "text-[#1E2A47] font-bold"; // Apply the dark blue color
-        if (status === "REJECTED" || status === "CONSENT_REVOKED") return "text-red-600 font-bold";
+        if (status === "REJECTED" || status === "REVOKED" || status === "EXPIRED") return "text-red-600 font-bold";
         return "text-gray-600";
     };
 

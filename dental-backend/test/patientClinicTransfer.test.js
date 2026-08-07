@@ -20,22 +20,17 @@ test('patient clinic association preserves historical directory membership', () 
   assert.match(card, /isAdmin && isOperational/);
 });
 
-test('transfer completion changes one operational owner and preserves history', () => {
-  assert.match(db, /PATIENT_TRANSFER/);
-  assert.match(db, /Association_Status='transferred'/);
-  assert.match(db, /Association_Status='current'/);
-  assert.match(db, /Automatically cancelled because patient ownership transferred/);
-  assert.match(db, /UPDATE Patient SET Clinic_ID=\?,Doctors=\?/);
-  assert.match(db, /transferRequests\/\$\{encodeURIComponent\(req\.body\.requestID\)\}/);
-  assert.match(db, /TRANSFER_RESULT_MISMATCH/);
-  assert.match(db, /patient clinic ownership transferred/);
-  assert.match(chaincode, /request\.status = 'TRANSFER_COMPLETED'/);
-  assert.match(chaincode, /patient\.clinicID = currentClinicID/);
-  assert.match(chaincode, /patient\.doctors = \[request\.doctorID\]/);
-  assert.match(chaincode, /priorDoctor\.patients/);
-  assert.match(chaincode, /async ReadTransferRequest/);
-  assert.match(chaincode, /\['TRANSFER_COMPLETED', 'REJECTED', 'REVOKED'\]/);
-  assert.match(blockchainApi, /app\.get\('\/transferRequests\/:requestID'/);
+test('FR-21 referral activation does not transfer operational ownership', () => {
+  assert.match(db, /app\.post\('\/grantConsent'[\s\S]*relayBlockchainJson/);
+  const consent = chaincode.match(/async ProvideConsent[\s\S]*?async GetPendingRequestsForPatient/)[0];
+  assert.match(consent, /request\.status = 'ACTIVE'/);
+  assert.doesNotMatch(consent, /patient\.sharedWith/);
+  assert.match(consent, /operationalOwnerChanged: false/);
+  assert.doesNotMatch(consent, /patient\.clinicID\s*=/);
+  assert.doesNotMatch(consent, /patient\.doctors\s*=/);
+  assert.doesNotMatch(consent, /destinationDoctor\.patients/);
+  assert.doesNotMatch(db.match(/app\.post\('\/grantConsent'[\s\S]*?app\.post\('\/patient\/rejectRequest'/)[0], /UPDATE Patient|UPDATE Appointment|PATIENT_TRANSFER/);
+  assert.match(blockchainApi, /app\.post\(\['\/requestDataAccess', '\/requestAccess'\]/);
 });
 
 test('former clinic cannot schedule or mutate a transferred patient', () => {
@@ -45,7 +40,8 @@ test('former clinic cannot schedule or mutate a transferred patient', () => {
   assert.match(db, /requireAdminClinic\(req, current\.clinicID\)/);
 });
 
-test('new transfers must be requested from the current owner clinic', () => {
-  assert.match(chaincode, /transfer must be requested from the current owner/);
-  assert.match(chaincode, /already belongs to the requesting clinic/);
+test('cross-clinic requests require patient data at the holding clinic', () => {
+  assert.match(chaincode, /patientClinicIDs\.includes\(originClinicID\)/);
+  assert.match(chaincode, /does not have data in Clinic/);
+  assert.match(chaincode, /cross-clinic access is not required/);
 });

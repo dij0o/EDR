@@ -308,9 +308,11 @@ const requireFields = (body, fields) => {
 };
 
 const accessRequestDetails = (body) => ({
+    workflowType: 'REFERRAL',
     reason: body.reason || body.purpose,
     urgency: body.urgency || 'routine',
     notes: body.notes || '',
+    expiresAt: body.expiresAt || null,
     requestedRecordTypes: Array.isArray(body.requestedRecordTypes) && body.requestedRecordTypes.length
         ? body.requestedRecordTypes
         : [body.dataType || 'Dental and Medical Records'],
@@ -466,13 +468,26 @@ const readPatientHandler = async (req, res) => {
 
 const requestAccessHandler = async (req, res) => {
     try {
-        requireFields(req.body, ['doctorID', 'patientID', 'dataOriginClinicID', 'dataType', 'purpose']);
+        requireFields(req.body, ['doctorID', 'patientID', 'dataOriginClinicID', 'dataType', 'purpose', 'expiresAt']);
+        const expiresAt = Date.parse(req.body.expiresAt);
+        if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+            return sendApiError(res, 400, 'INVALID_REFERRAL_EXPIRY', 'Referral expiry must be a valid future date');
+        }
         const existingResult = await withContract(req, (contract) => contract.evaluateTransaction(
             'GetActiveDataAccessRequest', String(req.body.doctorID), String(req.body.patientID),
             String(req.body.dataOriginClinicID), String(req.body.dataType)
         ));
         const existing = parseBufferJson(existingResult);
-        if (existing) return sendSuccess(res, { requestID:existing.requestID, alreadyPending:true, idempotent:true, status:existing.status, message:'An active data-access request already exists; no duplicate request or notification was created' });
+        if (existing) return sendSuccess(res, {
+            requestID: existing.requestID,
+            transactionID: existing.requestID,
+            alreadyPending: true,
+            idempotent: true,
+            status: existing.status,
+            dataOriginClinicID: existing.dataOriginClinicID,
+            requestingClinicID: existing.requestingClinicID,
+            message: 'An active data-access request already exists; no duplicate request or notification was created',
+        });
         const result = await withContract(req, (contract) => contract.submitTransaction(
             'RequestDataAccess',
             String(req.body.doctorID),
@@ -492,7 +507,13 @@ const requestAccessHandler = async (req, res) => {
             message: `A doctor requested ${req.body.dataType} for patient ${req.body.patientID}.`,
             payload: { requestID, patientID: req.body.patientID, doctorID: req.body.doctorID },
         });
-        return sendSuccess(res, { requestID }, 201);
+        return sendSuccess(res, {
+            requestID,
+            transactionID: requestID,
+            status: 'PENDING_ADMIN_APPROVAL',
+            dataOriginClinicID: Number(req.body.dataOriginClinicID),
+            requestingClinicID: Number(req.user.organizationId),
+        }, 201);
     } catch (error) {
         return sendFabricError(res, error);
     }
@@ -693,10 +714,16 @@ app.get('/getDentalChartData/:id', authenticateToken, requireRoles('admin', 'doc
     }
 });
 
-app.post('/requestAccess', authenticateToken, requireRoles('doctor'), requireDoctorSelfBody('doctorID'), requestAccessHandler);
+app.post(['/requestDataAccess', '/requestAccess'], authenticateToken, requireRoles('doctor'), requireDoctorSelfBody('doctorID'), requestAccessHandler);
+app.get('/referrals', authenticateToken, requireRoles('doctor'), async (req, res) => {
+    try {
+        const result = await withContract(req, (contract) => contract.evaluateTransaction('GetRequestsForDoctor', String(req.user.blockchainID)));
+        return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
+});
 app.post('/grantConsent', authenticateToken, requireRoles('patient'), requirePatientSelfBody('patientID'), grantConsentHandler);
 
-app.get('/transferRequests/:requestID', authenticateToken, requireRoles('patient'), async (req, res) => {
+app.get(['/accessRequests/:requestID', '/transferRequests/:requestID'], authenticateToken, requireRoles('patient'), async (req, res) => {
     try {
         if (!req.user.blockchainID) {
             const error = new Error('Authenticated patient is missing a blockchain identity');
@@ -704,7 +731,7 @@ app.get('/transferRequests/:requestID', authenticateToken, requireRoles('patient
             throw error;
         }
         const result = await withContract(req, (contract) => contract.evaluateTransaction(
-            'ReadTransferRequest', String(req.user.blockchainID), String(req.params.requestID)
+            'ReadDataAccessRequest', String(req.user.blockchainID), String(req.params.requestID)
         ));
         return sendSuccess(res, parseBufferJson(result));
     } catch (error) {
@@ -1185,6 +1212,18 @@ app.post('/notifications/:notificationID/read', authenticateToken, requireRoles(
     try {
         const result = await withContract(req, (contract) => contract.submitTransaction('MarkNotificationRead', String(req.params.notificationID)));
         return sendSuccess(res, parseBufferJson(result));
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.post('/referrals/:requestID/complete', authenticateToken, requireRoles('doctor'), async (req, res) => {
+    try {
+        requireFields(req.body, ['completionSummary']);
+        const result = await withContract(req, (contract) => contract.submitTransaction(
+            'CompleteReferral', String(req.user.blockchainID), String(req.params.requestID), String(req.body.completionSummary)
+        ));
+        const response = parseBufferJson(result);
+        await dispatchNotificationPush(response.notification);
+        return sendSuccess(res, response);
     } catch (error) { return sendFabricError(res, error); }
 });
 

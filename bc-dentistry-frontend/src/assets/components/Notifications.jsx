@@ -35,7 +35,7 @@ const notificationCopy = (notification) => {
     const copies = {
         ACCESS_REQUEST_PENDING_ADMIN: ['Patient data request', 'A doctor requested access to a patient record. Review the request.'],
         ACCESS_REQUEST_PENDING_PATIENT: ['Your consent is required', 'A clinic approved a request for your records. Review it before deciding.'],
-        ACCESS_REQUEST_CONSENT_GRANTED: ['Patient transfer approved', 'The patient approved the transfer request. Open the patient directory for details.'],
+        ACCESS_REQUEST_CONSENT_GRANTED: ['Patient consent granted', 'The patient approved the data-access request. Access is now available for the approved scope.'],
         ACCESS_REQUEST_REJECTED: ['Patient data request declined', 'The patient data request was declined. Open the request for details.'],
         ACCESS_REQUEST_CONSENT_REVOKED: ['Patient consent revoked', 'Consent for a patient record was revoked. Access has been updated.'],
     };

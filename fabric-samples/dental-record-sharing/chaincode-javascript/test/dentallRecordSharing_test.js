@@ -15,8 +15,10 @@ const context = (role, actorID, mspID = 'Org1MSP', clinicID = null) => ({
         getState: sinon.stub().resolves(Buffer.alloc(0)),
         putState: sinon.stub().resolves(),
         deleteState: sinon.stub().resolves(),
+        createCompositeKey: sinon.stub().callsFake((type, attributes) => `${type}:${attributes.join(':')}`),
         getTxID: sinon.stub().returns('tx-1'),
         getTxTimestamp: sinon.stub().returns({ seconds: { toString: () => '1783872000' }, nanos: 0 }),
+        getStateByRange: sinon.stub().resolves({ next: sinon.stub().resolves({ done: true }), close: sinon.stub().resolves() }),
     },
 });
 
@@ -103,6 +105,39 @@ describe('Phase 2 chaincode identity enforcement', () => {
         );
     });
 
+    it('creates a cross-clinic access request without changing patient ownership', async () => {
+        const ctx = context('doctor', 'Doctor1', 'Org1MSP', '1');
+        const doctor = { doctorID: 'Doctor1', firstName: 'Alice', lastName: 'Wong', clinicID: 1, worksAt: 'Clinic 1' };
+        const patient = { patientID: 'Patient1', clinicID: 2, clinicIDs: [2], doctors: ['Doctor2'], sharedWith: [] };
+        ctx.stub.getState.callsFake(async (key) => {
+            if (key === 'Doctor1') return Buffer.from(JSON.stringify(doctor));
+            if (key === 'Patient1') return Buffer.from(JSON.stringify(patient));
+            return Buffer.alloc(0);
+        });
+        const requestID = await contract.RequestDataAccess(ctx, 'Doctor1', 'Patient1', '2', 'Medical Records', 'Specialist review', '{}');
+        expect(requestID).to.equal('tx-1');
+        const requestWrite = ctx.stub.putState.getCalls().find((call) => call.args[0] === 'tx-1');
+        const request = JSON.parse(requestWrite.args[1].toString());
+        expect(request.status).to.equal('PENDING_ADMIN_APPROVAL');
+        expect(request.workflowType).to.equal('REFERRAL');
+        expect(request.dataOriginClinicID).to.equal(2);
+        expect(request.requestingClinicID).to.equal(1);
+        expect(patient.clinicID).to.equal(2);
+    });
+
+    it('grants scoped access without transferring the patient or replacing assigned doctors', async () => {
+        const ctx = context('patient', 'Patient1', 'Org1MSP', '2');
+        const request = { requestID: 'request-1', docType: 'accessRequest', workflowType: 'REFERRAL', doctorID: 'Doctor1', patientID: 'Patient1', dataType: 'Medical Records', status: 'PENDING_PATIENT_CONSENT' };
+        const patient = { patientID: 'Patient1', clinicID: 2, clinicIDs: [2], doctors: ['Doctor2'], sharedWith: [] };
+        ctx.stub.getState.callsFake(async (key) => Buffer.from(JSON.stringify(key === 'request-1' ? request : patient)));
+        const result = await contract.ProvideConsent(ctx, 'Patient1', 'request-1');
+        expect(result.status).to.equal('ACTIVE');
+        expect(result.operationalOwnerChanged).to.equal(false);
+        expect(patient.clinicID).to.equal(2);
+        expect(patient.doctors).to.deep.equal(['Doctor2']);
+        expect(ctx.stub.putState.getCalls().some((call) => call.args[0] === 'Patient1')).to.equal(false);
+    });
+
     it('rejects a patient certificate on a system audit-log path', async () => {
         const ctx = context('patient', 'Patient1');
         await expectReject(
@@ -118,15 +153,15 @@ describe('Phase 2 chaincode identity enforcement', () => {
         })));
         await expectReject(
             contract.AddMedicalRecord(ctx, 'Record2', 'Patient2', 'mysql:Clinical_Record/Record2', 'a'.repeat(64), 'Doctor1', '2026-07-12T00:00:00Z'),
-            'Doctor Doctor1 is not assigned or consented for patient Patient2'
+            'Doctor Doctor1 has no active referral for medical of patient Patient2'
         );
     });
 
     it('allows an assigned doctor to write a medical record', async () => {
         const ctx = context('doctor', 'Doctor1');
-        ctx.stub.getState.resolves(Buffer.from(JSON.stringify({
+        ctx.stub.getState.callsFake(async key => key === 'Patient1' ? Buffer.from(JSON.stringify({
             patientID: 'Patient1', doctors: ['Doctor1'], sharedWith: [], medicalRecords: [],
-        })));
+        })) : Buffer.alloc(0));
         const result = JSON.parse(await contract.AddMedicalRecord(ctx, 'Record1', 'Patient1', 'mysql:Clinical_Record/Record1', 'a'.repeat(64), 'Doctor1', '2026-07-12T00:00:00Z'));
         expect(result.recordType).to.equal('medical');
         expect(result).not.to.have.property('payload');
@@ -155,7 +190,9 @@ describe('Phase 2 chaincode identity enforcement', () => {
 
     it('stores only radiographic metadata and SHA-256 for an assigned doctor', async () => {
         const ctx = context('doctor', 'Doctor1');
-        ctx.stub.getState.resolves(Buffer.from(JSON.stringify({ patientID: 'Patient1', doctors: ['Doctor1'], sharedWith: [] })));
+        ctx.stub.getState.callsFake(async key => key === 'Patient1'
+            ? Buffer.from(JSON.stringify({ patientID: 'Patient1', doctors: ['Doctor1'], sharedWith: [] }))
+            : Buffer.alloc(0));
         const result = JSON.parse(await contract.AddDentalFileMetadata(
             ctx, 'file-1', 'Patient1', 'filesystem:file-1', 'scan.dcm', 'application/dicom', '12', 'a'.repeat(64), 'Doctor1', '2026-07-12T00:00:00Z'
         ));
@@ -169,7 +206,31 @@ describe('Phase 2 chaincode identity enforcement', () => {
         ctx.stub.getState.resolves(Buffer.from(JSON.stringify({ patientID: 'Patient1', doctors: ['Doctor1'], sharedWith: [] })));
         await expectReject(contract.AddDentalFileMetadata(
             ctx, 'file-2', 'Patient1', 'filesystem:file-2', 'scan.dcm', 'application/dicom', '12', 'b'.repeat(64), 'Doctor2', '2026-07-12T00:00:00Z'
-        ), 'Doctor Doctor2 is not assigned or consented for patient Patient1');
+        ), 'Doctor Doctor2 has no active referral for dicom of patient Patient1');
+    });
+
+    it('closes an active referral and records the completion summary', async () => {
+        const ctx = context('doctor', 'Doctor1');
+        const request = { requestID:'request-1', docType:'accessRequest', workflowType:'REFERRAL', doctorID:'Doctor1', patientID:'Patient1', dataOriginClinicID:2, status:'ACTIVE' };
+        ctx.stub.getState.callsFake(async key => key === 'request-1' ? Buffer.from(JSON.stringify(request)) : Buffer.alloc(0));
+        const result = await contract.CompleteReferral(ctx, 'Doctor1', 'request-1', 'Specialist treatment completed; return to referring doctor.');
+        expect(result.status).to.equal('COMPLETED');
+        expect(result.accessClosed).to.equal(true);
+        const write = ctx.stub.putState.getCalls().find(call => call.args[0] === 'request-1');
+        expect(JSON.parse(write.args[1].toString()).completionSummary).to.include('Specialist treatment completed');
+    });
+
+    it('returns only the record categories approved by an active referral', async () => {
+        const ctx = context('doctor', 'Doctor1');
+        const patient = { patientID:'Patient1', doctors:['Doctor2'], medicalRecords:[{ id:'m1' }], dentalChart:[{ id:'d1' }] };
+        const referral = { requestID:'request-1', docType:'accessRequest', workflowType:'REFERRAL', doctorID:'Doctor1', patientID:'Patient1', status:'ACTIVE', requestedRecordTypes:['Medical Records'], expiresAt:'2027-01-01T00:00:00.000Z' };
+        ctx.stub.getState.callsFake(async key => key === 'Patient1' ? Buffer.from(JSON.stringify(patient)) : Buffer.alloc(0));
+        let yielded = false;
+        ctx.stub.getStateByRange.resolves({ next: sinon.stub().callsFake(async () => yielded ? { done:true } : (yielded = true, { done:false, value:{ value:Buffer.from(JSON.stringify(referral)) } })), close: sinon.stub().resolves() });
+        const result = JSON.parse(await contract.GetPatientData(ctx, 'Doctor1', 'Patient1'));
+        expect(result.medicalRecords).to.deep.equal([{ id:'m1' }]);
+        expect(result).not.to.have.property('dentalChart');
+        expect(result.referralID).to.equal('request-1');
     });
 
     it('rejects an identity that is not associated with an MSP', async () => {

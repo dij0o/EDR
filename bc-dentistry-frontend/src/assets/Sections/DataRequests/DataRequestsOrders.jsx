@@ -32,7 +32,7 @@ const DataRequestsOrders = ({ onChanged }) => {
                             .map((request) => ({
                                 requestID: request.requestID,
                                 header: `Request from ${request.doctorName || request.doctorID}`,
-                                description: `Patient: ${request.patientID}\nTransfer scope: ${request.dataType || 'Complete patient record'}\nPurpose: ${request.purpose || request.reason || 'Not supplied'}\nApproval allows the patient to complete transfer to the requesting clinic.`,
+                                description: `Patient: ${request.patientID}\nRequested data: ${request.dataType || 'Complete patient record'}\nPurpose: ${request.purpose || request.reason || 'Not supplied'}\nApproval sends the request to the patient for consent; it does not transfer patient ownership.`,
                                 type: 'on-chain',
                             })),
                     );
@@ -57,7 +57,7 @@ const DataRequestsOrders = ({ onChanged }) => {
             const data = await response.json();
 
             if (response.ok) {
-                setFeedback({ error: '', notice: `Transfer request ${requestID} approved. Patient confirmation is now required to move operational ownership.` });
+                setFeedback({ error: '', notice: `Data-access request ${requestID} approved. Patient consent is now required before access is granted.` });
                 setOnHoldRequests((requests) => requests.filter((request) => request.requestID !== requestID));
                 onChanged?.();
             } else {

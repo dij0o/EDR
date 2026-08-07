@@ -22,7 +22,7 @@ test('appointment controls filter and sort the rendered collection', () => {
 
 test('notification panel uses human-readable copy and bounded wrapping', () => {
   assert.match(notifications, /const notificationCopy/);
-  assert.match(notifications, /Patient transfer approved/);
+  assert.match(notifications, /Patient consent granted/);
   assert.match(notifications, /overflow-x-hidden/);
   assert.match(notifications, /break-words/);
   assert.match(notifications, /Notification devices could not be loaded/);

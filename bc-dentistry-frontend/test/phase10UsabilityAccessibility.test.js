@@ -50,9 +50,11 @@ test('mobile account and personal information use authenticated data without fix
 
 test('patient list and request controls remove placeholders and expose unique names', () => {
   const page = read('src/assets/Pages/Patients.jsx').replace(/^\s*\/\/.*$/gm, '');
-  const request = read('src/assets/components/Patients/RequestPatientCard.jsx').replace(/^\s*\/\/.*$/gm, '');
+  const request = read('src/assets/components/Patients/RequestDataAccessDialog.jsx').replace(/^\s*\/\/.*$/gm, '');
   assert.doesNotMatch(page, /PatientsFilters/);
-  assert.match(request, /aria-label="Request patient transfer/);
+  assert.match(request, /Create cross-clinic referral/);
+  assert.match(request, /Referral access expires/);
+  assert.match(request, /Complete treatment/);
   assert.doesNotMatch(request, /console\.log/);
 });
 

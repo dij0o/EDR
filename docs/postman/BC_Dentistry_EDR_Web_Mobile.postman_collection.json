@@ -1115,10 +1115,66 @@
                   }
                 ],
                 "description": "Doctor initiates a purpose-bound request to access a patient record held by another clinic.",
-                "url": "{{databaseApiBaseUrl}}/requestAccess",
+                "url": "{{databaseApiBaseUrl}}/requestDataAccess",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"doctorID\": \"{{doctorId}}\",\n  \"patientID\": \"{{patientId}}\",\n  \"dataOriginClinicID\": \"{{clinicId}}\",\n  \"dataType\": \"Medical and Dental Records\",\n  \"purpose\": \"Continuity of care\",\n  \"reason\": \"Continuity of care\",\n  \"notes\": \"Postman example request\"\n}",
+                  "raw": "{\n  \"doctorID\": \"{{doctorId}}\",\n  \"patientID\": \"{{patientId}}\",\n  \"dataOriginClinicID\": \"{{clinicId}}\",\n  \"dataType\": \"Medical and Dental Records\",\n  \"purpose\": \"Specialist referral\",\n  \"reason\": \"Specialist referral\",\n  \"urgency\": \"routine\",\n  \"expiresAt\": \"2026-12-31T23:59:59.000Z\",\n  \"notes\": \"Postman example referral\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "List My Referrals",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Lists referral requests for the authenticated receiving doctor.",
+                "url": "{{databaseApiBaseUrl}}/referrals"
+              },
+              "response": []
+            },
+            {
+              "name": "Complete Referral",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Receiving doctor closes an active referral. This ends prospective cross-clinic access while preserving the referral history and completion summary.",
+                "url": "{{databaseApiBaseUrl}}/referrals/{{requestId}}/complete",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"completionSummary\": \"Specialist treatment completed; follow-up returned to the referring care team.\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -1571,7 +1627,7 @@
                     "type": "text"
                   }
                 ],
-                "description": "**Purpose:** Let the patient approve a clinic-admin-approved request so the requesting doctor can access the specified data for the recorded purpose.\n\n**Effect:** Changes the request to `CONSENT_GRANTED`, writes the decision to Fabric, and can trigger a notification.\n\n**Identity rule:** `patientID` must match the patient blockchain ID in the JWT.",
+                "description": "**Purpose:** Let the patient approve a clinic-admin-approved referral so the receiving doctor can access the specified record categories for the recorded purpose and validity period.\n\n**Effect:** Changes the referral to `ACTIVE`, writes the decision to Fabric, and can trigger a notification. This does not transfer the patient.\n\n**Identity rule:** `patientID` must match the patient blockchain ID in the JWT.",
                 "url": "{{databaseApiBaseUrl}}/grantConsent",
                 "body": {
                   "mode": "raw",
