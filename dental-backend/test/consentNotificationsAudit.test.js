@@ -6,6 +6,7 @@ const path = require('node:path');
 const api = fs.readFileSync(path.resolve(__dirname, '..', 'index.js'), 'utf8');
 const chaincode = fs.readFileSync(path.resolve(__dirname, '..', '..', 'fabric-samples', 'dental-record-sharing', 'chaincode-javascript', 'lib', 'dentalRecordSharing.js'), 'utf8');
 const webRequests = fs.readFileSync(path.resolve(__dirname, '..', '..', 'bc-dentistry-frontend', 'src', 'assets', 'Pages', 'DataRequests.jsx'), 'utf8');
+const patientWebRequests = fs.readFileSync(path.resolve(__dirname, '..', '..', 'bc-dentistry-frontend', 'src', 'assets', 'Pages', 'PatientDataRequests.jsx'), 'utf8');
 const mobileRequests = fs.readFileSync(path.resolve(__dirname, '..', '..', 'BC-Dentistry-Mobile-App', 'app', '(tabs)', 'requests.jsx'), 'utf8');
 const mobileApproved = fs.readFileSync(path.resolve(__dirname, '..', '..', 'BC-Dentistry-Mobile-App', 'app', 'proceedRequests.jsx'), 'utf8');
 const doctorRequest = fs.readFileSync(path.resolve(__dirname, '..', '..', 'bc-dentistry-frontend', 'src', 'assets', 'components', 'Patients', 'RequestDataAccessDialog.jsx'), 'utf8');
@@ -44,6 +45,11 @@ test('admin and patient decisions create notifications and support revocation', 
   assert.match(chaincode, /requestID: request\.requestID,[\s\S]*status: request\.status,[\s\S]*adminApprovedAt: request\.adminApprovedAt/);
   assert.match(chaincode, /ACCESS_REQUEST_PENDING_PATIENT/);
   assert.match(chaincode, /consentTxID/);
+  assert.match(chaincode, /decisionActorID/);
+  assert.match(chaincode, /decisionActorRole/);
+  assert.match(chaincode, /decisionTransactionID/);
+  assert.match(chaincode, /decisionTimestamp/);
+  assert.match(chaincode, /rejectionTxID/);
   assert.match(chaincode, /consentMSPID/);
   assert.match(chaincode, /request\.status = 'ACTIVE'/);
   assert.match(chaincode, /operationalOwnerChanged: false/);
@@ -58,6 +64,16 @@ test('admin and patient decisions create notifications and support revocation', 
   assert.match(api, /submitTransaction\(\s*'RevokeConsent'/);
   assert.match(mobileApproved, /revokeConsent/);
   assert.match(mobileApproved, /\/patient\/revokeConsent/);
+});
+
+test('direct patient reads and patient consent history use one protected ledger boundary', () => {
+  assert.match(api, /\['\/getPatientByID\/:id', '\/readPatient\/:id'\].*authenticateToken.*requireRoles\('admin', 'doctor', 'patient', 'system'\).*requirePatientSelfParam\('id'\)/);
+  assert.match(applicationApi, /\['\/getPatientByID\/:id', '\/readPatient\/:id'\].*authenticateToken.*requireRoles\('admin', 'doctor', 'patient'\)/);
+  assert.match(chaincode, /async ReadPatient\(ctx, id\)[\s\S]*?_requirePatientRecordAccess\(ctx, id, patient, null, 'admin', 'doctor', 'patient', 'system'\)/);
+  assert.match(api, /GetAllRequestsForPatient'[\s\S]*sendSuccess\(res, parseBufferJson\(result\)\)/);
+  assert.match(patientWebRequests, /Ledger decision evidence/);
+  assert.match(patientWebRequests, /decisionTransactionID/);
+  assert.match(patientWebRequests, /window\.addEventListener\('focus', refresh\)/);
 });
 
 test('referrals are scoped, expiring, and closable by the receiving doctor', () => {

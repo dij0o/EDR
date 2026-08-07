@@ -534,7 +534,7 @@ const grantConsentHandler = async (req, res) => {
     }
 };
 
-app.get('/getPatientByID/:id', authenticateToken, requireRoles('admin', 'doctor', 'patient', 'system'), requirePatientSelfParam('id'), readPatientHandler);
+app.get(['/getPatientByID/:id', '/readPatient/:id'], authenticateToken, requireRoles('admin', 'doctor', 'patient', 'system'), requirePatientSelfParam('id'), readPatientHandler);
 
 app.post('/patient-metadata', authenticateToken, requireRoles('admin'), requireAdminClinicBody('clinicID'), async (req, res) => {
     try {
@@ -1168,26 +1168,12 @@ app.get('/getProcessedRequestsForPatient/:patientID', authenticateToken, require
 
 app.get('/getAllRequestsForPatient/:patientID', authenticateToken, requireRoles('patient'), requirePatientSelfParam('patientID'), async (req, res) => {
     try {
-        const wallet = await Wallets.newFileSystemWallet(walletPath);
-
-        const gateway = new Gateway();
-        await gateway.connect(getConnectionProfile(), {
-            wallet,
-            identity: fabricIdentityForRequest(req),
-            discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
-        });
-
-        const network = await gateway.getNetwork(fabricChannel);
-        const contract = network.getContract(fabricChaincode);
-
-        const patientID = req.params.patientID;
-        const result = await contract.evaluateTransaction('GetAllRequestsForPatient', patientID);
-
-        res.status(200).json(JSON.parse(result.toString()));
-        await gateway.disconnect();
+        const result = await withContract(req, (contract) => contract.evaluateTransaction(
+            'GetAllRequestsForPatient', String(req.params.patientID)
+        ));
+        return sendSuccess(res, parseBufferJson(result));
     } catch (error) {
-        console.error(`Failed to evaluate transaction: ${error}`);
-        sendFabricError(res, error);
+        return sendFabricError(res, error);
     }
 });
 

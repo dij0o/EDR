@@ -1675,6 +1675,10 @@ class DentalRecordSharing extends Contract {
         request.consentActorID = identity.actorID;
         request.consentMSPID = identity.mspID;
         request.consentTxID = ctx.stub.getTxID();
+        request.decisionActorID = identity.actorID;
+        request.decisionActorRole = 'patient';
+        request.decisionTransactionID = request.consentTxID;
+        request.decisionTimestamp = consentedAt;
 
         // Store the updated request and patient data on the ledger
         await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
@@ -1701,6 +1705,10 @@ class DentalRecordSharing extends Contract {
             requestID,
             status: request.status,
             accessGranted: true,
+            decisionActorID: request.decisionActorID,
+            decisionActorRole: request.decisionActorRole,
+            decisionTransactionID: request.decisionTransactionID,
+            decisionTimestamp: request.decisionTimestamp,
             operationalOwnerChanged: false,
             message: `Patient ${patientID} granted data access to Doctor ${request.doctorID}.`,
             notification,
@@ -1884,6 +1892,11 @@ class DentalRecordSharing extends Contract {
             request.rejectedBy = actorID;
             request.rejectedRole = rejectedRole;
             request.rejectedAt = rejectedAt;
+            request.rejectionTxID = ctx.stub.getTxID();
+            request.decisionActorID = actorID;
+            request.decisionActorRole = rejectedRole;
+            request.decisionTransactionID = request.rejectionTxID;
+            request.decisionTimestamp = rejectedAt;
     
             await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
             const notification = await this._putNotification(ctx, {
@@ -1914,6 +1927,10 @@ class DentalRecordSharing extends Contract {
                 rejectedRole: request.rejectedRole,
                 rejectionReason: request.rejectionReason,
                 rejectedAt: request.rejectedAt,
+                decisionActorID: request.decisionActorID,
+                decisionActorRole: request.decisionActorRole,
+                decisionTransactionID: request.decisionTransactionID,
+                decisionTimestamp: request.decisionTimestamp,
                 message: `Request ${requestID} was rejected by ${actorID}.`,
                 notification,
             };
@@ -1941,6 +1958,10 @@ class DentalRecordSharing extends Contract {
         request.revokedAt = revokedAt;
         request.revocationReason = revocationReason;
         request.revocationTxID = ctx.stub.getTxID();
+        request.decisionActorID = patientID;
+        request.decisionActorRole = 'patient';
+        request.decisionTransactionID = request.revocationTxID;
+        request.decisionTimestamp = revokedAt;
 
         await ctx.stub.putState(request.requestID, Buffer.from(JSON.stringify(request)));
         const notification = await this._putNotification(ctx, {
@@ -1968,6 +1989,10 @@ class DentalRecordSharing extends Contract {
             accessGranted: false,
             revokedAt: request.revokedAt,
             revocationReason: request.revocationReason,
+            decisionActorID: request.decisionActorID,
+            decisionActorRole: request.decisionActorRole,
+            decisionTransactionID: request.decisionTransactionID,
+            decisionTimestamp: request.decisionTimestamp,
             message: `Patient ${patientID} revoked consent for Doctor ${request.doctorID}.`,
             notification,
         };

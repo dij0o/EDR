@@ -1782,6 +1782,9 @@ app.get('/referrals', authenticateToken, requireRoles('doctor'), (req, res) =>
 app.get('/getAllRequestsForPatient/:patientID', authenticateToken, requireRoles('patient'), (req, res) =>
     relayBlockchainJson(req, res, `/getAllRequestsForPatient/${encodeURIComponent(req.user.blockchainID)}`));
 
+app.get(['/getPatientByID/:id', '/readPatient/:id'], authenticateToken, requireRoles('admin', 'doctor', 'patient'), (req, res) =>
+    relayBlockchainJson(req, res, `/readPatient/${encodeURIComponent(req.params.id)}`));
+
 app.post('/grantConsent', authenticateToken, requireRoles('patient'), (req, res) =>
     relayBlockchainJson(req, res, '/grantConsent', 'POST', { ...req.body, patientID: req.user.blockchainID }));
 

@@ -6,7 +6,7 @@ const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
 
 const expectedRoutes = [
-    ["app.get('/getPatientByID/:id'", "requireRoles('admin', 'doctor', 'patient', 'system')"],
+    ["app.get(['/getPatientByID/:id', '/readPatient/:id']", "requireRoles('admin', 'doctor', 'patient', 'system')"],
     ["app.post('/addMedicalRecord'", "requireRoles('doctor')"],
     ["app.get('/getDentalChartData/:id'", "requireRoles('admin', 'doctor', 'patient', 'system')"],
     ["app.post(['/requestDataAccess', '/requestAccess']", "requireRoles('doctor')"],

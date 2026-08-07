@@ -17,6 +17,7 @@ const RequestCard = ({ request, children }) => <article id={`request-${request.r
     <div><dt className="font-semibold">Requested</dt><dd>{request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Not recorded'}</dd></div>
     <div className="sm:col-span-2"><dt className="font-semibold">Clinical purpose</dt><dd className="whitespace-pre-wrap">{request.purpose || request.reason || 'Not supplied'}</dd></div>
     {request.rejectionReason && <div className="sm:col-span-2"><dt className="font-semibold">Decision reason</dt><dd className="whitespace-pre-wrap">{request.rejectionReason}</dd></div>}
+    {(request.decisionTransactionID || request.consentTxID || request.rejectionTxID || request.revocationTxID) && <div className="sm:col-span-2 rounded border bg-slate-50 p-3"><dt className="font-semibold">Ledger decision evidence</dt><dd className="mt-1 break-all font-mono text-xs">Transaction: {request.decisionTransactionID || request.consentTxID || request.rejectionTxID || request.revocationTxID}</dd><dd className="mt-1">Actor: {request.decisionActorID || request.consentActorID || request.rejectedBy || request.patientID} ({request.decisionActorRole || request.rejectedRole || 'patient'})</dd><dd>Recorded: {request.decisionTimestamp || request.patientConsentedAt || request.rejectedAt || request.revokedAt ? new Date(request.decisionTimestamp || request.patientConsentedAt || request.rejectedAt || request.revokedAt).toLocaleString() : 'Not recorded'}</dd></div>}
     {request.completionSummary && <div className="sm:col-span-2"><dt className="font-semibold">Treatment outcome</dt><dd className="whitespace-pre-wrap">{request.completionSummary}</dd></div>}
   </dl>
   {children && <div className="mt-5 flex flex-wrap gap-3 border-t pt-4">{children}</div>}
@@ -41,6 +42,12 @@ export default function PatientDataRequests() {
   };
 
   useEffect(() => { load(); }, [patientID]);
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') load(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, [patientID]);
 
   const groups = useMemo(() => ({
     pending: requests.filter((request) => request.status === 'PENDING_PATIENT_CONSENT'),

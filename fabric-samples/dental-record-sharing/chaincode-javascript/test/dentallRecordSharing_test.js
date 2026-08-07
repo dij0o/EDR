@@ -191,6 +191,10 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(result.rejectedBy).to.equal('Admin2');
         expect(result.rejectedRole).to.equal('admin');
         expect(result.rejectionReason).to.equal('Insufficient clinical justification');
+        expect(result.decisionActorID).to.equal('Admin2');
+        expect(result.decisionActorRole).to.equal('admin');
+        expect(result.decisionTransactionID).to.equal('tx-1');
+        expect(result.decisionTimestamp).to.equal(result.rejectedAt);
         const requestWrite = ctx.stub.putState.getCalls().find((call) => call.args[0] === request.requestID);
         const stored = JSON.parse(requestWrite.args[1].toString());
         expect(stored.status).to.equal('REJECTED');
@@ -303,6 +307,9 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(result.status).to.equal('REVOKED');
         expect(result.accessGranted).to.equal(false);
         expect(result.revocationReason).to.equal('Care relationship ended');
+        expect(result.decisionActorID).to.equal('Patient1');
+        expect(result.decisionTransactionID).to.equal('tx-1');
+        expect(result.decisionTimestamp).to.equal(result.revokedAt);
         const requestWrite = ctx.stub.putState.getCalls().find((call) => call.args[0] === request.requestID);
         expect(JSON.parse(requestWrite.args[1].toString()).status).to.equal('REVOKED');
     });
@@ -336,9 +343,22 @@ describe('Phase 2 chaincode identity enforcement', () => {
         const result = await contract.ProvideConsent(ctx, 'Patient1', 'request-1');
         expect(result.status).to.equal('ACTIVE');
         expect(result.operationalOwnerChanged).to.equal(false);
+        expect(result.decisionActorID).to.equal('Patient1');
+        expect(result.decisionActorRole).to.equal('patient');
+        expect(result.decisionTransactionID).to.equal('tx-1');
+        expect(result.decisionTimestamp).to.equal('2026-07-12T16:00:00.000Z');
         expect(patient.clinicID).to.equal(2);
         expect(patient.doctors).to.deep.equal(['Doctor2']);
         expect(ctx.stub.putState.getCalls().some((call) => call.args[0] === 'Patient1')).to.equal(false);
+    });
+
+    it('denies a direct patient read by a doctor without assignment or active consent', async () => {
+        const ctx = context('doctor', 'Doctor1', 'Org1MSP', '1');
+        const patient = { patientID:'PatientX', clinicID:2, doctors:['Doctor2'], medicalRecords:[{ sensitive:true }], dentalChart:[{ sensitive:true }] };
+        ctx.stub.getState.callsFake(async (key) => key === 'PatientX' ? Buffer.from(JSON.stringify(patient)) : Buffer.alloc(0));
+        ctx.stub.getStateByRange.resolves({ next: sinon.stub().resolves({ done:true }), close: sinon.stub().resolves() });
+
+        await expectReject(contract.ReadPatient(ctx, 'PatientX'), 'has no active referral');
     });
 
     it('rejects a patient certificate on a system audit-log path', async () => {
