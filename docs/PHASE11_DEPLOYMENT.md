@@ -65,6 +65,29 @@ docker ps --format 'table {{.Names}}\t{{.Status}}'
 peer lifecycle chaincode querycommitted -C mychannel -n basic
 ```
 
+### Indexed-query upgrade and backfill
+
+The indexed-query chaincode revision must not receive normal application traffic until existing world state has been backfilled. For an existing network, upgrade the `basic` chaincode in place using the next approved version and sequence; do not run `network.sh down`, because that removes the test-network ledger.
+
+After the upgraded definition is committed, start only the private Blockchain API and invoke its system-only migration route from the private application network. Supply the deployment's internal-service token and a valid system-role access token through the secure secret channel:
+
+```bash
+curl --fail-with-body --request POST \
+  --header "X-EDR-Internal-Token: ${BLOCKCHAIN_INTERNAL_TOKEN}" \
+  --header "Authorization: Bearer ${SYSTEM_ACCESS_TOKEN}" \
+  http://blockchain-api:8081/internal/indexes/backfill
+```
+
+The Blockchain API follows Fabric bookmarks and submits bounded batches of 100 records. Do not start the Database API or public clients unless the response contains `"complete": true`. Retain the response as deployment evidence, then verify:
+
+- `GetAllPatientsPage`, `GetPatientsByClinicPage`, and request-list page functions return expected records;
+- a pre-upgrade active referral still authorizes the intended doctor;
+- a revoked or rejected referral remains denied;
+- list routes return records beyond the first 100 entries;
+- peer results and bookmark continuation are consistent across the multi-peer test topology.
+
+Clinic deactivation is also batch-aware. The private API continues all four actor/request bookmark streams and returns `complete: true`; a response without completion is a failed lifecycle operation and must not be treated as successful.
+
 To stop or rebuild Fabric:
 
 ```bash

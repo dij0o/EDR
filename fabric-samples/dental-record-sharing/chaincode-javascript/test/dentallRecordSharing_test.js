@@ -14,12 +14,15 @@ const context = (role, actorID, mspID = 'Org1MSP', clinicID = null) => ({
     stub: {
         getState: sinon.stub().resolves(Buffer.alloc(0)),
         putState: sinon.stub().resolves(),
+        setEvent: sinon.stub().resolves(),
         deleteState: sinon.stub().resolves(),
         createCompositeKey: sinon.stub().callsFake((type, attributes) => `${type}:${attributes.join(':')}`),
         getTxID: sinon.stub().returns('tx-1'),
         getTxTimestamp: sinon.stub().returns({ seconds: { toString: () => '1783872000' }, nanos: 0 }),
         getStateByRange: sinon.stub().resolves({ next: sinon.stub().resolves({ done: true }), close: sinon.stub().resolves() }),
+        getStateByRangeWithPagination: sinon.stub().resolves({ iterator: { next: sinon.stub().resolves({ done: true }), close: sinon.stub().resolves() }, metadata: { fetchedRecordsCount: 0, bookmark: '' } }),
         getStateByPartialCompositeKey: sinon.stub().resolves({ next: sinon.stub().resolves({ done: true }), close: sinon.stub().resolves() }),
+        getStateByPartialCompositeKeyWithPagination: sinon.stub().resolves({ iterator: { next: sinon.stub().resolves({ done: true }), close: sinon.stub().resolves() }, metadata: { fetchedRecordsCount: 0, bookmark: '' } }),
     },
 });
 
@@ -46,6 +49,42 @@ describe('Phase 2 chaincode identity enforcement', () => {
             'ada@example.com', '0500000000', '2026-07-10', '[]'
         );
         expect(JSON.parse(result).doctorID).to.equal('Doctor9');
+    });
+
+    it('rejects duplicate doctor IDs before overwriting ledger state', async () => {
+        const ctx = context('admin', 'Admin1', 'Org1MSP', '1');
+        ctx.stub.getState.callsFake(async (key) => key === 'Doctor9'
+            ? Buffer.from(JSON.stringify({ doctorID: 'Doctor9', emiratesID: 'EID-OLD' }))
+            : Buffer.alloc(0));
+        await expectReject(contract.addDoctor(
+            ctx, 'Doctor9', 'Ada', 'Lovelace', 'EID-NEW', 'Dentist', 'Clinic A', '1',
+            'ada@example.com', '0500000000', 'LIC-9', '2026-07-10', '[]'
+        ), 'The doctor Doctor9 already exists');
+        expect(ctx.stub.putState.called).to.equal(false);
+    });
+
+    it('rejects duplicate patient IDs before overwriting ledger state', async () => {
+        const ctx = context('admin', 'Admin1', 'Org1MSP', '1');
+        ctx.stub.getState.callsFake(async (key) => key === 'Patient9'
+            ? Buffer.from(JSON.stringify({ patientID: 'Patient9', emiratesID: 'EID-OLD' }))
+            : Buffer.alloc(0));
+        await expectReject(contract.addPatient(
+            ctx, 'Patient9', 'Pat', 'Nine', '1990-01-01', 'Other', 'EID-NEW',
+            'pat9@example.com', '0500000001', 'Dubai', '2026-07-10', '1', '[]'
+        ), 'The patient Patient9 already exists');
+        expect(ctx.stub.putState.called).to.equal(false);
+    });
+
+    it('rejects an Emirates ID reserved by another actor', async () => {
+        const ctx = context('admin', 'Admin1', 'Org1MSP', '1');
+        ctx.stub.getState.callsFake(async (key) => key === 'UNIQUE_EMIRATES_ID:EID-SHARED'
+            ? Buffer.from(JSON.stringify({ actorID: 'PatientExisting' }))
+            : Buffer.alloc(0));
+        await expectReject(contract.addPatient(
+            ctx, 'Patient10', 'Pat', 'Ten', '1990-01-01', 'Other', 'eid-shared',
+            'pat10@example.com', '0500000010', 'Dubai', '2026-07-10', '1', '[]'
+        ), 'The patient with eID eid-shared already exists');
+        expect(ctx.stub.putState.called).to.equal(false);
     });
 
     it('rejects a doctor certificate on an admin patient-management path', async () => {
@@ -124,6 +163,7 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(request.dataOriginClinicID).to.equal(2);
         expect(request.requestingClinicID).to.equal(1);
         expect(patient.clinicID).to.equal(2);
+        expect(ctx.stub.setEvent.calledWith('AccessRequestCreated')).to.equal(true);
     });
 
     it('reuses one active referral across record scopes for the same care relationship', async () => {
@@ -177,6 +217,7 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(JSON.parse(requestWrite.args[1].toString()).status).to.equal('PENDING_PATIENT_CONSENT');
         expect(result.notification.recipientActorID).to.equal(request.patientID);
         expect(result.notification.type).to.equal('ACCESS_REQUEST_PENDING_PATIENT');
+        expect(ctx.stub.setEvent.calledWith('AccessRequestAdminApproved')).to.equal(true);
     });
 
     it('rejects a pending request without granting patient access', async () => {
@@ -312,6 +353,7 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(result.decisionTimestamp).to.equal(result.revokedAt);
         const requestWrite = ctx.stub.putState.getCalls().find((call) => call.args[0] === request.requestID);
         expect(JSON.parse(requestWrite.args[1].toString()).status).to.equal('REVOKED');
+        expect(ctx.stub.setEvent.calledWith('PatientConsentRevoked')).to.equal(true);
     });
 
     it('denies a cross-clinic doctor after revocation even if a legacy assignment remains', async () => {
@@ -350,6 +392,7 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(patient.clinicID).to.equal(2);
         expect(patient.doctors).to.deep.equal(['Doctor2']);
         expect(ctx.stub.putState.getCalls().some((call) => call.args[0] === 'Patient1')).to.equal(false);
+        expect(ctx.stub.setEvent.calledWith('PatientConsentGranted')).to.equal(true);
     });
 
     it('denies a direct patient read by a doctor without assignment or active consent', async () => {
@@ -383,6 +426,7 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(result.accessMetadata.purpose).to.equal('treatment review');
         expect(result.timestamp).to.equal('2026-07-12T16:00:00.000Z');
         expect(ctx.stub.putState.firstCall.args[0]).to.equal('ACCESS:tx-1');
+        expect(ctx.stub.setEvent.calledWith('ClinicalAccessLogged')).to.equal(true);
     });
 
     it('automatically logs an authorized doctor clinical read with its access basis', async () => {
@@ -473,19 +517,79 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(result.accessClosed).to.equal(true);
         const write = ctx.stub.putState.getCalls().find(call => call.args[0] === 'request-1');
         expect(JSON.parse(write.args[1].toString()).completionSummary).to.include('Specialist treatment completed');
+        expect(ctx.stub.setEvent.calledWith('ReferralCompleted')).to.equal(true);
     });
 
     it('returns only the record categories approved by an active referral', async () => {
         const ctx = context('doctor', 'Doctor1');
         const patient = { patientID:'Patient1', doctors:['Doctor2'], medicalRecords:[{ id:'m1' }], dentalChart:[{ id:'d1' }] };
         const referral = { requestID:'request-1', docType:'accessRequest', workflowType:'REFERRAL', doctorID:'Doctor1', patientID:'Patient1', status:'ACTIVE', requestedRecordTypes:['Medical Records'], expiresAt:'2027-01-01T00:00:00.000Z' };
-        ctx.stub.getState.callsFake(async key => key === 'Patient1' ? Buffer.from(JSON.stringify(patient)) : Buffer.alloc(0));
-        let yielded = false;
-        ctx.stub.getStateByRange.resolves({ next: sinon.stub().callsFake(async () => yielded ? { done:true } : (yielded = true, { done:false, value:{ value:Buffer.from(JSON.stringify(referral)) } })), close: sinon.stub().resolves() });
+        ctx.stub.getState.callsFake(async key => {
+            if (key === 'Patient1') return Buffer.from(JSON.stringify(patient));
+            if (key === 'EDR_ACTIVE_ACCESS_RELATION:Patient1:Doctor1') return Buffer.from('request-1');
+            if (key === 'request-1') return Buffer.from(JSON.stringify(referral));
+            return Buffer.alloc(0);
+        });
         const result = JSON.parse(await contract.GetPatientData(ctx, 'Doctor1', 'Patient1'));
         expect(result.medicalRecords).to.deep.equal([{ id:'m1' }]);
         expect(result).not.to.have.property('dentalChart');
         expect(result.referralID).to.equal('request-1');
+    });
+
+    it('uses a bounded composite-key page and returns the Fabric bookmark', async () => {
+        const ctx = context('system', 'System1');
+        const doctor = { docType:'doctor', doctorID:'Doctor1', clinicID:1 };
+        ctx.stub.getState.callsFake(async key => key === 'Doctor1' ? Buffer.from(JSON.stringify(doctor)) : Buffer.alloc(0));
+        let yielded = false;
+        ctx.stub.getStateByPartialCompositeKeyWithPagination.resolves({
+            iterator: {
+                next: sinon.stub().callsFake(async () => yielded ? { done:true } : (yielded = true, { done:false, value:{ value:Buffer.from('Doctor1') } })),
+                close: sinon.stub().resolves(),
+            },
+            metadata: { fetchedRecordsCount:1, bookmark:'doctor-next' },
+        });
+
+        const page = JSON.parse(await contract.GetAllDoctorsPage(ctx, '1000', 'doctor-start'));
+
+        expect(page.records).to.deep.equal([doctor]);
+        expect(page.bookmark).to.equal('doctor-next');
+        expect(ctx.stub.getStateByPartialCompositeKeyWithPagination.calledWith('EDR_DOC_TYPE', ['doctor'], 100, 'doctor-start')).to.equal(true);
+        expect(ctx.stub.getStateByRange.called).to.equal(false);
+    });
+
+    it('backfills query indexes one bounded world-state page at a time', async () => {
+        const ctx = context('system', 'System1');
+        const entries = [
+            { key:'Doctor1', value:{ docType:'doctor', doctorID:'Doctor1', clinicID:1 } },
+            { key:'Patient1', value:{ docType:'patient', patientID:'Patient1', clinicID:1, clinicIDs:[1] } },
+            { key:'request-1', value:{ docType:'accessRequest', requestID:'request-1', patientID:'Patient1', doctorID:'Doctor1', dataOriginClinicID:2, requestingClinicID:1, status:'ACTIVE' } },
+        ];
+        let index = 0;
+        ctx.stub.getStateByRangeWithPagination.resolves({
+            iterator: {
+                next: sinon.stub().callsFake(async () => index < entries.length
+                    ? { done:false, value:{ key:entries[index].key, value:Buffer.from(JSON.stringify(entries[index++].value)) } }
+                    : { done:true }),
+                close: sinon.stub().resolves(),
+            },
+            metadata: { fetchedRecordsCount:3, bookmark:'backfill-next' },
+        });
+
+        const result = JSON.parse(await contract.BackfillQueryIndexes(ctx, '500', 'backfill-start'));
+
+        expect(result.indexedRecords).to.equal(3);
+        expect(result.bookmark).to.equal('backfill-next');
+        expect(result.complete).to.equal(false);
+        expect(ctx.stub.getStateByRangeWithPagination.calledWith('\u0001', '\uffff', 100, 'backfill-start')).to.equal(true);
+        expect(ctx.stub.putState.calledWith('EDR_DOC_TYPE:doctor:Doctor1', Buffer.from('Doctor1'))).to.equal(true);
+        expect(ctx.stub.putState.calledWith('EDR_ACCESS_PATIENT:Patient1:request-1', Buffer.from('request-1'))).to.equal(true);
+        expect(ctx.stub.putState.calledWith('EDR_ACTIVE_ACCESS_RELATION:Patient1:Doctor1', Buffer.from('request-1'))).to.equal(true);
+    });
+
+    it('rejects invalid page sizes before invoking a ledger query', async () => {
+        const ctx = context('system', 'System1');
+        await expectReject(contract.GetAllPatientsPage(ctx, '0'), 'Page size must be a positive integer');
+        expect(ctx.stub.getStateByPartialCompositeKeyWithPagination.called).to.equal(false);
     });
 
     it('rejects an identity that is not associated with an MSP', async () => {

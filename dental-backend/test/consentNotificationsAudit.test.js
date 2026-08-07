@@ -70,7 +70,7 @@ test('direct patient reads and patient consent history use one protected ledger 
   assert.match(api, /\['\/getPatientByID\/:id', '\/readPatient\/:id'\].*authenticateToken.*requireRoles\('admin', 'doctor', 'patient', 'system'\).*requirePatientSelfParam\('id'\)/);
   assert.match(applicationApi, /\['\/getPatientByID\/:id', '\/readPatient\/:id'\].*authenticateToken.*requireRoles\('admin', 'doctor', 'patient'\)/);
   assert.match(chaincode, /async ReadPatient\(ctx, id\)[\s\S]*?_requirePatientRecordAccess\(ctx, id, patient, null, 'admin', 'doctor', 'patient', 'system'\)/);
-  assert.match(api, /GetAllRequestsForPatient'[\s\S]*sendSuccess\(res, parseBufferJson\(result\)\)/);
+  assert.match(api, /evaluateAllFabricPages\([\s\S]*?'GetAllRequestsForPatientPage'[\s\S]*?sendSuccess\(res, result\)/);
   assert.match(patientWebRequests, /Ledger decision evidence/);
   assert.match(patientWebRequests, /decisionTransactionID/);
   assert.match(patientWebRequests, /window\.addEventListener\('focus', refresh\)/);

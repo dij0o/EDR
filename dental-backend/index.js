@@ -297,6 +297,87 @@ const parseBufferJson = (buffer) => {
     return text ? JSON.parse(text) : {};
 };
 
+const FABRIC_QUERY_PAGE_SIZE = 100;
+const FABRIC_QUERY_MAX_PAGES = 100;
+const FABRIC_QUERY_MAX_RECORDS = FABRIC_QUERY_PAGE_SIZE * FABRIC_QUERY_MAX_PAGES;
+
+const evaluateAllFabricPages = async (contract, transaction, leadingArgs = []) => {
+    const records = [];
+    let bookmark = '';
+    const seenBookmarks = new Set();
+
+    for (let pageNumber = 1; pageNumber <= FABRIC_QUERY_MAX_PAGES; pageNumber += 1) {
+        const result = await contract.evaluateTransaction(
+            transaction, ...leadingArgs.map(String), String(FABRIC_QUERY_PAGE_SIZE), bookmark
+        );
+        const page = parseBufferJson(result);
+        if (!page || !Array.isArray(page.records)) {
+            throw Object.assign(new Error(`${transaction} returned an invalid paginated response`), { statusCode: 502 });
+        }
+        records.push(...page.records);
+        const nextBookmark = String(page.bookmark || '');
+        if (!nextBookmark) return records;
+        if (records.length >= FABRIC_QUERY_MAX_RECORDS || seenBookmarks.has(nextBookmark)) {
+            throw Object.assign(new Error(`${transaction} exceeded the bounded pagination safety limit`), { statusCode: 502 });
+        }
+        seenBookmarks.add(nextBookmark);
+        bookmark = nextBookmark;
+    }
+
+    throw Object.assign(new Error(`${transaction} did not complete within ${FABRIC_QUERY_MAX_PAGES} pages`), { statusCode: 502 });
+};
+
+const submitClinicDeactivationBatches = async (contract, clinicID) => {
+    const totals = { actorsDeactivated: 0, requestsCancelled: 0, batches: 0 };
+    let bookmarks = { doctor: '', patient: '', originRequest: '', requestingRequest: '' };
+    const seenContinuations = new Set();
+
+    for (let batch = 1; batch <= FABRIC_QUERY_MAX_PAGES; batch += 1) {
+        const result = parseBufferJson(await contract.submitTransaction(
+            'DeactivateClinicActors', String(clinicID), String(FABRIC_QUERY_PAGE_SIZE),
+            bookmarks.doctor, bookmarks.patient, bookmarks.originRequest, bookmarks.requestingRequest
+        ));
+        totals.actorsDeactivated += Number(result.actorsDeactivated || 0);
+        totals.requestsCancelled += Number(result.requestsCancelled || 0);
+        totals.batches = batch;
+        bookmarks = { doctor: '', patient: '', originRequest: '', requestingRequest: '', ...(result.bookmarks || {}) };
+        if (result.complete === true || !Object.values(bookmarks).some(Boolean)) {
+            return { clinicID: String(clinicID), ...totals, historyPreserved: true, complete: true };
+        }
+        const continuation = JSON.stringify(bookmarks);
+        if (seenContinuations.has(continuation)) {
+            throw Object.assign(new Error('Clinic deactivation returned a repeated Fabric bookmark'), { statusCode: 502 });
+        }
+        seenContinuations.add(continuation);
+    }
+
+    throw Object.assign(new Error('Clinic deactivation exceeded the bounded batch safety limit'), { statusCode: 502 });
+};
+
+const submitQueryIndexBackfill = async (contract) => {
+    const summary = { indexedRecords: 0, fetchedRecordsCount: 0, batches: 0 };
+    let bookmark = '';
+    const seenBookmarks = new Set();
+
+    for (let batch = 1; batch <= FABRIC_QUERY_MAX_PAGES; batch += 1) {
+        const result = parseBufferJson(await contract.submitTransaction(
+            'BackfillQueryIndexes', String(FABRIC_QUERY_PAGE_SIZE), bookmark
+        ));
+        summary.indexedRecords += Number(result.indexedRecords || 0);
+        summary.fetchedRecordsCount += Number(result.fetchedRecordsCount || 0);
+        summary.batches = batch;
+        const nextBookmark = String(result.bookmark || '');
+        if (result.complete === true || !nextBookmark) return { ...summary, complete: true };
+        if (seenBookmarks.has(nextBookmark)) {
+            throw Object.assign(new Error('Query-index backfill returned a repeated Fabric bookmark'), { statusCode: 502 });
+        }
+        seenBookmarks.add(nextBookmark);
+        bookmark = nextBookmark;
+    }
+
+    throw Object.assign(new Error('Query-index backfill exceeded the bounded batch safety limit'), { statusCode: 502 });
+};
+
 const requireFields = (body, fields) => {
     const missing = fields.filter((field) => body[field] === undefined || body[field] === null || body[field] === '');
 
@@ -396,8 +477,15 @@ app.delete('/internal/identities', authenticateToken, requireRoles('admin', 'sys
 
 app.post('/internal/clinics/:clinicID/deactivate', authenticateToken, requireRoles('system'), async (req, res) => {
     try {
-        const result = await withContract(req, (contract) => contract.submitTransaction('DeactivateClinicActors', String(req.params.clinicID)));
-        return sendSuccess(res, parseBufferJson(result));
+        const result = await withContract(req, (contract) => submitClinicDeactivationBatches(contract, req.params.clinicID));
+        return sendSuccess(res, result);
+    } catch (error) { return sendFabricError(res, error); }
+});
+
+app.post('/internal/indexes/backfill', authenticateToken, requireRoles('system'), async (req, res) => {
+    try {
+        const result = await withContract(req, (contract) => submitQueryIndexBackfill(contract));
+        return sendSuccess(res, result);
     } catch (error) { return sendFabricError(res, error); }
 });
 
@@ -720,8 +808,8 @@ app.get('/getDentalChartData/:id', authenticateToken, requireRoles('admin', 'doc
 app.post(['/requestDataAccess', '/requestAccess'], authenticateToken, requireRoles('doctor'), requireDoctorSelfBody('doctorID'), requestAccessHandler);
 app.get('/referrals', authenticateToken, requireRoles('doctor'), async (req, res) => {
     try {
-        const result = await withContract(req, (contract) => contract.evaluateTransaction('GetRequestsForDoctor', String(req.user.blockchainID)));
-        return sendSuccess(res, parseBufferJson(result));
+        const result = await withContract(req, (contract) => evaluateAllFabricPages(contract, 'GetRequestsForDoctorPage', [req.user.blockchainID]));
+        return sendSuccess(res, result);
     } catch (error) { return sendFabricError(res, error); }
 });
 app.post('/grantConsent', authenticateToken, requireRoles('patient'), requirePatientSelfBody('patientID'), grantConsentHandler);
@@ -749,8 +837,8 @@ app.get('/getPendingRequests', authenticateToken, requireRoles('patient'), async
             error.statusCode = 403;
             throw error;
         }
-        const result = await withContract(req, (contract) => contract.evaluateTransaction('GetPendingRequestsForPatient', String(req.user.blockchainID)));
-        return sendSuccess(res, parseBufferJson(result));
+        const result = await withContract(req, (contract) => evaluateAllFabricPages(contract, 'GetPendingRequestsForPatientPage', [req.user.blockchainID]));
+        return sendSuccess(res, result);
     } catch (error) {
         return sendFabricError(res, error);
     }
@@ -1006,21 +1094,8 @@ app.post('/assignPatientToDoctor', authenticateToken, requireRoles('admin'), asy
 
 app.get('/getAllPatients', authenticateToken, requireRoles('admin', 'system'), async (req, res) => {
     try {
-        const wallet = await Wallets.newFileSystemWallet(walletPath);
-
-        const gateway = new Gateway();
-        await gateway.connect(getConnectionProfile(), {
-            wallet,
-            identity: fabricIdentityForRequest(req),
-            discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
-        });
-
-        const network = await gateway.getNetwork(fabricChannel);
-        const contract = network.getContract(fabricChaincode);
-
-        const result = await contract.evaluateTransaction('GetAllPatients');
-        res.status(200).json(JSON.parse(result.toString()));
-        await gateway.disconnect();
+        const result = await withContract(req, (contract) => evaluateAllFabricPages(contract, 'GetAllPatientsPage'));
+        return res.status(200).json(result);
     } catch (error) {
         console.error(`Failed to evaluate transaction: ${error}`);
         sendFabricError(res, error);
@@ -1037,23 +1112,9 @@ app.get('/doctor/me/assigned-patients', authenticateToken, requireRoles('doctor'
 
 app.get('/getPatientsByClinic/:clinicID', authenticateToken, requireRoles('admin'), requireAdminClinicParam('clinicID'), async (req, res) => {
     try {
-        const wallet = await Wallets.newFileSystemWallet(walletPath);
-
-        const gateway = new Gateway();
-        await gateway.connect(getConnectionProfile(), {
-            wallet,
-            identity: fabricIdentityForRequest(req),
-            discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
-        });
-
-        const network = await gateway.getNetwork(fabricChannel);
-        const contract = network.getContract(fabricChaincode);
-
         const clinicID = req.params.clinicID;
-        const result = await contract.evaluateTransaction('GetPatientsByClinic', clinicID);
-
-        res.status(200).json(JSON.parse(result.toString()));
-        await gateway.disconnect();
+        const result = await withContract(req, (contract) => evaluateAllFabricPages(contract, 'GetPatientsByClinicPage', [clinicID]));
+        return res.status(200).json(result);
     } catch (error) {
         console.error(`Failed to evaluate transaction: ${error}`);
         sendFabricError(res, error);
@@ -1072,25 +1133,8 @@ app.get('/getRequestsForAdmin/:clinicID', authenticateToken, requireRoles('admin
             return res.status(400).json({ error: "Missing required clinic ID parameter" });
         }
 
-        const wallet = await Wallets.newFileSystemWallet(walletPath);
-
-        const gateway = new Gateway();
-        await gateway.connect(getConnectionProfile(), {
-            wallet,
-            identity: fabricIdentityForRequest(req),
-            discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
-        });
-
-        const network = await gateway.getNetwork(fabricChannel);
-        const contract = network.getContract(fabricChaincode);
-
-        // Call `GetRequestsForAdmin` chaincode function with the provided clinic ID
-        const result = await contract.evaluateTransaction('GetRequestsForAdmin', clinicID);
-
-        console.log("Fetched Requests for Clinic:", clinicID, "Response:", result.toString());
-
-        res.status(200).json(JSON.parse(result.toString()));
-        await gateway.disconnect();
+        const result = await withContract(req, (contract) => evaluateAllFabricPages(contract, 'GetRequestsForAdminPage', [clinicID]));
+        return res.status(200).json(result);
     } catch (error) {
         console.error(`Failed to evaluate transaction: ${error}`);
         sendFabricError(res, error);
@@ -1143,23 +1187,9 @@ app.post('/approveRequest', authenticateToken, requireRoles('admin'), requireAdm
 
 app.get('/getProcessedRequestsForPatient/:patientID', authenticateToken, requireRoles('patient'), requirePatientSelfParam('patientID'), async (req, res) => {
     try {
-        const wallet = await Wallets.newFileSystemWallet(walletPath);
-
-        const gateway = new Gateway();
-        await gateway.connect(getConnectionProfile(), {
-            wallet,
-            identity: fabricIdentityForRequest(req),
-            discovery: { enabled: discoveryEnabled, asLocalhost: discoveryAsLocalhost },
-        });
-
-        const network = await gateway.getNetwork(fabricChannel);
-        const contract = network.getContract(fabricChaincode);
-
         const patientID = req.params.patientID;
-        const result = await contract.evaluateTransaction('GetProcessedRequestsForPatient', patientID);
-
-        res.status(200).json(JSON.parse(result.toString()));
-        await gateway.disconnect();
+        const result = await withContract(req, (contract) => evaluateAllFabricPages(contract, 'GetProcessedRequestsForPatientPage', [patientID]));
+        return res.status(200).json(result);
     } catch (error) {
         console.error(`Failed to evaluate transaction: ${error}`);
         sendFabricError(res, error);
@@ -1168,10 +1198,10 @@ app.get('/getProcessedRequestsForPatient/:patientID', authenticateToken, require
 
 app.get('/getAllRequestsForPatient/:patientID', authenticateToken, requireRoles('patient'), requirePatientSelfParam('patientID'), async (req, res) => {
     try {
-        const result = await withContract(req, (contract) => contract.evaluateTransaction(
-            'GetAllRequestsForPatient', String(req.params.patientID)
+        const result = await withContract(req, (contract) => evaluateAllFabricPages(
+            contract, 'GetAllRequestsForPatientPage', [req.params.patientID]
         ));
-        return sendSuccess(res, parseBufferJson(result));
+        return sendSuccess(res, result);
     } catch (error) {
         return sendFabricError(res, error);
     }
