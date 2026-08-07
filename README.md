@@ -3,6 +3,24 @@
 Secure authentication/session migration and deployment instructions are in
 [`docs/SECURE_SESSION_DEPLOYMENT.md`](docs/SECURE_SESSION_DEPLOYMENT.md).
 
+## Current verified deployment
+
+The EDR test server is deployed from `release/clean-deployable-20260717` at commit
+`af7ed5abbe02fcf2db9288fee2d90324c186ff65`. The smart-contract remediation is live as
+Fabric chaincode `basic` version `1.0.28`, sequence `30`, approved and committed by
+Org1MSP and Org2MSP. Both peers were independently verified at ledger height `1354`
+with identical current block hashes.
+
+The indexed-query migration completed across three bounded pages. The current chaincode
+suite passes 42/42, the private Blockchain API suite passes 94/94, and the dependency
+audit reports zero vulnerabilities. All four application containers are healthy; the
+frontend and Database API return HTTP 200, the internal Blockchain API returns HTTP 200,
+and the public Blockchain API path intentionally returns HTTP 404.
+
+See [`docs/SMART_CONTRACT_REMEDIATION_DEPLOYMENT_2026-08-07.md`](docs/SMART_CONTRACT_REMEDIATION_DEPLOYMENT_2026-08-07.md)
+for the deployment evidence and [`docs/PHASE11_DEPLOYMENT.md`](docs/PHASE11_DEPLOYMENT.md)
+for the operational procedure.
+
 > **University of Sharjah - OpenUAE Research & Development Group**  
 > Built on **Hyperledger Fabric 2.5** · **Node.js** · **React.js** · **Expo (React Native)** · **MySQL**
 

@@ -67,6 +67,25 @@ peer lifecycle chaincode querycommitted -C mychannel -n basic
 
 ### Indexed-query upgrade and backfill
 
+#### Verified EDR test-server deployment - 2026-08-07
+
+This procedure has been completed on the EDR test server for commit
+`af7ed5abbe02fcf2db9288fee2d90324c186ff65`:
+
+- `basic` v1.0.28, sequence 30, was installed, approved, and committed by Org1MSP and Org2MSP;
+- the lifecycle commit transaction was VALID on both peers;
+- the resumable query-index backfill completed across three bounded pages;
+- `GetAllPatientsPage` returned all 14 current patient records with no remaining bookmark;
+- both peers reported ledger height 1354 and identical current block hashes;
+- chaincode tests passed 42/42, Blockchain API tests passed 94/94, ESLint passed, and npm audit reported zero vulnerabilities;
+- `blockchain-api`, `database-api`, `mysql`, and `web-frontend` were healthy after deployment;
+- frontend, Database API, and internal Blockchain API health checks returned HTTP 200, while the intentionally private public Blockchain API route returned HTTP 404.
+
+The backup created before the deployment is
+`/home/ubuntu/deployment-backups/20260807T201415Z-cr003-smart-contract`. See
+[`SMART_CONTRACT_REMEDIATION_DEPLOYMENT_2026-08-07.md`](SMART_CONTRACT_REMEDIATION_DEPLOYMENT_2026-08-07.md)
+for the client-facing evidence summary.
+
 The indexed-query chaincode revision must not receive normal application traffic until existing world state has been backfilled. For an existing network, upgrade the `basic` chaincode in place using the next approved version and sequence; do not run `network.sh down`, because that removes the test-network ledger.
 
 After the upgraded definition is committed, start only the private Blockchain API and invoke its system-only migration route from the private application network. Supply the deployment's internal-service token and a valid system-role access token through the secure secret channel:
