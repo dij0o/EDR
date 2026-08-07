@@ -241,7 +241,7 @@ const corsOptions = {
     optionsSuccessStatus: 200
 };
 const allowedWebOrigins = Array.isArray(corsOptions.origin) ? corsOptions.origin : [corsOptions.origin].filter(Boolean);
-const hasAllowedWebOrigin = (req) => allowedWebOrigins.includes(req.get('origin'));
+const hasAllowedWebOrigin = (req) => corsOptions.origin === '*' || allowedWebOrigins.includes(req.get('origin'));
 
 if (process.env.NODE_ENV === 'production' && (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === '*')) {
     throw new Error('Production CORS_ORIGIN must be an explicit allow-list');
@@ -254,6 +254,17 @@ if (process.env.NODE_ENV === 'production' && !BLOCKCHAIN_INTERNAL_TOKEN) {
     throw new Error('BLOCKCHAIN_INTERNAL_TOKEN is required in production');
 }
 
+// Reject an untrusted browser origin explicitly instead of merely omitting ACAO.
+// This gives browser clients and security automation an unambiguous policy result
+// and prevents the request from reaching authentication or business handlers.
+app.use((req, res, next) => {
+    const requestOrigin = req.get('origin');
+    if (requestOrigin && !hasAllowedWebOrigin(req)) {
+        res.vary('Origin');
+        return sendApiError(res, 403, 'CORS_ORIGIN_DENIED', 'Cross-origin request is not permitted');
+    }
+    return next();
+});
 app.use(cors(corsOptions));
 app.use(express.json());
 
