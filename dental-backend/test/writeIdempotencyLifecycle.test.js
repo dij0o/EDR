@@ -39,6 +39,9 @@ test('repeat lifecycle and relationship operations avoid side effects', () => {
   assert.match(chaincode, /ledger state was not rewritten/);
   assert.match(chaincode, /alreadyRead:true/);
   assert.match(chaincode, /ACTIVE_ACCESS_REQUEST/);
+  assert.match(chaincode, /_findActiveDataAccessRequest/);
+  assert.match(chaincode, /getStateByPartialCompositeKey\('ACTIVE_ACCESS_REQUEST'/);
+  assert.match(chaincode, /\[String\(doctorID\), String\(patientID\), String\(dataOriginClinicID\)\]/);
 });
 
 test('consent conflicts and push upserts expose controlled outcomes', () => {

@@ -1393,15 +1393,41 @@ class DentalRecordSharing extends Contract {
 
     //     return request.requestID;
     // }
+    async _findActiveDataAccessRequest(ctx, doctorID, patientID, dataOriginClinicID) {
+        const attributes = [String(doctorID), String(patientID), String(dataOriginClinicID)];
+        const canonicalKey = ctx.stub.createCompositeKey('ACTIVE_ACCESS_REQUEST', attributes);
+        const canonicalID = await ctx.stub.getState(canonicalKey);
+        const candidateIDs = canonicalID && canonicalID.length ? [canonicalID.toString()] : [];
+
+        // Read legacy scope-specific index entries as well. Earlier versions included
+        // dataType in this key, which allowed parallel active referrals for one care
+        // relationship when the scope label changed.
+        if (typeof ctx.stub.getStateByPartialCompositeKey === 'function') {
+            const iterator = await ctx.stub.getStateByPartialCompositeKey('ACTIVE_ACCESS_REQUEST', attributes);
+            try {
+                while (true) {
+                    const item = await iterator.next();
+                    if (item.done) break;
+                    const requestID = item.value?.value?.toString();
+                    if (requestID && !candidateIDs.includes(requestID)) candidateIDs.push(requestID);
+                }
+            } finally {
+                await iterator.close();
+            }
+        }
+
+        for (const requestID of candidateIDs) {
+            const requestBytes = await ctx.stub.getState(requestID);
+            if (!requestBytes || !requestBytes.length) continue;
+            const request = JSON.parse(requestBytes.toString());
+            if (['PENDING_ADMIN_APPROVAL','PENDING_PATIENT_CONSENT','ACTIVE'].includes(request.status)) return request;
+        }
+        return null;
+    }
+
     async GetActiveDataAccessRequest(ctx, doctorID, patientID, dataOriginClinicID, dataType) {
         this._requireActor(ctx, doctorID, 'doctor');
-        const key = ctx.stub.createCompositeKey('ACTIVE_ACCESS_REQUEST', [String(doctorID), String(patientID), String(dataOriginClinicID), String(dataType)]);
-        const requestIDBytes = await ctx.stub.getState(key);
-        if (!requestIDBytes || !requestIDBytes.length) return JSON.stringify(null);
-        const requestBytes = await ctx.stub.getState(requestIDBytes.toString());
-        if (!requestBytes || !requestBytes.length) return JSON.stringify(null);
-        const request = JSON.parse(requestBytes.toString());
-        return JSON.stringify(['PENDING_ADMIN_APPROVAL','PENDING_PATIENT_CONSENT','ACTIVE'].includes(request.status) ? request : null);
+        return JSON.stringify(await this._findActiveDataAccessRequest(ctx, doctorID, patientID, dataOriginClinicID));
     }
 
     async RequestDataAccess(ctx, doctorID, patientID, dataOriginClinicID, dataType, purpose, detailsJson) {
@@ -1423,16 +1449,9 @@ class DentalRecordSharing extends Contract {
         detailsJson = detailsJson || '{}';
         const details = this._parseDetailsJson(detailsJson);
         const requestedAt = this._txTimestamp(ctx);
-        const activeRequestKey = ctx.stub.createCompositeKey('ACTIVE_ACCESS_REQUEST', [String(doctorID), String(patientID), String(dataOriginClinicID), String(dataType)]);
-        const activeRequestIDBytes = await ctx.stub.getState(activeRequestKey);
-        if (activeRequestIDBytes && activeRequestIDBytes.length) {
-            const existingRequestID = activeRequestIDBytes.toString();
-            const existingBytes = await ctx.stub.getState(existingRequestID);
-            if (existingBytes && existingBytes.length) {
-                const existing = JSON.parse(existingBytes.toString());
-                if (['PENDING_ADMIN_APPROVAL','PENDING_PATIENT_CONSENT','ACTIVE'].includes(existing.status)) return existing.requestID;
-            }
-        }
+        const activeRequestKey = ctx.stub.createCompositeKey('ACTIVE_ACCESS_REQUEST', [String(doctorID), String(patientID), String(dataOriginClinicID)]);
+        const existing = await this._findActiveDataAccessRequest(ctx, doctorID, patientID, dataOriginClinicID);
+        if (existing) return existing.requestID;
 
         const patientClinicIDs = [...new Set([
             ...(Array.isArray(patient.clinicIDs) ? patient.clinicIDs : []),

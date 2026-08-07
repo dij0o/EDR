@@ -19,6 +19,7 @@ const context = (role, actorID, mspID = 'Org1MSP', clinicID = null) => ({
         getTxID: sinon.stub().returns('tx-1'),
         getTxTimestamp: sinon.stub().returns({ seconds: { toString: () => '1783872000' }, nanos: 0 }),
         getStateByRange: sinon.stub().resolves({ next: sinon.stub().resolves({ done: true }), close: sinon.stub().resolves() }),
+        getStateByPartialCompositeKey: sinon.stub().resolves({ next: sinon.stub().resolves({ done: true }), close: sinon.stub().resolves() }),
     },
 });
 
@@ -123,6 +124,42 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(request.dataOriginClinicID).to.equal(2);
         expect(request.requestingClinicID).to.equal(1);
         expect(patient.clinicID).to.equal(2);
+    });
+
+    it('reuses one active referral across record scopes for the same care relationship', async () => {
+        const ctx = context('doctor', 'Doctor1', 'Org1MSP', '1');
+        const doctor = { doctorID: 'Doctor1', firstName: 'Alice', lastName: 'Wong', clinicID: 1, worksAt: 'Clinic 1' };
+        const patient = { patientID: 'Patient1', clinicID: 2, clinicIDs: [2], doctors: ['Doctor2'], sharedWith: [] };
+        const existing = { requestID: 'request-existing', doctorID: 'Doctor1', patientID: 'Patient1', dataOriginClinicID: 2, dataType: 'Medical Records', status: 'PENDING_ADMIN_APPROVAL' };
+        const indexValue = Buffer.from(existing.requestID);
+        ctx.stub.getState.callsFake(async (key) => {
+            if (key === 'Doctor1') return Buffer.from(JSON.stringify(doctor));
+            if (key === 'Patient1') return Buffer.from(JSON.stringify(patient));
+            if (key === 'request-existing') return Buffer.from(JSON.stringify(existing));
+            if (key === 'ACTIVE_ACCESS_REQUEST:Doctor1:Patient1:2') return indexValue;
+            return Buffer.alloc(0);
+        });
+
+        const requestID = await contract.RequestDataAccess(ctx, 'Doctor1', 'Patient1', '2', 'Dental Records', 'Specialist review', '{}');
+
+        expect(requestID).to.equal('request-existing');
+        expect(ctx.stub.putState.called).to.equal(false);
+    });
+
+    it('recognizes an active referral stored under the legacy scope-specific index', async () => {
+        const ctx = context('doctor', 'Doctor1', 'Org1MSP', '1');
+        const existing = { requestID: 'request-legacy', doctorID: 'Doctor1', patientID: 'Patient1', dataOriginClinicID: 2, dataType: 'Medical Records', status: 'PENDING_ADMIN_APPROVAL' };
+        ctx.stub.getState.callsFake(async (key) => key === existing.requestID ? Buffer.from(JSON.stringify(existing)) : Buffer.alloc(0));
+        ctx.stub.getStateByPartialCompositeKey.resolves({
+            next: sinon.stub()
+                .onFirstCall().resolves({ done: false, value: { value: Buffer.from(existing.requestID) } })
+                .onSecondCall().resolves({ done: true }),
+            close: sinon.stub().resolves(),
+        });
+
+        const result = JSON.parse(await contract.GetActiveDataAccessRequest(ctx, 'Doctor1', 'Patient1', '2', 'Dental Records'));
+
+        expect(result.requestID).to.equal('request-legacy');
     });
 
     it('grants scoped access without transferring the patient or replacing assigned doctors', async () => {
