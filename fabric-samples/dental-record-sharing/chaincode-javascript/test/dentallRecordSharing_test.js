@@ -236,6 +236,45 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(rejected.status).to.equal('REJECTED');
     });
 
+    it('denies access and duplicate resubmission after patient rejection without changing sharedWith', async () => {
+        const patient = { patientID: 'Patient1', clinicID: 2, clinicIDs: [2], doctors: ['Doctor2'], sharedWith: [] };
+        const pending = { requestID: 'request-patient-rejected', docType: 'accessRequest', workflowType: 'REFERRAL', doctorID: 'Doctor1', patientID: 'Patient1', dataOriginClinicID: 2, dataType: 'Medical Records', status: 'PENDING_PATIENT_CONSENT' };
+        const patientCtx = context('patient', 'Patient1', 'Org1MSP', '2');
+        patientCtx.stub.getState.callsFake(async (key) => key === pending.requestID ? Buffer.from(JSON.stringify(pending)) : Buffer.alloc(0));
+
+        const rejection = await contract.RejectRequest(patientCtx, 'Patient1', pending.requestID, 'I do not consent to this disclosure');
+        const rejectedWrite = patientCtx.stub.putState.getCalls().find((call) => call.args[0] === pending.requestID);
+        const rejected = JSON.parse(rejectedWrite.args[1].toString());
+        expect(rejection.status).to.equal('REJECTED');
+        expect(rejection.accessGranted).to.equal(false);
+        expect(rejection.rejectedRole).to.equal('patient');
+        expect(patientCtx.stub.putState.getCalls().some((call) => call.args[0] === patient.patientID)).to.equal(false);
+        expect(patient.sharedWith).to.deep.equal([]);
+
+        const doctor = { doctorID: 'Doctor1', firstName: 'Alice', lastName: 'Wong', clinicID: 1, worksAt: 'Clinic 1' };
+        const doctorCtx = context('doctor', 'Doctor1', 'Org1MSP', '1');
+        doctorCtx.stub.getState.callsFake(async (key) => {
+            if (key === doctor.doctorID) return Buffer.from(JSON.stringify(doctor));
+            if (key === patient.patientID) return Buffer.from(JSON.stringify(patient));
+            if (key === rejected.requestID) return Buffer.from(JSON.stringify(rejected));
+            if (key === 'ACTIVE_ACCESS_REQUEST:Doctor1:Patient1:2') return Buffer.from(rejected.requestID);
+            return Buffer.alloc(0);
+        });
+        let yielded = false;
+        doctorCtx.stub.getStateByRange.resolves({
+            next: sinon.stub().callsFake(async () => yielded ? { done: true } : (yielded = true, { done: false, value: { value: Buffer.from(JSON.stringify(rejected)) } })),
+            close: sinon.stub().resolves(),
+        });
+
+        await expectReject(contract.GetPatientData(doctorCtx, 'Doctor1', 'Patient1'), 'has no active referral');
+        await expectReject(
+            contract.RequestDataAccess(doctorCtx, 'Doctor1', 'Patient1', '2', 'Medical Records', 'Specialist review', '{}'),
+            'was rejected and cannot be resubmitted'
+        );
+        expect(patient.sharedWith).to.deep.equal([]);
+        expect(rejected.status).to.equal('REJECTED');
+    });
+
     it('prevents an admin from another clinic rejecting the pending request', async () => {
         const ctx = context('admin', 'Admin1', 'Org1MSP', '1');
         const request = { requestID: 'request-1', doctorID: 'Doctor1', patientID: 'Patient1', dataOriginClinicID: 2, status: 'PENDING_ADMIN_APPROVAL' };
