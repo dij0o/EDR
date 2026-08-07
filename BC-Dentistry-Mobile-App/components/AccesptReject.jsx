@@ -5,7 +5,7 @@ import { CustomButton } from './index';
 import { authHeaders, databaseUrl } from '../utils/api';
 import { useUser } from '../Context/UserContext';
 
-const AccesptReject = ({ requestID, patientID, updateStatus, onStatusChanged, setCardStatus, setrequestLoadingFunc, expandCardFunc }) => {
+const AccesptReject = ({ requestID, patientID, updateStatus, setCardStatus, setrequestLoadingFunc, expandCardFunc }) => {
     const [loading, setLoading] = useState(false);
     const { token } = useUser();
 
@@ -28,7 +28,6 @@ const AccesptReject = ({ requestID, patientID, updateStatus, onStatusChanged, se
             await axios.post(databaseUrl('/grantConsent'), { patientID, requestID }, { headers: authHeaders(token) });
             Alert.alert('Success', 'Request accepted successfully!');
             updateStatus('CONSENT_GRANTED');
-            await onStatusChanged?.();
         } catch (error) {
             Alert.alert('Error', error.response?.data?.error?.message || 'Failed to accept request.');
         } finally {
@@ -52,7 +51,6 @@ const AccesptReject = ({ requestID, patientID, updateStatus, onStatusChanged, se
             );
             Alert.alert('Success', 'Request rejected successfully!');
             updateStatus('REJECTED');
-            await onStatusChanged?.();
         } catch (error) {
             Alert.alert('Error', error.response?.data?.error?.message || 'Failed to reject request.');
         } finally {

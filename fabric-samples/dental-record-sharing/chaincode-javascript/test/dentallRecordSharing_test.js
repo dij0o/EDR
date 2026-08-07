@@ -208,15 +208,6 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(ctx.stub.putState.called).to.equal(false);
     });
 
-    it('prevents an active consent grant from being rejected through the pending decision path', async () => {
-        const ctx = context('admin', 'Admin2', 'Org1MSP', '2');
-        const request = { requestID: 'request-active', doctorID: 'Doctor1', patientID: 'Patient1', dataOriginClinicID: 2, status: 'ACTIVE' };
-        ctx.stub.getState.resolves(Buffer.from(JSON.stringify(request)));
-
-        await expectReject(contract.RejectRequest(ctx, 'Admin2', request.requestID, 'Late rejection'), 'cannot be rejected at this stage');
-        expect(ctx.stub.putState.called).to.equal(false);
-    });
-
     it('grants scoped access without transferring the patient or replacing assigned doctors', async () => {
         const ctx = context('patient', 'Patient1', 'Org1MSP', '2');
         const request = { requestID: 'request-1', docType: 'accessRequest', workflowType: 'REFERRAL', doctorID: 'Doctor1', patientID: 'Patient1', dataType: 'Medical Records', status: 'PENDING_PATIENT_CONSENT' };

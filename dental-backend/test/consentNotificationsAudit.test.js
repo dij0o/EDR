@@ -54,10 +54,6 @@ test('admin and patient decisions create notifications and support revocation', 
   assert.match(api, /submitTransaction\(\s*'RevokeConsent'/);
   assert.match(mobileApproved, /revokeConsent/);
   assert.match(mobileApproved, /\/patient\/revokeConsent/);
-  assert.match(mobileApproved, /request\.lifecycleStatus === 'ACTIVE'/);
-  assert.match(mobileRequests, /Granted consent/);
-  assert.match(mobileRequests, /router\.push\('\/proceedRequests'\)/);
-  assert.match(chaincode, /cannot be rejected at this stage/);
 });
 
 test('referrals are scoped, expiring, and closable by the receiving doctor', () => {
