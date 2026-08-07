@@ -32,7 +32,7 @@ const DataRequestsOrders = ({ onChanged }) => {
                             .map((request) => ({
                                 requestID: request.requestID,
                                 header: `Request from ${request.doctorName || request.doctorID}`,
-                                description: `Patient: ${request.patientID}\nRequested data: ${request.dataType || 'Complete patient record'}\nPurpose: ${request.purpose || request.reason || 'Not supplied'}\nApproval sends the request to the patient for consent; it does not transfer patient ownership.`,
+                                description: `Requested data: ${request.dataType || 'Complete patient record'}\nPurpose: ${request.purpose || request.reason || 'Not supplied'}\nApproval sends the request to the patient for consent; it does not transfer patient ownership.`,
                                 type: 'on-chain',
                             })),
                     );

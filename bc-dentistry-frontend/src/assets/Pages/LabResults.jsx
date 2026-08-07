@@ -54,7 +54,7 @@ export default function LabResults() {
                 {role === 'doctor' && <label className="min-w-0 text-sm font-semibold">Patient
                     <select value={patientID} onChange={(event) => setPatientID(event.target.value)} className="mt-2 block w-full rounded border bg-white p-3 font-normal">
                         <option value="">Select patient</option>
-                        {patients.map((patient) => <option key={patient.patientID} value={patient.patientID}>{patient.firstName} {patient.lastName} ({patient.patientID})</option>)}
+                        {patients.map((patient) => <option key={patient.patientID} value={patient.patientID}>{patient.firstName} {patient.lastName} — {patient.emiratesID || patient.email || patient.contactNumber || 'contact details unavailable'}</option>)}
                     </select>
                 </label>}
                 <label className="min-w-0 text-sm font-semibold">Status
@@ -74,7 +74,7 @@ export default function LabResults() {
                 <th className="p-4">Order</th><th className="p-4">Patient</th><th className="p-4">Test</th><th className="p-4">Doctor</th><th className="p-4">Status</th><th className="p-4">Dates</th>
             </tr></thead><tbody>{visible.map((result) => <tr key={result.labResultID} className="border-b align-top">
                 <td className="p-4">{result.orderID}</td>
-                <td className="p-4"><strong>{result.patientName}</strong><span className="block text-xs text-gray-500">{result.patientID}</span></td>
+                <td className="p-4"><strong>{result.patientName}</strong></td>
                 <td className="p-4">{result.testName}<span className="block text-xs text-gray-500">{result.discipline || 'Unspecified discipline'}</span></td>
                 <td className="p-4">{result.orderingDoctorName || 'Not assigned'}</td>
                 <td className="p-4 capitalize">{result.status}</td>

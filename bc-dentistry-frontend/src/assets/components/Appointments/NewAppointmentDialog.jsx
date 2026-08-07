@@ -49,7 +49,10 @@ const NewAppointmentDialog = ({ onClose, onCreated }) => {
     } catch (reason) { setError(reason.message); } finally { setSaving(false); }
   };
 
-  const patientOptions = patients.map((patient) => ({ value: patient.patientID, label: `${patient.firstName} ${patient.lastName} (${patient.patientID})` }));
+  const patientOptions = patients.map((patient) => ({
+    value: patient.patientID,
+    label: `${patient.firstName} ${patient.lastName} — ${patient.emiratesID || patient.email || patient.contactNumber || 'contact details unavailable'}`,
+  }));
   const doctorOptions = doctors.map((doctor) => ({ value: doctor.doctorID, label: `${doctor.firstName} ${doctor.lastName} — ${doctor.speciality || doctor.specialty || 'Specialty not recorded'} (${doctor.doctorID})` }));
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-3 sm:p-6" onMouseDown={(event) => event.target === event.currentTarget && !saving && onClose()}>

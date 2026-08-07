@@ -68,7 +68,7 @@ const PatientCard = ({ patientId, fullName, age, gender, insurance, patient, onC
   };
 
   return <div className="patient-card min-h-64 rounded-xl border bg-white p-6 flex flex-col gap-y-2 justify-between">
-    <p className="text-sm text-gray-500">ID: {patientId}</p>
+    <p className="text-sm text-gray-500">{patient?.emiratesID || patient?.email || patient?.contactNumber || 'Patient contact details unavailable'}</p>
     {!isOperational && <p role="status" className="rounded bg-amber-50 p-2 text-sm font-semibold text-amber-900">Transferred to Clinic {patient?.clinicID}. Historical directory entry — no clinical or administrative actions are permitted.</p>}
     <Link to={`/patients/${patientId}`}><h2 className="text-xl font-bold">{fullName}</h2></Link>
     <div><span className="font-semibold">Age: </span>{age} · {gender}</div>

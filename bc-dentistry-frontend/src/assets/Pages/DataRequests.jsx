@@ -4,13 +4,14 @@ import DataRequestsOrders from "../Sections/DataRequests/DataRequestsOrders.jsx"
 import { authHeaders, databaseUrl } from "../config/api.js";
 import { getStoredUser } from "../utils/auth.js";
 import { useSearchParams } from "react-router-dom";
+import Select from "react-select";
 
 const formatRequest = (request) => ({
     requestId: request.requestID,
     type: 'on-chain',
     dataType: request.dataType || 'Medical/Dental Data',
     fileType: 'N/A',
-    description: `Patient ${request.patientID}\nPurpose: ${request.purpose || request.reason || 'Not supplied'}\nStatus: ${String(request.status || '').replace(/_/g, ' ')}`,
+    description: `Patient referral\nPurpose: ${request.purpose || request.reason || 'Not supplied'}\nStatus: ${String(request.status || '').replace(/_/g, ' ')}`,
     requester: request.doctorName || request.doctorID,
     status: request.status,
     data: {
@@ -25,6 +26,7 @@ const DataRequests = () => {
     const [allRequests, setAllRequests] = useState([]);
     const [refreshKey, setRefreshKey] = useState(0);
     const [auditPatientID, setAuditPatientID] = useState("");
+    const [auditPatients, setAuditPatients] = useState([]);
     const [auditLogs, setAuditLogs] = useState([]);
     const [auditError, setAuditError] = useState("");
     const [searchParams] = useSearchParams();
@@ -56,6 +58,17 @@ const DataRequests = () => {
     }, [adminClinicID, refreshKey]);
 
     useEffect(() => {
+        if (!adminClinicID) return;
+        fetch(databaseUrl('/patients'), { headers: authHeaders() })
+            .then(async (response) => {
+                const payload = await response.json();
+                if (!response.ok) throw new Error(payload?.error?.message || 'Unable to load clinic patients');
+                setAuditPatients(payload.data || []);
+            })
+            .catch((error) => setAuditError(error.message));
+    }, [adminClinicID]);
+
+    useEffect(() => {
         if (!focusedRequestID || allRequests.length === 0) return;
         document.getElementById(`request-${focusedRequestID}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, [allRequests, focusedRequestID]);
@@ -64,7 +77,7 @@ const DataRequests = () => {
         setAuditError("");
         setAuditLogs([]);
         if (!auditPatientID) {
-            setAuditError("Enter a patient blockchain ID first.");
+            setAuditError("Select a patient first.");
             return;
         }
         try {
@@ -113,12 +126,14 @@ const DataRequests = () => {
                     <div className="mt-6 p-6 bg-white rounded-xl border">
                         <h2 className="text-2xl font-bold mb-4">Access Audit</h2>
                         <div className="flex gap-2">
-                            <input
-                                className="border rounded-md px-3 py-2 w-full"
-                                value={auditPatientID}
-                                onChange={(event) => setAuditPatientID(event.target.value)}
-                                placeholder="Patient blockchain ID"
-                            />
+                            <div className="min-w-0 flex-1"><Select
+                                inputId="audit-patient"
+                                isSearchable
+                                options={auditPatients.map((patient) => ({ value: patient.patientID, label: `${patient.firstName} ${patient.lastName} — ${patient.emiratesID || patient.email || patient.contactNumber || 'contact details unavailable'}` }))}
+                                value={auditPatients.map((patient) => ({ value: patient.patientID, label: `${patient.firstName} ${patient.lastName} — ${patient.emiratesID || patient.email || patient.contactNumber || 'contact details unavailable'}` })).find((option) => option.value === auditPatientID) || null}
+                                onChange={(option) => setAuditPatientID(option?.value || '')}
+                                placeholder="Search clinic patients"
+                            /></div>
                             <button className="px-4 py-2 rounded-md bg-[#1E2A47] text-white" onClick={fetchAuditLogs}>Load</button>
                         </div>
                         {auditError && <p className="text-red-600 text-sm mt-2">{auditError}</p>}

@@ -60,7 +60,8 @@ test('patient list and request controls remove placeholders and expose unique na
 
 test('patient detail displays all SRS profile categories', () => {
   const detail = read('src/assets/components/Patient/PatientPersonalInfo.jsx');
-  for (const label of ['Patient ID', 'Insurance Provider', 'Policy Number', 'Coverage Type', 'Emirates ID', 'Nationality', 'Address', 'Blood Type', 'Phone Number', 'Email', 'Clinic', 'Assigned Doctors']) assert.match(detail, new RegExp(label));
+  for (const label of ['Insurance Provider', 'Policy Number', 'Coverage Type', 'Emirates ID', 'Nationality', 'Address', 'Blood Type', 'Phone Number', 'Email', 'Clinic', 'Assigned Doctors']) assert.match(detail, new RegExp(label));
+  assert.doesNotMatch(detail, /header=\{'Patient ID'\}/);
 });
 
 test('patient login uses an owner-scoped route and admin patient creation is mounted accessibly', () => {
