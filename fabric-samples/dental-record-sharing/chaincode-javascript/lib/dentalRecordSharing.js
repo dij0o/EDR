@@ -95,13 +95,24 @@ class DentalRecordSharing extends Contract {
         }
         if (identity.role === 'doctor') {
             const assignedDoctors = Array.isArray(patient.doctors) ? patient.doctors : [];
-            if (!assignedDoctors.includes(actorID)) {
+            let hasCurrentAssignment = false;
+            if (assignedDoctors.includes(actorID)) {
+                const doctorBytes = await ctx.stub.getState(actorID);
+                if (doctorBytes && doctorBytes.length) {
+                    const doctor = JSON.parse(doctorBytes.toString());
+                    hasCurrentAssignment = doctor.isActive !== false
+                        && patient.isActive !== false
+                        && Number(doctor.clinicID) === Number(patient.clinicID);
+                }
+            }
+            if (!hasCurrentAssignment) {
                 const referral = await this._findActiveReferralRequest(ctx, patientID, actorID, recordType);
                 if (!referral) {
                     throw new Error(`Access denied: Doctor ${actorID} has no active referral for ${recordType || 'the requested records'} of patient ${patientID}.`);
                 }
                 return { ...identity, actorID, accessBasis: 'referral', requestID: referral.requestID, referral };
             }
+            return { ...identity, actorID, accessBasis: 'assignment' };
         }
         return { ...identity, actorID };
     }
@@ -2123,11 +2134,10 @@ class DentalRecordSharing extends Contract {
         const patient = JSON.parse(patientBytes.toString());
         const identity = await this._requirePatientRecordAccess(ctx, patientID, patient, recordType, 'doctor', 'patient');
         const actorID = identity.actorID;
-        const assignedDoctors = Array.isArray(patient.doctors) ? patient.doctors : [];
         let accessBasis = identity.role === 'patient' ? 'owner' : identity.role;
         let requestID = null;
         if (identity.role === 'doctor') {
-            if (assignedDoctors.includes(actorID)) {
+            if (identity.accessBasis === 'assignment') {
                 accessBasis = 'assignment';
             } else if (identity.accessBasis === 'referral') {
                 accessBasis = 'referral';

@@ -5,6 +5,7 @@ const path = require('node:path');
 const api = fs.readFileSync(path.resolve(__dirname, '..', 'index.js'), 'utf8');
 const db = fs.readFileSync(path.resolve(__dirname, '..', '..', 'backend', 'server.js'), 'utf8');
 const chaincode = fs.readFileSync(path.resolve(__dirname, '..', '..', 'fabric-samples', 'dental-record-sharing', 'chaincode-javascript', 'lib', 'dentalRecordSharing.js'), 'utf8');
+const clinicalRecordsUi = fs.readFileSync(path.resolve(__dirname, '..', '..', 'bc-dentistry-frontend', 'src', 'assets', 'components', 'Patient', 'ClinicalRecords.jsx'), 'utf8');
 const migration = fs.readFileSync(path.resolve(__dirname, '..', '..', 'database', 'migrations', '2026-07-12-clinical-records.sql'), 'utf8');
 
 test('clinical payload is stored off-chain and only reference/hash metadata is submitted', () => {
@@ -43,4 +44,12 @@ test('doctor and patient reads are access checked and automatically logged on-ch
   assert.match(api, /clinical-access-logs\/:patientID/);
   assert.match(db, /getMedicalRecords\/:id/);
   assert.match(db, /getDentalChartData\/:id/);
+});
+
+test('revoked cross-clinic access cannot survive a stale assignment or remain visible in the browser', () => {
+  assert.match(chaincode, /Number\(doctor\.clinicID\) === Number\(patient\.clinicID\)/);
+  assert.match(chaincode, /request\.status === 'ACTIVE'/);
+  assert.match(clinicalRecordsUi, /setMedical\(\[\]\); setDental\(\[\]\); setMessage\(''\)/);
+  assert.match(clinicalRecordsUi, /window\.addEventListener\('focus', revalidate\)/);
+  assert.match(clinicalRecordsUi, /document\.addEventListener\('visibilitychange', revalidate\)/);
 });

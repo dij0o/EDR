@@ -19,12 +19,21 @@ export default function ClinicalRecords({ patientID, role }) {
   const [type, setType] = useState('medical'), [form, setForm] = useState(emptyMedical), [message, setMessage] = useState('');
   const idempotencyKey = useRef(crypto.randomUUID());
   const load = async () => {
+    // Protected records must not remain visible while access is being revalidated.
+    // This is especially important when consent is revoked in another session.
+    setMedical([]); setDental([]); setMessage('');
     try {
       const [m,d] = await Promise.all(['medical','dental'].map(t => axios.get(databaseUrl(`/patients/${patientID}/clinical-records/${t}`), { headers: authHeaders(), params: { purpose: 'patient record view' } })));
       setMedical(m.data.data || []); setDental(d.data.data || []);
     } catch (e) { setMessage(e.response?.data?.error?.message || 'Unable to load clinical records.'); }
   };
   useEffect(() => { load(); }, [patientID]);
+  useEffect(() => {
+    const revalidate = () => { if (document.visibilityState === 'visible') load(); };
+    window.addEventListener('focus', revalidate);
+    document.addEventListener('visibilitychange', revalidate);
+    return () => { window.removeEventListener('focus', revalidate); document.removeEventListener('visibilitychange', revalidate); };
+  }, [patientID]);
   const changeType = (value) => { setType(value); setForm(value === 'medical' ? emptyMedical : emptyDental); };
   const submit = async (e) => { e.preventDefault(); if (type === 'dental' && (!form.teeth.length || !form.surfaces.length)) { setMessage('Select at least one tooth and one surface, or Whole tooth.'); return; } setMessage('Saving…'); try { await axios.post(databaseUrl('/clinical-records'), { patientID, recordType: type, payload: form }, { headers: jsonHeaders({ 'Idempotency-Key':idempotencyKey.current }) }); idempotencyKey.current=crypto.randomUUID(); setMessage('Clinical record saved and anchored on Fabric.'); setForm(type === 'medical' ? emptyMedical : emptyDental); await load(); } catch (err) { setMessage(err.response?.data?.error?.message || 'Unable to save clinical record.'); } };
   const render = (title, records) => <div><h3 className="font-semibold text-lg">{title}</h3>{!records.length ? <p className="text-slate-500">No records available.</p> : records.map(r => <div key={r.recordID} className="border rounded p-3 my-2"><p className="text-xs font-mono break-all">{r.recordID} · SHA-256 {r.dataHash}</p>{Object.entries(r.payload || {}).map(([k,v]) => <p key={k}><strong>{k}:</strong> {Array.isArray(v) ? v.join(', ') : String(v)}</p>)}</div>)}</div>;

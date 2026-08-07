@@ -307,6 +307,27 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(JSON.parse(requestWrite.args[1].toString()).status).to.equal('REVOKED');
     });
 
+    it('denies a cross-clinic doctor after revocation even if a legacy assignment remains', async () => {
+        const ctx = context('doctor', 'Doctor1', 'Org1MSP', '1');
+        const patient = { patientID: 'Patient1', clinicID: 2, doctors: ['Doctor1'], sharedWith: ['Doctor1'] };
+        const doctor = { doctorID: 'Doctor1', clinicID: 1, isActive: true };
+        const revoked = { requestID: 'request-revoked', docType: 'accessRequest', workflowType: 'REFERRAL', doctorID: 'Doctor1', patientID: 'Patient1', dataOriginClinicID: 2, status: 'REVOKED' };
+        ctx.stub.getState.callsFake(async (key) => {
+            if (key === patient.patientID) return Buffer.from(JSON.stringify(patient));
+            if (key === doctor.doctorID) return Buffer.from(JSON.stringify(doctor));
+            return Buffer.alloc(0);
+        });
+        let yielded = false;
+        ctx.stub.getStateByRange.resolves({
+            next: sinon.stub().callsFake(async () => yielded ? { done: true } : (yielded = true, { done: false, value: { value: Buffer.from(JSON.stringify(revoked)) } })),
+            close: sinon.stub().resolves(),
+        });
+
+        await expectReject(contract.GetPatientData(ctx, 'Doctor1', 'Patient1'), 'has no active referral');
+        expect(ctx.stub.putState.called).to.equal(false);
+        expect(revoked.status).to.equal('REVOKED');
+    });
+
     it('grants scoped access without transferring the patient or replacing assigned doctors', async () => {
         const ctx = context('patient', 'Patient1', 'Org1MSP', '2');
         const request = { requestID: 'request-1', docType: 'accessRequest', workflowType: 'REFERRAL', doctorID: 'Doctor1', patientID: 'Patient1', dataType: 'Medical Records', status: 'PENDING_PATIENT_CONSENT' };
@@ -346,8 +367,9 @@ describe('Phase 2 chaincode identity enforcement', () => {
 
     it('automatically logs an authorized doctor clinical read with its access basis', async () => {
         const ctx = context('doctor', 'Doctor1');
-        const patient = { patientID:'Patient1', doctors:['Doctor1'] };
-        ctx.stub.getState.callsFake(async (key) => key === 'Patient1' ? Buffer.from(JSON.stringify(patient)) : Buffer.alloc(0));
+        const patient = { patientID:'Patient1', clinicID:1, doctors:['Doctor1'] };
+        const doctor = { doctorID:'Doctor1', clinicID:1, isActive:true };
+        ctx.stub.getState.callsFake(async (key) => key === 'Patient1' ? Buffer.from(JSON.stringify(patient)) : key === 'Doctor1' ? Buffer.from(JSON.stringify(doctor)) : Buffer.alloc(0));
 
         const result = JSON.parse(await contract.LogClinicalAccess(ctx, 'Patient1', 'dental', 'treatment planning'));
 
@@ -373,8 +395,8 @@ describe('Phase 2 chaincode identity enforcement', () => {
     it('allows an assigned doctor to write a medical record', async () => {
         const ctx = context('doctor', 'Doctor1');
         ctx.stub.getState.callsFake(async key => key === 'Patient1' ? Buffer.from(JSON.stringify({
-            patientID: 'Patient1', doctors: ['Doctor1'], sharedWith: [], medicalRecords: [],
-        })) : Buffer.alloc(0));
+            patientID: 'Patient1', clinicID: 1, doctors: ['Doctor1'], sharedWith: [], medicalRecords: [],
+        })) : key === 'Doctor1' ? Buffer.from(JSON.stringify({ doctorID:'Doctor1', clinicID:1, isActive:true })) : Buffer.alloc(0));
         const result = JSON.parse(await contract.AddMedicalRecord(ctx, 'Record1', 'Patient1', 'mysql:Clinical_Record/Record1', 'a'.repeat(64), 'Doctor1', '2026-07-12T00:00:00Z'));
         expect(result.recordType).to.equal('medical');
         expect(result).not.to.have.property('payload');
@@ -404,8 +426,8 @@ describe('Phase 2 chaincode identity enforcement', () => {
     it('stores only radiographic metadata and SHA-256 for an assigned doctor', async () => {
         const ctx = context('doctor', 'Doctor1');
         ctx.stub.getState.callsFake(async key => key === 'Patient1'
-            ? Buffer.from(JSON.stringify({ patientID: 'Patient1', doctors: ['Doctor1'], sharedWith: [] }))
-            : Buffer.alloc(0));
+            ? Buffer.from(JSON.stringify({ patientID: 'Patient1', clinicID:1, doctors: ['Doctor1'], sharedWith: [] }))
+            : key === 'Doctor1' ? Buffer.from(JSON.stringify({ doctorID:'Doctor1', clinicID:1, isActive:true })) : Buffer.alloc(0));
         const result = JSON.parse(await contract.AddDentalFileMetadata(
             ctx, 'file-1', 'Patient1', 'filesystem:file-1', 'scan.dcm', 'application/dicom', '12', 'a'.repeat(64), 'Doctor1', '2026-07-12T00:00:00Z'
         ));
