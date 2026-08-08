@@ -12,6 +12,7 @@ const {
 const { validateRadiographicFile } = require('./radiographicFileValidation');
 
 const app = express();
+app.disable('x-powered-by');
 const BLOCKCHAIN_API_URL = process.env.BLOCKCHAIN_API_URL?.replace(/\/+$/, '');
 const BLOCKCHAIN_INTERNAL_TOKEN = process.env.BLOCKCHAIN_INTERNAL_TOKEN;
 const PATIENT_ROLE_ID = 4;

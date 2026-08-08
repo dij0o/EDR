@@ -130,6 +130,10 @@ const cookie = (name, value, maxAge, httpOnly = true) => {
 const setWebSessionCookies = (res, session) => {
     res.append('Set-Cookie', cookie(ACCESS_COOKIE, session.accessToken, config.accessTtlMs));
     res.append('Set-Cookie', cookie(REFRESH_COOKIE, session.refreshToken, session.refreshExpires.getTime() - Date.now()));
+    // The double-submit CSRF token must be readable by the web client so it can
+    // echo the value in X-CSRF-Token. It contains no session credential; the
+    // access and refresh cookies remain HttpOnly. cookie() still enforces the
+    // __Host- prefix requirements, Secure, SameSite=Strict, and Path=/.
     res.append('Set-Cookie', cookie(CSRF_COOKIE, session.csrfToken, session.refreshExpires.getTime() - Date.now(), false));
 };
 

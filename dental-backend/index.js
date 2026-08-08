@@ -24,6 +24,7 @@ const {
 require('dotenv').config();
 
 const app = express();
+app.disable('x-powered-by');
 app.use(bodyParser.json());
 const blockchainInternalToken = process.env.BLOCKCHAIN_INTERNAL_TOKEN;
 
