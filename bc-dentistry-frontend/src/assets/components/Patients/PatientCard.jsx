@@ -41,7 +41,8 @@ const PatientCard = ({ patientId, fullName, age, gender, insurance, patient, onC
       const response = await fetch(databaseUrl(`/patients/${encodeURIComponent(patientId)}/assign`), { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ doctorID }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result?.error?.message || 'Assignment failed');
-      setDialog(''); setStatus({ busy: false, error: '', notice: result?.message || 'Doctor assigned successfully.' }); onChanged?.();
+      const message = result?.message || 'Doctor assigned successfully.';
+      setDialog(''); setStatus({ busy: false, error: '', notice: message }); onChanged?.({ ...result, message });
     } catch (error) { setStatus({ busy: false, error: error.message, notice: '' }); }
   };
 
@@ -52,7 +53,8 @@ const PatientCard = ({ patientId, fullName, age, gender, insurance, patient, onC
       const response = await fetch(databaseUrl(`/patients/${encodeURIComponent(patientId)}/unassign`), { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ doctorID }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result?.error?.message || 'Unassignment failed');
-      setDialog(''); setStatus({ busy: false, error: '', notice: result?.message || 'Doctor unassigned successfully.' }); onChanged?.();
+      const message = result?.message || 'Doctor unassigned successfully.';
+      setDialog(''); setStatus({ busy: false, error: '', notice: message }); onChanged?.({ ...result, message });
     } catch (error) { setStatus({ busy: false, error: error.message, notice: '' }); }
   };
 

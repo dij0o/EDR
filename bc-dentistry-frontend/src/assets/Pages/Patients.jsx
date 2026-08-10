@@ -10,6 +10,7 @@ const Patients = () => {
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [isAddPatientOpen, setAddPatientOpen] = useState(false);
   const [isRequestAccessOpen, setRequestAccessOpen] = useState(false);
   const addPatientButton = useRef(null);
@@ -32,6 +33,11 @@ const Patients = () => {
 
   useEffect(() => { fetchPatients(); }, [fetchPatients]);
 
+  const handlePatientChanged = async (result) => {
+    if (result?.message) setNotice(result.message);
+    await fetchPatients();
+  };
+
   if (!user) return <div className="w-full rounded-xl border p-4 text-center">Please log in to view patients.</div>;
 
   return <div id="Patients" className="w-full">
@@ -42,7 +48,11 @@ const Patients = () => {
         {role === 'doctor' && <button type="button" onClick={() => setRequestAccessOpen(true)} className="rounded-md bg-blue-900 px-4 py-2 font-semibold text-white">Request cross-clinic data access</button>}
       </div>
       {error && <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-red-800">{error}</div>}
-      {loading ? <div role="status" className="rounded-xl border p-4 text-center">Loading patients…</div> : <PatientsCards patients={patients} role={role} isAddPatientOpen={isAddPatientOpen} onCloseAddPatient={closeAddPatient} onChanged={fetchPatients} />}
+      {notice && <div role="status" className="rounded-xl border border-green-300 bg-green-50 p-4 text-green-900">{notice}</div>}
+      {loading && patients.length === 0 ? <div role="status" className="rounded-xl border p-4 text-center">Loading patients…</div> : <>
+        {loading && <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">Refreshing patient assignments…</div>}
+        <PatientsCards patients={patients} role={role} isAddPatientOpen={isAddPatientOpen} onCloseAddPatient={closeAddPatient} onChanged={handlePatientChanged} />
+      </>}
       {isRequestAccessOpen && <RequestDataAccessDialog onClose={() => setRequestAccessOpen(false)} />}
     </div>
   </div>;
