@@ -44,4 +44,6 @@ test('cross-clinic requests require patient data at the holding clinic', () => {
   assert.match(chaincode, /patientClinicIDs\.includes\(originClinicID\)/);
   assert.match(chaincode, /does not have data in Clinic/);
   assert.match(chaincode, /cross-clinic access is not required/);
+  assert.match(blockchainApi, /PATIENT_HAS_NO_DATA_IN_REQUESTED_CLINIC/);
+  assert.match(blockchainApi, /patientHasNoDataAtClinic \? 409/);
 });

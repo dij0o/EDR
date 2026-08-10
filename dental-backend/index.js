@@ -231,16 +231,18 @@ const getConnectionProfile = () => {
 
 const sendFabricError = (res, error) => {
     const message = error.message || String(error);
+    const patientHasNoDataAtClinic = /does not have data in Clinic/i.test(message);
     const statusCode = error.statusCode
         || (/access denied|not authorized|forbidden|requires .* role|does not match/i.test(message) ? 403 : null)
         || (/does not exist|not found/i.test(message) ? 404 : null)
+        || (patientHasNoDataAtClinic ? 409 : null)
         || (/cannot be approved at this stage|not waiting for patient consent|cannot be rejected at this stage|does not have active consent|already (?:processed|approved|rejected|revoked)|was rejected and cannot be resubmitted/i.test(message) ? 409 : null)
         || (/missing required|cannot be rejected at this stage/i.test(message) ? 400 : null)
         || 500;
     res.status(statusCode).json({
         success: false,
         error: {
-            code: error.code || (statusCode === 409 ? 'ALREADY_PROCESSED' : statusCode === 400 ? 'VALIDATION_ERROR' : statusCode === 403 ? 'FORBIDDEN' : 'BLOCKCHAIN_ERROR'),
+            code: error.code || (patientHasNoDataAtClinic ? 'PATIENT_HAS_NO_DATA_IN_REQUESTED_CLINIC' : statusCode === 409 ? 'ALREADY_PROCESSED' : statusCode === 400 ? 'VALIDATION_ERROR' : statusCode === 403 ? 'FORBIDDEN' : 'BLOCKCHAIN_ERROR'),
             message
         }
     });
