@@ -10,6 +10,7 @@ const {
     setWebSessionCookies, clearWebSessionCookies, parseCookies, base64UrlSecret,
 } = require('./sessionService');
 const { validateRadiographicFile } = require('./radiographicFileValidation');
+const { normalizeDentalCoding } = require('./dentalCoding');
 
 const app = express();
 app.disable('x-powered-by');
@@ -121,33 +122,6 @@ const validateBoundedJson = (value, label, { maxBytes = 65536, maxDepth = 6, max
         }
     };
     visit(value, 0);
-};
-const FDI_TOOTH_CODES = new Set([
-    ...[1,2,3,4].flatMap((quadrant) => Array.from({ length:8 }, (_, index) => `${quadrant}${index + 1}`)),
-    ...[5,6,7,8].flatMap((quadrant) => Array.from({ length:5 }, (_, index) => `${quadrant}${index + 1}`)),
-]);
-const DENTAL_SURFACES = new Set(['W','M','D','O','I','B','L','P','F']);
-const normalizeDentalCoding = (payload) => {
-    const legacyTooth = payload.tooth !== undefined && payload.teeth === undefined;
-    const teeth = (Array.isArray(payload.teeth) ? payload.teeth : [payload.teeth ?? payload.tooth])
-        .filter((value) => value !== undefined && value !== null && value !== '').map((value) => String(value).trim());
-    if (!teeth.length) throw validationError('DENTAL_TOOTH_REQUIRED', 'Select at least one tooth using FDI notation');
-    if (teeth.length > 32) throw validationError('DENTAL_TOOTH_LIMIT', 'A dental chart entry may include at most 32 teeth');
-    const invalidTeeth = teeth.filter((value) => !FDI_TOOTH_CODES.has(value));
-    if (invalidTeeth.length) throw validationError('INVALID_DENTAL_TOOTH', `Invalid FDI tooth code: ${invalidTeeth.join(', ')}`);
-    const rawSurfaces = payload.surfaces ?? payload.surface ?? (legacyTooth ? ['W'] : []);
-    const surfaces = (Array.isArray(rawSurfaces) ? rawSurfaces : [rawSurfaces])
-        .filter((value) => value !== undefined && value !== null && value !== '').map((value) => String(value).trim().toUpperCase());
-    if (!surfaces.length) throw validationError('DENTAL_SURFACE_REQUIRED', 'Select at least one dental surface or Whole tooth');
-    if (surfaces.length > DENTAL_SURFACES.size) throw validationError('DENTAL_SURFACE_LIMIT', 'Too many dental surfaces were selected');
-    const invalidSurfaces = surfaces.filter((value) => !DENTAL_SURFACES.has(value));
-    if (invalidSurfaces.length) throw validationError('INVALID_DENTAL_SURFACE', `Invalid dental surface: ${invalidSurfaces.join(', ')}`);
-    if (surfaces.includes('W') && surfaces.length > 1) throw validationError('DENTAL_SURFACE_CONFLICT', 'Whole tooth cannot be combined with individual surfaces');
-    const surfaceOrder = [...DENTAL_SURFACES];
-    return { ...payload,
-        teeth:[...new Set(teeth)].sort((left,right) => Number(left) - Number(right)),
-        surfaces:[...new Set(surfaces)].sort((left,right) => surfaceOrder.indexOf(left) - surfaceOrder.indexOf(right)),
-        tooth:undefined, surface:undefined };
 };
 const validateClinicalPayload = (recordType, payload) => {
     if (!['medical', 'dental'].includes(recordType)) { const error = new Error('recordType must be medical or dental'); error.statusCode = 400; throw error; }
