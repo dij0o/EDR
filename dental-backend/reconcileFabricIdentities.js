@@ -6,6 +6,7 @@ const { Gateway, Wallets } = require('fabric-network');
 const crypto = require('crypto');
 const path = require('path');
 const { enrollIdentity } = require('./fabricEnrollment');
+const { submitWithMvccRetry } = require('./fabricTransactionRetry');
 
 const jsonValue = (value, fallback) => {
     if (value === null || value === undefined) return fallback;
@@ -33,6 +34,7 @@ const patientHash = (patient) => crypto.createHash('sha256').update(JSON.stringi
 })).digest('hex');
 
 const main = async () => {
+    const reconciliationId = `fabric-reconciliation-${crypto.randomUUID()}`;
     const connection = await mysql.createConnection({
         host: process.env.DB_HOST || '127.0.0.1',
         port: Number(process.env.DB_PORT || 3306),
@@ -146,12 +148,18 @@ const main = async () => {
                 });
                 const network = await gateway.getNetwork(process.env.FABRIC_CHANNEL || 'mychannel');
                 const contract = network.getContract(process.env.FABRIC_CHAINCODE || 'basic');
+                const submitReconciliationTransaction = (transactionName, ...args) => submitWithMvccRetry(
+                    contract,
+                    transactionName,
+                    args,
+                    { correlationId: reconciliationId, actorRole: 'admin', clinicId: clinicID },
+                );
                 for (const patient of patients.filter((row) => String(row.clinicID) === String(clinicID))) {
                     try {
                         await contract.evaluateTransaction('ReadPatient', String(patient.actorID));
                     } catch (error) {
                         if (!String(error.message || error).includes('does not exist')) throw error;
-                        await contract.submitTransaction(
+                        await submitReconciliationTransaction(
                             'AddPatientMetadata',
                             String(patient.actorID),
                             String(clinicID),
@@ -164,7 +172,7 @@ const main = async () => {
                 }
                 for (const assignment of clinicAssignments) {
                     try {
-                        await contract.submitTransaction(
+                        await submitReconciliationTransaction(
                             'assignPatientToDoctor',
                             String(assignment.patientID),
                             String(assignment.doctorID),
@@ -182,7 +190,7 @@ const main = async () => {
                 for (const patient of patients.filter((row) => String(row.clinicID) === String(clinicID))) {
                     try {
                         const current = JSON.parse((await contract.evaluateTransaction('ReadPatient', String(patient.actorID))).toString());
-                        await contract.submitTransaction(
+                        await submitReconciliationTransaction(
                             'UpdatePatientMetadata',
                             String(patient.actorID),
                             String(clinicID),
@@ -206,7 +214,7 @@ const main = async () => {
                             current = JSON.parse((await contract.evaluateTransaction('ReadDoctor', String(doctor.actorID))).toString());
                         } catch (error) {
                             if (!String(error.message || error).includes('does not exist')) throw error;
-                            current = JSON.parse((await contract.submitTransaction(
+                            current = JSON.parse((await submitReconciliationTransaction(
                                 'addDoctor', String(doctor.actorID), String(doctor.firstName), String(doctor.lastName),
                                 String(doctor.emiratesID), String(doctor.speciality), String(doctor.worksAt), String(clinicID),
                                 String(doctor.email), String(doctor.contactNumber), String(doctor.licenseNumber),
@@ -214,7 +222,7 @@ const main = async () => {
                                 JSON.stringify(desiredPatientsByDoctor.get(String(doctor.actorID)) || []),
                             )).toString());
                         }
-                        await contract.submitTransaction(
+                        await submitReconciliationTransaction(
                             'UpdateDoctorInfo',
                             String(doctor.actorID),
                             String(current.firstName || ''),

@@ -53,7 +53,8 @@ test('actor retirement is coordinated and preserves ledger history', () => {
 test('reconciliation covers active clinic admins and missing doctor ledger actors', () => {
   assert.match(reconcile, /Admin\.Organization_ID AS clinicID/);
   assert.match(reconcile, /actorID: `AdminClinic\$\{row\.clinicID\}`/);
-  assert.match(reconcile, /contract\.submitTransaction\(\s*'addDoctor'/);
+  assert.match(reconcile, /submitReconciliationTransaction\(\s*'addDoctor'/);
+  assert.match(reconcile, /submitWithMvccRetry/);
   assert.match(reconcile, /User\.IsActive=1 AND Organization\.IsActive=1/);
 });
 
