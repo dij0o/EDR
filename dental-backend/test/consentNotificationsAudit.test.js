@@ -11,6 +11,7 @@ const mobileRequests = fs.readFileSync(path.resolve(__dirname, '..', '..', 'BC-D
 const mobileApproved = fs.readFileSync(path.resolve(__dirname, '..', '..', 'BC-Dentistry-Mobile-App', 'app', 'proceedRequests.jsx'), 'utf8');
 const doctorRequest = fs.readFileSync(path.resolve(__dirname, '..', '..', 'bc-dentistry-frontend', 'src', 'assets', 'components', 'Patients', 'RequestDataAccessDialog.jsx'), 'utf8');
 const applicationApi = fs.readFileSync(path.resolve(__dirname, '..', '..', 'backend', 'server.js'), 'utf8');
+const adminReview = fs.readFileSync(path.resolve(__dirname, '..', '..', 'bc-dentistry-frontend', 'src', 'assets', 'Sections', 'DataRequests', 'DataRequestsOrders.jsx'), 'utf8');
 
 test('access requests capture who, what, when, why, and notify admins', () => {
   assert.match(api, /requireFields\(req\.body, \['doctorID', 'patientID', 'dataOriginClinicID', 'dataType', 'purpose', 'expiresAt'\]\)/);
@@ -64,6 +65,18 @@ test('admin and patient decisions create notifications and support revocation', 
   assert.match(api, /submitTransaction\(\s*'RevokeConsent'/);
   assert.match(mobileApproved, /revokeConsent/);
   assert.match(mobileApproved, /\/patient\/revokeConsent/);
+});
+
+test('admin referral decisions remain visible and failures produce actionable notifications', () => {
+  assert.match(webRequests, /requests=\{allRequests\}/);
+  assert.match(webRequests, /requestState\.error/);
+  assert.match(adminReview, /Previously loaded requests remain visible and unchanged/);
+  assert.match(adminReview, /request\?\.status === 'PENDING_ADMIN_APPROVAL'/);
+  assert.match(adminReview, /onApprove=\{\(\) => handleApproveRequest/);
+  assert.match(adminReview, /onReject=\{\(\) =>/);
+  assert.match(adminReview, /remains pending/);
+  assert.match(adminReview, /role="alert"/);
+  assert.doesNotMatch(adminReview, /setOnHoldRequests/);
 });
 
 test('direct patient reads and patient consent history use one protected ledger boundary', () => {

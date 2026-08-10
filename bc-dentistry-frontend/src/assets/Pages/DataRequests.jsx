@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import DataRequest from "../Sections/DataRequests/DataRequest.jsx";
 import DataRequestsOrders from "../Sections/DataRequests/DataRequestsOrders.jsx";
-import { authHeaders, databaseUrl } from "../config/api.js";
+import { apiPayloadMessage, authHeaders, databaseUrl } from "../config/api.js";
 import { getStoredUser } from "../utils/auth.js";
 import { useSearchParams } from "react-router-dom";
 import Select from "react-select";
@@ -25,6 +25,7 @@ const formatRequest = (request) => ({
 const DataRequests = () => {
     const [allRequests, setAllRequests] = useState([]);
     const [refreshKey, setRefreshKey] = useState(0);
+    const [requestState, setRequestState] = useState({ loading: true, error: '' });
     const [auditPatientID, setAuditPatientID] = useState("");
     const [auditPatients, setAuditPatients] = useState([]);
     const [auditLogs, setAuditLogs] = useState([]);
@@ -38,19 +39,23 @@ const DataRequests = () => {
         const fetchAllRequests = async () => {
             if (!adminClinicID) return;
 
+            setRequestState((state) => ({ ...state, loading: true, error: '' }));
             try {
                 const response = await fetch(databaseUrl(`/getRequestsForAdmin/${adminClinicID}`), {
                     headers: authHeaders(),
                 });
-                const data = await response.json();
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(apiPayloadMessage(data, 'Unable to load the clinic referral queue.'));
                 const requests = data.data || data;
                 if (Array.isArray(requests)) {
                     setAllRequests(requests.map(formatRequest));
+                    setRequestState({ loading: false, error: '' });
                 } else {
-                    console.error("Unexpected response format:", data);
+                    throw new Error('The referral service returned an invalid response.');
                 }
             } catch (error) {
                 console.error("Failed to fetch all requests:", error);
+                setRequestState({ loading: false, error: error.message || 'Unable to load the clinic referral queue.' });
             }
         };
 
@@ -94,13 +99,25 @@ const DataRequests = () => {
         }
     };
 
+    const handleRequestChanged = (result) => {
+        setAllRequests((requests) => requests.map((request) => request.requestId === result.requestID ? {
+            ...request,
+            status: result.status,
+            description: request.description.replace(/Status:.*$/m, `Status: ${String(result.status).replace(/_/g, ' ')}`),
+            data: { ...request.data, request: { ...request.data.request, ...result } },
+        } : request));
+        setRefreshKey((value) => value + 1);
+    };
+
     if (!adminClinicID) {
         return <div className="w-full border rounded-xl p-4 text-center">Please log in as an admin to view data requests.</div>;
     }
 
     return (
         <div id="DataRequests" className="my-6 px-0">
-            <div className="sectionss grid grid-cols-2 gap-x-8" style={{gridTemplateColumns: '3fr 1fr'}}>
+            <DataRequestsOrders requests={allRequests} loading={requestState.loading} loadError={requestState.error}
+                onRetry={() => setRefreshKey((value) => value + 1)} onChanged={handleRequestChanged} />
+            <div className="sectionss grid gap-8 xl:grid-cols-[3fr_1fr]">
                 <div className="bg-white p-6 rounded-xl border">
                     <h2 className="text-3xl font-bold mb-7">{`Data Requests - ${allRequests.length}`}</h2>
                     <div className="data-requests-section grid grid-cols-2 xl:grid-cols-3 3xl:grid-cols-4 gap-8">
@@ -117,12 +134,13 @@ const DataRequests = () => {
                                 data={request.data}
                                 highlighted={request.requestId === focusedRequestID}
                             />
-                        )) : <p className="text-gray-600 text-sm">No data sharing requests found.</p>}
+                        )) : requestState.loading ? <p className="text-gray-600 text-sm">Loading data sharing requests...</p>
+                            : requestState.error ? <p className="text-red-700 text-sm">The request list is unavailable. Use Retry above; no request has been removed or updated.</p>
+                                : <p className="text-gray-600 text-sm">No data sharing requests found.</p>}
                     </div>
                 </div>
 
-                <div className="col-span-1">
-                    <DataRequestsOrders onChanged={() => setRefreshKey((value) => value + 1)} />
+                <div>
                     <div className="mt-6 p-6 bg-white rounded-xl border">
                         <h2 className="text-2xl font-bold mb-4">Access Audit</h2>
                         <div className="flex gap-2">
