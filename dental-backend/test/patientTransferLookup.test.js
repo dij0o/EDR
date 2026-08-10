@@ -39,16 +39,18 @@ test('referral lookup uses an exact familiar identifier and returns no patient d
   assert.match(source, /PatientUser\.Contact_Number=\?/);
   assert.match(source, /Patient\.Emirates_ID=\?/);
   assert.match(source, /patientID:rows\[0\]\.Blockchain_ID/);
-  assert.match(source, /dataOriginClinicID:Number\(rows\[0\]\.Clinic_ID\)/);
+  assert.match(source, /\? Number\(rows\[0\]\.Clinic_ID\) : Number\(req\.body\.dataOriginClinicID\)/);
   assert.doesNotMatch(source, /First_Name|Last_Name/);
 });
 
-test('canonical request API derives current clinic and prevents client tenant override', () => {
+test('canonical request API derives the normal clinic but permits explicit negative-test input for Fabric validation', () => {
   const start = api.indexOf("app.post(['/requestDataAccess', '/requestAccess']");
   const source = api.slice(start, api.indexOf("app.get('/getAllRequestsForPatient", start));
-  assert.match(source, /dataOriginClinicID:Number\(rows\[0\]\.Clinic_ID\)/);
+  assert.match(source, /const dataOriginClinicID = req\.body\.dataOriginClinicID/);
+  assert.match(source, /INVALID_DATA_ORIGIN_CLINIC_ID/);
+  assert.match(source, /dataOriginClinicID,/);
   assert.match(source, /doctorID:req\.user\.blockchainID/);
   assert.match(source, /DATA_ACCESS_NOT_REQUIRED/);
-  assert.match(source, /DATA_ORIGIN_CLINIC_MISMATCH/);
+  assert.doesNotMatch(source, /DATA_ORIGIN_CLINIC_MISMATCH/);
   assert.match(source, /REQUEST_PURPOSE_TOO_LONG/);
 });

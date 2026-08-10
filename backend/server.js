@@ -1814,11 +1814,11 @@ app.post(['/requestDataAccess', '/requestAccess'], authenticateToken, requireRol
             WHERE ${req.body.patientID ? 'Patient.Blockchain_ID=?' : lookupType === 'email' ? 'LOWER(PatientUser.Email)=LOWER(?)' : lookupType === 'phone' ? 'PatientUser.Contact_Number=?' : 'Patient.Emirates_ID=?'} LIMIT 2`, [req.user.blockchainID,req.body.patientID || lookupValue]);
         if (rows.length !== 1) return sendApiError(res,404,'PATIENT_NOT_FOUND','No unique active patient matched the supplied details');
         if (Number(rows[0].Clinic_ID) === Number(rows[0].Doctor_Clinic_ID)) return sendApiError(res,409,'DATA_ACCESS_NOT_REQUIRED','This patient belongs to your clinic; use the normal assigned-patient workflow instead');
-        if (req.body.dataOriginClinicID !== undefined && Number(req.body.dataOriginClinicID) !== Number(rows[0].Clinic_ID)) {
-            return sendApiError(res, 409, 'DATA_ORIGIN_CLINIC_MISMATCH', `Patient data is held by Clinic ${rows[0].Clinic_ID}, not Clinic ${req.body.dataOriginClinicID}`);
-        }
+        const dataOriginClinicID = req.body.dataOriginClinicID === undefined || req.body.dataOriginClinicID === null || req.body.dataOriginClinicID === ''
+            ? Number(rows[0].Clinic_ID) : Number(req.body.dataOriginClinicID);
+        if (!Number.isSafeInteger(dataOriginClinicID) || dataOriginClinicID <= 0) return sendApiError(res,400,'INVALID_DATA_ORIGIN_CLINIC_ID','dataOriginClinicID must be a positive integer');
         return relayBlockchainJson(req, res, '/requestDataAccess', 'POST', {
-            ...req.body, patientID:rows[0].Blockchain_ID, doctorID:req.user.blockchainID, dataOriginClinicID:Number(rows[0].Clinic_ID),
+            ...req.body, patientID:rows[0].Blockchain_ID, doctorID:req.user.blockchainID, dataOriginClinicID,
             patientLookupType:undefined, patientLookupValue:undefined,
         });
     } catch (error) { return sendApiError(res,error.statusCode||500,error.code||'DATA_ACCESS_REQUEST_FAILED',error.message); }

@@ -166,6 +166,23 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(ctx.stub.setEvent.calledWith('AccessRequestCreated')).to.equal(true);
     });
 
+    it('rejects a request for a clinic where the patient has no data without writing ledger state', async () => {
+        const ctx = context('doctor', 'Doctor1', 'Org1MSP', '1');
+        const doctor = { doctorID:'Doctor1', firstName:'Alice', lastName:'Wong', clinicID:1, worksAt:'Clinic 1' };
+        const patient = { patientID:'Patient1', clinicID:2, clinicIDs:[2], doctors:['Doctor2'], sharedWith:[] };
+        ctx.stub.getState.callsFake(async (key) => {
+            if (key === 'Doctor1') return Buffer.from(JSON.stringify(doctor));
+            if (key === 'Patient1') return Buffer.from(JSON.stringify(patient));
+            return Buffer.alloc(0);
+        });
+        await expectReject(
+            contract.RequestDataAccess(ctx, 'Doctor1', 'Patient1', '999', 'Medical Records', 'Negative test', '{}'),
+            'Patient Patient1 does not have data in Clinic 999'
+        );
+        expect(ctx.stub.putState.called).to.equal(false);
+        expect(ctx.stub.setEvent.called).to.equal(false);
+    });
+
     it('reuses one active referral across record scopes for the same care relationship', async () => {
         const ctx = context('doctor', 'Doctor1', 'Org1MSP', '1');
         const doctor = { doctorID: 'Doctor1', firstName: 'Alice', lastName: 'Wong', clinicID: 1, worksAt: 'Clinic 1' };
