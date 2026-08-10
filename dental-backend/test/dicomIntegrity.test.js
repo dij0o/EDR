@@ -63,8 +63,17 @@ test('upload, on-chain metadata and access routes are source guarded', () => {
   assert.match(api, /storageReference: `filesystem:\$\{fileID\}`/);
   assert.match(chaincode, /_requirePatientRecordAccess\(ctx, patientID, patient, 'dicom', 'doctor'\)/);
   assert.match(chaincode, /sha256: sha256\.toLowerCase\(\)/);
+  assert.match(chaincode, /CONTENT_REFERENCE_REQUIRED/);
+  assert.match(chaincode, /normalizedReference !== `filesystem:\$\{normalizedFileID\}`/);
   const metadataTransaction = chaincode.match(/async AddDentalFileMetadata[\s\S]*?async addDentalFile/)[0];
   assert.doesNotMatch(metadataTransaction, /fileContent|fileBytes|base64/);
+});
+
+test('web proxy accepts normal DICOM study sizes without bypassing API validation', () => {
+  const nginx = fs.readFileSync(path.resolve(__dirname, '..', '..', 'bc-dentistry-frontend', 'nginx.conf'), 'utf8');
+  assert.match(nginx, /location \/api\/database\/ \{[\s\S]*client_max_body_size 512m;/);
+  assert.match(nginx, /proxy_request_buffering off;/);
+  assert.match(nginx, /proxy_read_timeout 300s;/);
 });
 
 test('authorized content streaming verifies integrity and refuses unsafe storage', () => {

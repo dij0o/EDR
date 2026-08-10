@@ -508,6 +508,23 @@ describe('Phase 2 chaincode identity enforcement', () => {
         ), 'Doctor Doctor2 has no active referral for dicom of patient Patient1');
     });
 
+    it('rejects incomplete radiographic metadata before creating ledger state', async () => {
+        const ctx = context('doctor', 'Doctor1');
+        ctx.stub.getState.callsFake(async key => key === 'Patient1'
+            ? Buffer.from(JSON.stringify({ patientID:'Patient1', clinicID:1, doctors:['Doctor1'], sharedWith:[] }))
+            : key === 'Doctor1' ? Buffer.from(JSON.stringify({ doctorID:'Doctor1', clinicID:1, isActive:true })) : Buffer.alloc(0));
+        await expectReject(contract.AddDentalFileMetadata(
+            ctx, 'file-empty-ref', 'Patient1', '', 'scan.dcm', 'application/dicom', '12', 'a'.repeat(64), 'Doctor1', '2026-07-12T00:00:00Z'
+        ), 'CONTENT_REFERENCE_REQUIRED');
+        await expectReject(contract.AddDentalFileMetadata(
+            ctx, 'file-empty-hash', 'Patient1', 'filesystem:file-empty-hash', 'scan.dcm', 'application/dicom', '12', '', 'Doctor1', '2026-07-12T00:00:00Z'
+        ), 'SHA-256 hash must contain exactly 64');
+        await expectReject(contract.AddDentalFileMetadata(
+            ctx, 'file-bad-ref', 'Patient1', 'filesystem:other-file', 'scan.dcm', 'application/dicom', '12', 'a'.repeat(64), 'Doctor1', '2026-07-12T00:00:00Z'
+        ), 'INVALID_CONTENT_REFERENCE');
+        expect(ctx.stub.putState.called).to.equal(false);
+    });
+
     it('closes an active referral and records the completion summary', async () => {
         const ctx = context('doctor', 'Doctor1');
         const request = { requestID:'request-1', docType:'accessRequest', workflowType:'REFERRAL', doctorID:'Doctor1', patientID:'Patient1', dataOriginClinicID:2, status:'ACTIVE' };

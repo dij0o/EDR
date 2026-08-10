@@ -2196,6 +2196,17 @@ class DentalRecordSharing extends Contract {
     // Store only immutable radiographic file metadata on-chain. File bytes remain off-chain.
     async AddDentalFileMetadata(ctx, fileID, patientID, storageReference, fileName, mediaType, fileSize, sha256, uploaderID, uploadedAt) {
         this._requireActor(ctx, uploaderID, 'doctor');
+        const normalizedFileID = String(fileID || '').trim();
+        const normalizedReference = String(storageReference || '').trim();
+        const normalizedFileName = String(fileName || '').trim();
+        const normalizedMediaType = String(mediaType || '').trim().toLowerCase();
+        const normalizedFileSize = Number(fileSize);
+        if (!normalizedFileID) throw new Error('FILE_ID_REQUIRED: Radiographic file ID is required');
+        if (!normalizedReference) throw new Error('CONTENT_REFERENCE_REQUIRED: Off-chain storage reference/file path is required');
+        if (normalizedReference !== `filesystem:${normalizedFileID}`) throw new Error('INVALID_CONTENT_REFERENCE: Off-chain storage reference must match the radiographic file ID');
+        if (!normalizedFileName || normalizedFileName.length > 255) throw new Error('INVALID_FILE_NAME: File name is required and must not exceed 255 characters');
+        if (!['application/dicom','image/jpeg','image/png'].includes(normalizedMediaType)) throw new Error('INVALID_MEDIA_TYPE: Radiographic media type must be DICOM, JPEG, or PNG');
+        if (!Number.isSafeInteger(normalizedFileSize) || normalizedFileSize <= 0) throw new Error('INVALID_FILE_SIZE: Radiographic file size must be a positive integer');
         const exists = await this._actorExists(ctx, patientID);
         if (!exists) {
             throw new Error(`The patient ${patientID} does not exist`);
@@ -2208,27 +2219,27 @@ class DentalRecordSharing extends Contract {
         if (!/^[a-f0-9]{64}$/i.test(sha256)) {
             throw new Error('SHA-256 hash must contain exactly 64 hexadecimal characters');
         }
-        const existingBytes = await ctx.stub.getState(`RADFILE:${fileID}`);
+        const existingBytes = await ctx.stub.getState(`RADFILE:${normalizedFileID}`);
         if (existingBytes && existingBytes.length) {
             const existing = JSON.parse(existingBytes.toString());
-            if (existing.patientID !== patientID || existing.sha256 !== sha256.toLowerCase()) throw new Error(`IDEMPOTENCY_KEY_REUSED: Radiographic file ${fileID} already exists with different content`);
+            if (existing.patientID !== patientID || existing.sha256 !== sha256.toLowerCase()) throw new Error(`IDEMPOTENCY_KEY_REUSED: Radiographic file ${normalizedFileID} already exists with different content`);
             return JSON.stringify({ ...existing, alreadyProcessed:true, idempotent:true, message:'Radiographic file metadata was already committed' });
         }
         const fileEntry = {
             docType: 'radiographicFileMetadata',
-            fileID,
+            fileID: normalizedFileID,
             patientID,
-            storageReference,
-            fileName,
-            mediaType,
-            fileSize: Number(fileSize),
+            storageReference: normalizedReference,
+            fileName: normalizedFileName,
+            mediaType: normalizedMediaType,
+            fileSize: normalizedFileSize,
             sha256: sha256.toLowerCase(),
             uploaderID,
             uploadedAt
         };
-        await ctx.stub.putState(`RADFILE:${fileID}`, Buffer.from(JSON.stringify(fileEntry)));
+        await ctx.stub.putState(`RADFILE:${normalizedFileID}`, Buffer.from(JSON.stringify(fileEntry)));
         patient.dentalFileIDs = Array.isArray(patient.dentalFileIDs) ? patient.dentalFileIDs : [];
-        if (!patient.dentalFileIDs.includes(fileID)) patient.dentalFileIDs.push(fileID);
+        if (!patient.dentalFileIDs.includes(normalizedFileID)) patient.dentalFileIDs.push(normalizedFileID);
         await ctx.stub.putState(patientID, Buffer.from(JSON.stringify(patient)));
         return JSON.stringify(fileEntry);
     }
