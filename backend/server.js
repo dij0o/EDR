@@ -1668,6 +1668,31 @@ app.get(['/patients/:id/clinical-records/:recordType', '/getMedicalRecords/:id',
     } catch (error) { return sendApiError(res, error.statusCode || 500, 'CLINICAL_RECORD_READ_FAILED', error.message); }
 });
 
+app.get('/clinical-records/:recordID/verify-integrity', authenticateToken, requireRoles('doctor', 'patient'), async (req, res) => {
+    try {
+        const rows = await query('SELECT * FROM Clinical_Record WHERE Record_ID=? LIMIT 1', [req.params.recordID]);
+        if (!rows.length) return sendApiError(res, 404, 'CLINICAL_RECORD_NOT_FOUND', 'Clinical record not found');
+        const row = rows[0];
+        const payload = typeof row.Payload === 'string' ? JSON.parse(row.Payload) : row.Payload;
+        const currentHash = clinicalHash(payload);
+        const ledgerResult = await callBlockchain(req,
+            `/clinical-records/${encodeURIComponent(row.Patient_Blockchain_ID)}/${encodeURIComponent(row.Record_Type)}?purpose=${encodeURIComponent('clinical record integrity verification')}`, 'GET');
+        const ledgerRecords = Array.isArray(ledgerResult) ? ledgerResult : (ledgerResult.records || []);
+        const ledgerRecord = ledgerRecords.find((item) => String(item.recordID) === String(row.Record_ID));
+        const storedHash = String(row.Data_Hash || '').toLowerCase();
+        const onChainHash = String(ledgerRecord?.dataHash || '').toLowerCase() || null;
+        const matches = Boolean(onChainHash) && currentHash === storedHash && currentHash === onChainHash;
+        return res.json({ success: true, data: {
+            recordID: row.Record_ID, algorithm: 'SHA-256', status: matches ? 'verified' : 'mismatch', matches,
+            currentHash, storedHash, onChainHash, verifiedAt: new Date().toISOString(),
+        }, message: matches
+            ? 'Clinical record integrity verified against the on-chain hash'
+            : 'Clinical record integrity mismatch detected; the record remains visible for investigation' });
+    } catch (error) {
+        return sendApiError(res, error.statusCode || 500, 'CLINICAL_RECORD_INTEGRITY_CHECK_FAILED', error.message);
+    }
+});
+
 app.post('/patients/:id/unassign', authenticateToken, requireRoles('admin'), async (req, res) => {
     let connection; let operationID;
     try {
