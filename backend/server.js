@@ -1669,6 +1669,9 @@ app.get(['/patients/:id/clinical-records/:recordType', '/getMedicalRecords/:id',
 });
 
 app.get('/clinical-records/:recordID/verify-integrity', authenticateToken, requireRoles('doctor', 'patient'), async (req, res) => {
+    const verificationID = crypto.randomUUID();
+    const correlationID = req.get('x-correlation-id') || crypto.randomUUID();
+    let audit = { recordID:req.params.recordID, currentHash:null, storedHash:null, onChainHash:null };
     try {
         const rows = await query('SELECT * FROM Clinical_Record WHERE Record_ID=? LIMIT 1', [req.params.recordID]);
         if (!rows.length) return sendApiError(res, 404, 'CLINICAL_RECORD_NOT_FOUND', 'Clinical record not found');
@@ -1682,15 +1685,49 @@ app.get('/clinical-records/:recordID/verify-integrity', authenticateToken, requi
         const storedHash = String(row.Data_Hash || '').toLowerCase();
         const onChainHash = String(ledgerRecord?.dataHash || '').toLowerCase() || null;
         const matches = Boolean(onChainHash) && currentHash === storedHash && currentHash === onChainHash;
+        audit = { recordID:row.Record_ID, currentHash, storedHash, onChainHash };
+        await query(`INSERT INTO Clinical_Record_Integrity_Log
+            (Verification_ID,Record_ID,Actor_User_ID,Actor_Blockchain_ID,Actor_Role,Correlation_ID,
+             Current_Hash,Stored_Hash,On_Chain_Hash,Result)
+            VALUES (?,?,?,?,?,?,?,?,?,?)`, [verificationID, row.Record_ID, req.user.id, req.user.blockchainID || null,
+            req.user.role, correlationID, currentHash, storedHash, onChainHash, matches ? 'VERIFIED' : 'MISMATCH']);
+        console.info(JSON.stringify({ event:'CLINICAL_RECORD_INTEGRITY_VERIFICATION', verificationID,
+            recordID:row.Record_ID, actorID:req.user.id, actorRole:req.user.role, correlationID,
+            currentHash, storedHash, onChainHash, result:matches ? 'VERIFIED' : 'MISMATCH' }));
         return res.json({ success: true, data: {
-            recordID: row.Record_ID, algorithm: 'SHA-256', status: matches ? 'verified' : 'mismatch', matches,
+            verificationID, correlationID, recordID: row.Record_ID, algorithm: 'SHA-256', status: matches ? 'verified' : 'mismatch', matches,
             currentHash, storedHash, onChainHash, verifiedAt: new Date().toISOString(),
         }, message: matches
             ? 'Clinical record integrity verified against the on-chain hash'
             : 'Clinical record integrity mismatch detected; the record remains visible for investigation' });
     } catch (error) {
+        await query(`INSERT INTO Clinical_Record_Integrity_Log
+            (Verification_ID,Record_ID,Actor_User_ID,Actor_Blockchain_ID,Actor_Role,Correlation_ID,
+             Current_Hash,Stored_Hash,On_Chain_Hash,Result,Error_Code,Error_Message)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, [verificationID, audit.recordID, req.user.id, req.user.blockchainID || null,
+            req.user.role, correlationID, audit.currentHash, audit.storedHash, audit.onChainHash, 'ERROR',
+            error.code || 'CLINICAL_RECORD_INTEGRITY_CHECK_FAILED', String(error.message || error).slice(0, 1000)]).catch((logError) => {
+            console.error(JSON.stringify({ event:'CLINICAL_RECORD_INTEGRITY_AUDIT_WRITE_FAILED', verificationID,
+                recordID:audit.recordID, correlationID, error:String(logError.message || logError).slice(0, 1000) }));
+        });
+        console.error(JSON.stringify({ event:'CLINICAL_RECORD_INTEGRITY_VERIFICATION', verificationID,
+            recordID:audit.recordID, actorID:req.user.id, actorRole:req.user.role, correlationID,
+            currentHash:audit.currentHash, storedHash:audit.storedHash, onChainHash:audit.onChainHash,
+            result:'ERROR', errorCode:error.code || 'CLINICAL_RECORD_INTEGRITY_CHECK_FAILED' }));
         return sendApiError(res, error.statusCode || 500, 'CLINICAL_RECORD_INTEGRITY_CHECK_FAILED', error.message);
     }
+});
+
+app.get('/audit/clinical-record-integrity/:recordID', authenticateToken, requireRoles('admin', 'system'), async (req, res) => {
+    try {
+        const rows = await query(`SELECT Verification_ID AS verificationID,Record_ID AS recordID,
+            Actor_User_ID AS actorUserID,Actor_Blockchain_ID AS actorBlockchainID,Actor_Role AS actorRole,
+            Correlation_ID AS correlationID,Current_Hash AS currentHash,Stored_Hash AS storedHash,
+            On_Chain_Hash AS onChainHash,Result AS result,Error_Code AS errorCode,
+            Error_Message AS errorMessage,Verified_At AS verifiedAt
+            FROM Clinical_Record_Integrity_Log WHERE Record_ID=? ORDER BY Verified_At DESC`, [req.params.recordID]);
+        return res.json({ success:true, data:rows });
+    } catch (error) { return sendApiError(res, 500, 'CLINICAL_RECORD_INTEGRITY_AUDIT_READ_FAILED', error.message); }
 });
 
 app.post('/patients/:id/unassign', authenticateToken, requireRoles('admin'), async (req, res) => {
