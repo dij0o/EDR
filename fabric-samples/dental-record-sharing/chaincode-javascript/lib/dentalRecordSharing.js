@@ -949,11 +949,13 @@ class DentalRecordSharing extends Contract {
     }
 
 
-    async GetPatientsByClinicPage(ctx, clinicID, pageSize = '100', bookmark = '') {
+    async GetPatientsByClinicPage(ctx, clinicID, pageSize, bookmark) {
         const identity = this._requireRole(ctx, 'admin', 'system');
         if (identity.role === 'admin') {
             this._requireAdminClinic(ctx, clinicID);
         }
+        pageSize = pageSize || '100';
+        bookmark = bookmark || '';
         return JSON.stringify(await this._queryIndexPage(ctx, 'EDR_CLINIC_ACTOR', [clinicID, 'patient'], pageSize, bookmark));
     }
 
@@ -1111,8 +1113,10 @@ class DentalRecordSharing extends Contract {
    
 
     // GetAllDoctors returns all doctors found in the world state.
-    async GetAllDoctorsPage(ctx, pageSize = '100', bookmark = '') {
+    async GetAllDoctorsPage(ctx, pageSize, bookmark) {
         this._requireRole(ctx, 'admin', 'system');
+        pageSize = pageSize || '100';
+        bookmark = bookmark || '';
         return JSON.stringify(await this._queryIndexPage(ctx, 'EDR_DOC_TYPE', ['doctor'], pageSize, bookmark));
     }
 
@@ -1122,8 +1126,10 @@ class DentalRecordSharing extends Contract {
     }
 
     // GetAllPatients returns all patients found in the world state.
-    async GetAllPatientsPage(ctx, pageSize = '100', bookmark = '') {
+    async GetAllPatientsPage(ctx, pageSize, bookmark) {
         this._requireRole(ctx, 'admin', 'system');
+        pageSize = pageSize || '100';
+        bookmark = bookmark || '';
         return JSON.stringify(await this._queryIndexPage(ctx, 'EDR_DOC_TYPE', ['patient'], pageSize, bookmark));
     }
 
@@ -1746,8 +1752,10 @@ class DentalRecordSharing extends Contract {
         };
     }
 
-    async GetPendingRequestsForPatientPage(ctx, patientID, pageSize = '100', bookmark = '') {
+    async GetPendingRequestsForPatientPage(ctx, patientID, pageSize, bookmark) {
         this._requireActor(ctx, patientID, 'patient');
+        pageSize = pageSize || '100';
+        bookmark = bookmark || '';
         const page = await this._queryIndexPage(ctx, 'EDR_ACCESS_PATIENT', [patientID], pageSize, bookmark);
         page.records = page.records.filter((record) => record.status === 'PENDING_PATIENT_CONSENT');
         page.fetchedRecordsCount = page.records.length;
@@ -1759,8 +1767,10 @@ class DentalRecordSharing extends Contract {
         return JSON.stringify(page.records);
     }
     // The function retrieves all requests fro the patientID from the ledger.
-    async GetProcessedRequestsForPatientPage(ctx, patientID, pageSize = '100', bookmark = '') {
+    async GetProcessedRequestsForPatientPage(ctx, patientID, pageSize, bookmark) {
         this._requireActor(ctx, patientID, 'patient');
+        pageSize = pageSize || '100';
+        bookmark = bookmark || '';
         const page = await this._queryIndexPage(ctx, 'EDR_ACCESS_PATIENT', [patientID], pageSize, bookmark);
         page.records = page.records.filter((record) => ['ACTIVE', 'COMPLETED', 'REVOKED', 'EXPIRED', 'REJECTED'].includes(record.status));
         page.fetchedRecordsCount = page.records.length;
@@ -1771,8 +1781,10 @@ class DentalRecordSharing extends Contract {
         const page = JSON.parse(await this.GetProcessedRequestsForPatientPage(ctx, patientID));
         return JSON.stringify(page.records);
     }
-    async GetAllRequestsForPatientPage(ctx, patientID, pageSize = '100', bookmark = '') {
+    async GetAllRequestsForPatientPage(ctx, patientID, pageSize, bookmark) {
         this._requireActor(ctx, patientID, 'patient');
+        pageSize = pageSize || '100';
+        bookmark = bookmark || '';
         const page = await this._queryIndexPage(ctx, 'EDR_ACCESS_PATIENT', [patientID], pageSize, bookmark);
         page.records = page.records.map((record) => record.status === 'ACTIVE'
             ? { ...record, status:'CONSENT_GRANTED', lifecycleStatus:'ACTIVE' }
@@ -1785,8 +1797,10 @@ class DentalRecordSharing extends Contract {
         return JSON.stringify(page.records);
     }
 
-    async GetRequestsForDoctorPage(ctx, doctorID, pageSize = '100', bookmark = '') {
+    async GetRequestsForDoctorPage(ctx, doctorID, pageSize, bookmark) {
         this._requireActor(ctx, doctorID, 'doctor');
+        pageSize = pageSize || '100';
+        bookmark = bookmark || '';
         return JSON.stringify(await this._queryIndexPage(ctx, 'EDR_ACCESS_DOCTOR', [doctorID], pageSize, bookmark));
     }
 

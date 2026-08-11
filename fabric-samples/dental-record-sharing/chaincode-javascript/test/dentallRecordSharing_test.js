@@ -124,6 +124,31 @@ describe('Phase 2 chaincode identity enforcement', () => {
         ]);
     });
 
+    it('declares every public paginated query with explicit Fabric arguments', () => {
+        for (const transaction of [
+            'GetPatientsByClinicPage', 'GetRequestsForAdminPage',
+            'GetPendingRequestsForPatientPage', 'GetProcessedRequestsForPatientPage',
+            'GetAllRequestsForPatientPage', 'GetRequestsForDoctorPage',
+        ]) {
+            expect(contract[transaction].length, transaction).to.equal(4);
+        }
+        for (const transaction of ['GetAllDoctorsPage', 'GetAllPatientsPage']) {
+            expect(contract[transaction].length, transaction).to.equal(3);
+        }
+    });
+
+    it('accepts all patient queue pagination arguments used by the mobile API', async () => {
+        const ctx = context('patient', 'PatientMobile');
+        const result = JSON.parse(await contract.GetAllRequestsForPatientPage(
+            ctx, 'PatientMobile', '25', 'mobile-next-page'
+        ));
+
+        expect(result).to.deep.equal({ records: [], bookmark: '', fetchedRecordsCount: 0 });
+        expect(ctx.stub.getStateByPartialCompositeKeyWithPagination.firstCall.args.slice(0, 4)).to.deep.equal([
+            'EDR_ACCESS_PATIENT', ['PatientMobile'], 25, 'mobile-next-page'
+        ]);
+    });
+
     it('rejects a doctor enumerating all patients', async () => {
         const ctx = context('doctor', 'Doctor1');
         await expectReject(
