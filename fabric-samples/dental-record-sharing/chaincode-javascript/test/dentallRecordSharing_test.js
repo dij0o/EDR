@@ -500,6 +500,36 @@ describe('Phase 2 chaincode identity enforcement', () => {
         expect(ctx.stub.putState.firstCall.args[0]).to.equal('ACCESS:tx-1');
     });
 
+    it('logs three sequential accesses with distinct IDs and timestamps', async () => {
+        const ctx = context('doctor', 'Doctor1');
+        const patient = { patientID:'Patient1', clinicID:1, doctors:['Doctor1'] };
+        const doctor = { doctorID:'Doctor1', clinicID:1, isActive:true };
+        ctx.stub.getState.callsFake(async (key) => key === 'Patient1'
+            ? Buffer.from(JSON.stringify(patient))
+            : key === 'Doctor1' ? Buffer.from(JSON.stringify(doctor)) : Buffer.alloc(0));
+        ['tx-access-1', 'tx-access-2', 'tx-access-3'].forEach((txID, index) => {
+            ctx.stub.getTxID.onCall(index).returns(txID);
+        });
+        let timestampCall = 0;
+        ctx.stub.getTxTimestamp.callsFake(() => ({
+            seconds: { toString: () => String(1783872000 + timestampCall++) }, nanos: 0
+        }));
+
+        const logs = [];
+        for (let index = 0; index < 3; index += 1) {
+            logs.push(JSON.parse(await contract.LogClinicalAccess(
+                ctx, 'Patient1', 'patient-record', 'FTC-ACCESS-007 sequential access'
+            )));
+        }
+
+        expect(new Set(logs.map((log) => log.logID)).size).to.equal(3);
+        expect(new Set(logs.map((log) => log.transactionID)).size).to.equal(3);
+        expect(new Set(logs.map((log) => log.timestamp)).size).to.equal(3);
+        expect(ctx.stub.putState.getCalls().map((call) => call.args[0])).to.deep.equal(
+            logs.map((log) => log.logID)
+        );
+    });
+
     it('rejects a doctor writing records for an unassigned patient', async () => {
         const ctx = context('doctor', 'Doctor1');
         ctx.stub.getState.resolves(Buffer.from(JSON.stringify({

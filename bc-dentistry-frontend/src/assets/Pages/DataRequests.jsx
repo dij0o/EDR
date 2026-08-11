@@ -163,7 +163,9 @@ const DataRequests = () => {
                                     <div className="font-semibold">{log.actorRole} {log.actorID} read {log.recordType}</div>
                                     <div>Basis: {log.accessBasis || 'unknown'} {log.requestID ? `(${log.requestID})` : ''}</div>
                                     <div>Purpose: {log.purpose || 'Not supplied'}</div>
-                                    <div>{log.timestamp}</div>
+                                    <div className="break-all"><span className="font-medium">Log ID:</span> {log.logID || 'Unavailable'}</div>
+                                    <div className="break-all"><span className="font-medium">Transaction ID:</span> {log.transactionID || 'Unavailable'}</div>
+                                    <div><span className="font-medium">Timestamp:</span> {log.timestamp || 'Unavailable'}</div>
                                 </div>
                             ))}
                         </div>

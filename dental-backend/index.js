@@ -552,7 +552,18 @@ const readPatientHandler = async (req, res) => {
     try {
         const patientID = req.params.id || req.params.patientID;
         const result = await withContract(req, (contract) => contract.evaluateTransaction('ReadPatient', String(patientID)));
-        return sendSuccess(res, parseBufferJson(result));
+        let accessLog = null;
+        if (isRole(req, 'doctor')) {
+            const accessLogResult = await withContract(req, (contract) => contract.submitTransaction(
+                'LogClinicalAccess', String(patientID), 'patient-record', String(req.query.purpose || 'patient record review')
+            ));
+            accessLog = parseBufferJson(accessLogResult);
+        }
+        return res.status(200).json({
+            success: true,
+            data: parseBufferJson(result),
+            ...(accessLog ? { accessLog } : {}),
+        });
     } catch (error) {
         return sendFabricError(res, error);
     }
