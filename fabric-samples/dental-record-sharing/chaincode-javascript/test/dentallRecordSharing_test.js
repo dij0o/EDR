@@ -111,6 +111,19 @@ describe('Phase 2 chaincode identity enforcement', () => {
         );
     });
 
+    it('declares and accepts all admin queue pagination arguments', async () => {
+        const ctx = context('admin', 'Admin1', 'Org1MSP', '1');
+
+        expect(contract.GetRequestsForAdminPage.length).to.equal(4);
+        const result = JSON.parse(await contract.GetRequestsForAdminPage(ctx, '1', '25', 'next-page'));
+
+        expect(result).to.deep.equal({ records: [], bookmark: '', fetchedRecordsCount: 0 });
+        expect(ctx.stub.getStateByPartialCompositeKeyWithPagination.calledOnce).to.equal(true);
+        expect(ctx.stub.getStateByPartialCompositeKeyWithPagination.firstCall.args.slice(0, 4)).to.deep.equal([
+            'EDR_ACCESS_ADMIN', ['1'], 25, 'next-page'
+        ]);
+    });
+
     it('rejects a doctor enumerating all patients', async () => {
         const ctx = context('doctor', 'Doctor1');
         await expectReject(

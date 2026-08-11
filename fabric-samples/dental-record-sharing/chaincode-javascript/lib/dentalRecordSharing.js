@@ -1653,8 +1653,10 @@ class DentalRecordSharing extends Contract {
     }
 
     //Admin gets all request related to clinic
-    async GetRequestsForAdminPage(ctx, adminClinicID, pageSize = '100', bookmark = '') {
+    async GetRequestsForAdminPage(ctx, adminClinicID, pageSize, bookmark) {
         this._requireAdminClinic(ctx, adminClinicID);
+        pageSize = pageSize || '100';
+        bookmark = bookmark || '';
         return JSON.stringify(await this._queryIndexPage(ctx, 'EDR_ACCESS_ADMIN', [adminClinicID], pageSize, bookmark));
     }
 
