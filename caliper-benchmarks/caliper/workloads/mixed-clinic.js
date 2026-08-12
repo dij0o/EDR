@@ -25,7 +25,8 @@ class MixedClinic extends WorkloadModuleBase {
             ]), this.args, { mix_type: 'write' });
         }
         const consent = fixtureAt(this.fixtures.pendingPatientConsents, this.workerIndex, Math.floor(index / 10), 'pendingPatientConsents');
-        return timedSend(this.sutAdapter, request('ProvideConsent', this.args.patientIdentity, [consent.patientID, consent.requestID]), this.args, { mix_type: 'consent' });
+        const patientIdentity = consent.patientIdentity || this.args.patientIdentity;
+        return timedSend(this.sutAdapter, request('ProvideConsent', patientIdentity, [consent.patientID, consent.requestID]), this.args, { mix_type: 'consent', patient_identity: patientIdentity });
     }
 }
 module.exports.createWorkloadModule = () => new MixedClinic();

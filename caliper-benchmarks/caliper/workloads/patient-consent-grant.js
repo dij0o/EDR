@@ -11,10 +11,8 @@ class PatientConsentGrant extends WorkloadModuleBase {
     }
     async submitTransaction() {
         const item = fixtureAt(this.fixtures.pendingPatientConsents, this.workerIndex, this.txIndex++, 'pendingPatientConsents');
-        if (item.patientIdentity && item.patientIdentity !== this.args.patientIdentity) {
-            throw new Error(`Fixture ${item.requestID} requires identity ${item.patientIdentity}`);
-        }
-        return timedSend(this.sutAdapter, request('ProvideConsent', this.args.patientIdentity, [item.patientID, item.requestID]), this.args, { request_id: item.requestID });
+        const patientIdentity = item.patientIdentity || this.args.patientIdentity;
+        return timedSend(this.sutAdapter, request('ProvideConsent', patientIdentity, [item.patientID, item.requestID]), this.args, { request_id: item.requestID, patient_identity: patientIdentity });
     }
 }
 module.exports.createWorkloadModule = () => new PatientConsentGrant();

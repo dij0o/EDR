@@ -48,3 +48,10 @@ test('synthetic actor IDs satisfy the enforced role prefixes', () => {
     assert.match(identities, /actorID=AdminClinic2/);
     assert.doesNotMatch(identities, /actorID=BENCH-(DOCTOR|PATIENT|ADMIN)/);
 });
+
+test('consent workloads permit fixture-specific patient identities', () => {
+    const consentSource = fs.readFileSync(path.join(root, 'caliper/workloads/patient-consent-grant.js'), 'utf8');
+    const mixedSource = fs.readFileSync(path.join(root, 'caliper/workloads/mixed-clinic.js'), 'utf8');
+    assert.match(consentSource, /item\.patientIdentity \|\| this\.args\.patientIdentity/);
+    assert.match(mixedSource, /consent\.patientIdentity \|\| this\.args\.patientIdentity/);
+});
