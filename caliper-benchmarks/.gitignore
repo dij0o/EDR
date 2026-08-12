@@ -20,3 +20,9 @@ node_modules/*
 pkg
 bin
 .vscode
+
+# Generated benchmark material and evidence. Never commit credentials or run data.
+caliper/fixtures/benchmark-fixtures.json
+caliper/config/generated/
+benchmark-output/
+networks/fabric/test-network.yaml

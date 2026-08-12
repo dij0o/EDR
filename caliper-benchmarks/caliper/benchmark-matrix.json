@@ -1,0 +1,19 @@
+{
+  "defaults": { "tps": 10, "rounds": 3, "workers": 1 },
+  "extended": [
+    { "scenarioID": "PERF-01", "operation": "ReadPatient", "module": "patient-read.js", "loads": [300, 500], "identity": "BenchAdminOrigin" },
+    { "scenarioID": "PERF-02", "operation": "addPatient", "module": "patient-registration.js", "loads": [300, 500], "identity": "BenchAdminOrigin" },
+    { "scenarioID": "PERF-03", "operation": "DeletePatient", "module": "patient-delete.js", "loads": [300, 500], "identity": "BenchAdminOrigin" }
+  ],
+  "consent": [
+    { "scenarioID": "PERF-04", "operation": "RequestDataAccess", "module": "cross-clinic-request.js", "loads": [50, 100, 200], "identity": "BenchDoctor" },
+    { "scenarioID": "PERF-05", "operation": "ApproveRequest", "module": "admin-approval.js", "loads": [50, 100, 200], "identity": "BenchAdminOrigin" },
+    { "scenarioID": "PERF-06", "operation": "ProvideConsent", "module": "patient-consent-grant.js", "loads": [50, 100, 200], "identity": "BenchPatient" },
+    { "scenarioID": "PERF-07", "operation": "MixedClinic", "module": "mixed-clinic.js", "loads": [200], "identity": "mixed" }
+  ],
+  "scalability": [
+    { "scenarioID": "SCALE-01", "operation": "ReadPatient", "module": "patient-read.js", "orgCounts": [2, 4, 6], "loads": [100, 200], "identity": "BenchAdminOrigin" },
+    { "scenarioID": "SCALE-02", "operation": "addPatient", "module": "patient-registration.js", "orgCounts": [2, 4, 6], "loads": [100, 200], "identity": "BenchAdminOrigin" },
+    { "scenarioID": "SCALE-03", "operation": "ProvideConsent", "module": "patient-consent-grant.js", "orgCounts": [2, 4, 6], "loads": [100, 200], "identity": "BenchPatient" }
+  ]
+}

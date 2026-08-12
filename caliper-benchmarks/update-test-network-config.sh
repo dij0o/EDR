@@ -5,55 +5,70 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "${SCRIPT_DIR}/.." && pwd)
 FABRIC_TEST_NETWORK_DIR="${FABRIC_TEST_NETWORK_DIR:-${REPO_ROOT}/fabric-samples/test-network}"
 ORG1_DIR="${FABRIC_TEST_NETWORK_DIR}/organizations/peerOrganizations/org1.example.com"
-KEY_DIR="${ORG1_DIR}/users/User1@org1.example.com/msp/keystore"
-CERT_PATH="${ORG1_DIR}/users/User1@org1.example.com/msp/signcerts/cert.pem"
-CONNECTION_PROFILE="${ORG1_DIR}/connection-org1.yaml"
+ORG2_DIR="${FABRIC_TEST_NETWORK_DIR}/organizations/peerOrganizations/org2.example.com"
 OUTPUT_PATH="${SCRIPT_DIR}/networks/fabric/test-network.yaml"
 
-if [ ! -d "${KEY_DIR}" ]; then
-  echo "Missing User1 keystore: ${KEY_DIR}" >&2
-  echo "Start the Fabric network first: cd fabric-samples/test-network && ./network.sh up createChannel -c mychannel -ca" >&2
-  exit 1
-fi
+ADMIN_MSP="${BENCH_ADMIN_MSP_DIR:-${ORG1_DIR}/users/BenchAdminOrigin@org1.example.com/msp}"
+PATIENT_MSP="${BENCH_PATIENT_MSP_DIR:-${ORG1_DIR}/users/BenchPatient@org1.example.com/msp}"
+DOCTOR_MSP="${BENCH_DOCTOR_MSP_DIR:-${ORG2_DIR}/users/BenchDoctor@org2.example.com/msp}"
 
-PRIVATE_KEY_PATH=$(find "${KEY_DIR}" -type f | head -n 1)
-
-if [ -z "${PRIVATE_KEY_PATH}" ] || [ ! -f "${PRIVATE_KEY_PATH}" ]; then
-  echo "No User1 private key found in ${KEY_DIR}" >&2
-  exit 1
-fi
-
-for required_file in "${CERT_PATH}" "${CONNECTION_PROFILE}"; do
-  if [ ! -f "${required_file}" ]; then
-    echo "Missing required Fabric file: ${required_file}" >&2
+first_key() {
+  local msp=$1
+  local key
+  key=$(find "${msp}/keystore" -maxdepth 1 -type f 2>/dev/null | head -n 1 || true)
+  if [ -z "${key}" ] || [ ! -f "${msp}/signcerts/cert.pem" ]; then
+    echo "Missing benchmark identity material under ${msp}" >&2
+    echo "Enroll certificates with the required role, actorID, and clinicID ecert attributes before generating the profile." >&2
     exit 1
   fi
+  printf '%s' "${key}"
+}
+
+ADMIN_KEY=$(first_key "${ADMIN_MSP}")
+PATIENT_KEY=$(first_key "${PATIENT_MSP}")
+DOCTOR_KEY=$(first_key "${DOCTOR_MSP}")
+for profile in "${ORG1_DIR}/connection-org1.yaml" "${ORG2_DIR}/connection-org2.yaml"; do
+  [ -f "${profile}" ] || { echo "Missing ${profile}" >&2; exit 1; }
 done
 
 cat > "${OUTPUT_PATH}" <<EOF
-name: Caliper Benchmarks
+name: EDR Caliper Benchmark Network
 version: "2.0.0"
-
 caliper:
   blockchain: fabric
-
 channels:
   - channelName: mychannel
     contracts:
       - id: basic
-
 organizations:
   - mspid: Org1MSP
     identities:
       certificates:
-        - name: User1
+        - name: BenchAdminOrigin
           clientPrivateKey:
-            path: "${PRIVATE_KEY_PATH}"
+            path: "${ADMIN_KEY}"
           clientSignedCert:
-            path: "${CERT_PATH}"
+            path: "${ADMIN_MSP}/signcerts/cert.pem"
+        - name: BenchPatient
+          clientPrivateKey:
+            path: "${PATIENT_KEY}"
+          clientSignedCert:
+            path: "${PATIENT_MSP}/signcerts/cert.pem"
     connectionProfile:
-      path: "${CONNECTION_PROFILE}"
+      path: "${ORG1_DIR}/connection-org1.yaml"
+      discover: true
+  - mspid: Org2MSP
+    identities:
+      certificates:
+        - name: BenchDoctor
+          clientPrivateKey:
+            path: "${DOCTOR_KEY}"
+          clientSignedCert:
+            path: "${DOCTOR_MSP}/signcerts/cert.pem"
+    connectionProfile:
+      path: "${ORG2_DIR}/connection-org2.yaml"
       discover: true
 EOF
 
-echo "Updated ${OUTPUT_PATH}"
+chmod 600 "${OUTPUT_PATH}"
+echo "Updated ${OUTPUT_PATH} with three role-specific benchmark identities"

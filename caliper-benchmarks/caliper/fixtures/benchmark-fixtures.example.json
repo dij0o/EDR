@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "description": "Synthetic, isolated-network fixture manifest. Copy to benchmark-fixtures.json and replace every placeholder after seeding the benchmark ledger.",
+    "containsProductionData": false
+  },
+  "patientReads": [{ "patientID": "BENCH-READ-001" }],
+  "patientsForDeletion": [{ "patientID": "BENCH-DELETE-001" }],
+  "dentalRecordPatients": [{ "patientID": "BENCH-PAT-001", "doctorID": "BENCH-DOCTOR-001" }],
+  "radiographPatients": [{ "patientID": "BENCH-PAT-001", "doctorID": "BENCH-DOCTOR-001" }],
+  "recordRetrievalPatients": [{ "patientID": "BENCH-PAT-001" }],
+  "crossClinicRequests": [{
+    "doctorID": "BENCH-DOCTOR-001",
+    "patientID": "BENCH-CROSS-001",
+    "dataOriginClinicID": 2,
+    "dataType": "Dental and Medical Records",
+    "purpose": "benchmark evaluation",
+    "requestedRecordTypes": ["dental", "medical"]
+  }],
+  "pendingAdminApprovals": [{ "requestID": "REPLACE-WITH-PENDING-ADMIN-REQUEST-ID" }],
+  "pendingPatientConsents": [{
+    "requestID": "REPLACE-WITH-PENDING-PATIENT-REQUEST-ID",
+    "patientID": "BENCH-PATIENT-001",
+    "patientIdentity": "BenchPatient"
+  }]
+}

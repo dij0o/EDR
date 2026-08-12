@@ -1,0 +1,36 @@
+name: EDR Caliper Benchmark Network Template
+version: "2.0.0"
+caliper:
+  blockchain: fabric
+channels:
+  - channelName: mychannel
+    contracts:
+      - id: basic
+organizations:
+  - mspid: Org1MSP
+    identities:
+      certificates:
+        - name: BenchAdminOrigin
+          clientPrivateKey:
+            path: GENERATED_AT_RUNTIME
+          clientSignedCert:
+            path: GENERATED_AT_RUNTIME
+        - name: BenchPatient
+          clientPrivateKey:
+            path: GENERATED_AT_RUNTIME
+          clientSignedCert:
+            path: GENERATED_AT_RUNTIME
+    connectionProfile:
+      path: GENERATED_AT_RUNTIME
+      discover: true
+  - mspid: Org2MSP
+    identities:
+      certificates:
+        - name: BenchDoctor
+          clientPrivateKey:
+            path: GENERATED_AT_RUNTIME
+          clientSignedCert:
+            path: GENERATED_AT_RUNTIME
+    connectionProfile:
+      path: GENERATED_AT_RUNTIME
+      discover: true

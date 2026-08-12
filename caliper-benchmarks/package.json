@@ -5,6 +5,11 @@
   "engines": {
     "node": ">=18"
   },
+  "scripts": {
+    "benchmark:generate": "node scripts/generate-configs.js",
+    "benchmark:preflight": "node scripts/preflight.js",
+    "benchmark:validate": "node --test test/*.test.js"
+  },
   "dependencies": {
     "@hyperledger/caliper-cli": "0.6.0"
   }
