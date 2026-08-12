@@ -71,8 +71,7 @@ const RejectedRequests = () => {
                       status={getRequestLifecycleStatus(request)}
                       id={request.requestID}
                       about={request.about || "N/A"}
-                      date={request.date || "N/A"}
-                      time={request.time || "N/A"}
+                      requestedAt={request.requestedAt}
                       optionsVisible={false}
                     />
                   )

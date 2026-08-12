@@ -7,7 +7,22 @@ import AccesptReject from './AccesptReject';
 import StatusUpdateLoading from './StatusUpdateLoading';
 import apiClient, { databaseUrl } from '../services/apiClient';
 
-const DataRequest = ({ type, doctorName, clinicName, to, status, id, about, date, time, optionsVisible = true, showRevoke = false, onStatusChange }) => {
+const formatRequestedAt = (requestedAt, legacyDate, legacyTime) => {
+    if (requestedAt) {
+        const timestamp = new Date(requestedAt);
+        if (!Number.isNaN(timestamp.getTime())) {
+            return timestamp.toLocaleString();
+        }
+    }
+
+    if (legacyDate || legacyTime) {
+        return [legacyDate, legacyTime].filter(Boolean).join(' : ');
+    }
+
+    return 'Date unavailable';
+};
+
+const DataRequest = ({ type, doctorName, clinicName, to, status, id, about, requestedAt, date, time, optionsVisible = true, showRevoke = false, onStatusChange }) => {
     const requestCard = useRef()
     const [isExpanded, setIsExpanded] = useState(false);
     const [requestLoading, setRequestLoading] = useState(false);
@@ -92,7 +107,7 @@ const DataRequest = ({ type, doctorName, clinicName, to, status, id, about, date
                         containerClasses={"flex flex-row justify-between"}
                         header={"Requested at:"}
                         headerClasses={"text-lg text-gray-300 font-normal italic"}
-                        details={`${(date || '').replace(/-/g, '.')} : ${time || ''}`}
+                        details={formatRequestedAt(requestedAt, date, time)}
                         detailsClasses={"text-lg text-gray-300 font-normal italic"}
                     />
                 )}
@@ -126,7 +141,7 @@ const DataRequest = ({ type, doctorName, clinicName, to, status, id, about, date
                             containerClasses={"flex flex-row justify-between"}
                             header={"Requested at:"}
                             headerClasses={"text-lg text-gray-300 font-normal italic"}
-                            details={`${(date || '').replace(/-/g, '.')} : ${time || ''}`}
+                            details={formatRequestedAt(requestedAt, date, time)}
                             detailsClasses={"text-lg text-gray-300 font-normal italic"}
                         />
                             

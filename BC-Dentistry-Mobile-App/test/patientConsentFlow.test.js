@@ -42,3 +42,18 @@ test('dashboard and history screens use lifecycleStatus and refresh on focus', (
   assert.match(rejected, /useFocusEffect/);
   assert.match(rejected, /getRequestLifecycleStatus\(request\)/);
 });
+
+test('request cards use the API requestedAt timestamp instead of missing date and time fields', () => {
+  const pending = read(path.join('app', '(tabs)', 'requests.jsx'));
+  const approved = read(path.join('app', 'proceedRequests.jsx'));
+  const rejected = read(path.join('app', 'rejectedRequests.jsx'));
+  const card = read(path.join('components', 'DataRequest.jsx'));
+
+  for (const screen of [pending, approved, rejected]) {
+    assert.match(screen, /requestedAt=\{request\.requestedAt\}/);
+    assert.doesNotMatch(screen, /date=\{request\.date|time=\{request\.time/);
+  }
+  assert.match(card, /new Date\(requestedAt\)/);
+  assert.match(card, /timestamp\.toLocaleString\(\)/);
+  assert.match(card, /Date unavailable/);
+});
