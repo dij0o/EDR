@@ -1,37 +1,26 @@
-import { View, Text, Alert } from 'react-native';
+import { View, Alert } from 'react-native';
 import React, { useState } from 'react';
 import CustomButton from './CustomButton';
-import apiClient, { databaseUrl, blockchainUrl } from '../services/apiClient';
-import { useUser } from '../Context/UserContext';
+import apiClient, { databaseUrl } from '../services/apiClient';
 
-const AccesptReject = ({ requestID, patientID, updateStatus, setCardStatus, setrequestLoadingFunc, expandCardFunc }) => {
+const AccesptReject = ({ requestID, patientID, updateStatus, setCardStatus, setrequestLoadingFunc }) => {
     const [loading, setLoading] = useState(false);
-    const { token } = useUser();
-
-    const completeAction = () => {
-        setrequestLoadingFunc(false);
-        expandCardFunc();
-        setLoading(false);
-        setCardStatus(false);
-    };
-
     const handleAccept = async () => {
         setLoading(true);
         if (setrequestLoadingFunc) setrequestLoadingFunc(true);
 
         try {
-            const endpoint = databaseUrl('/patient/provideConsent');
+            const endpoint = databaseUrl('/grantConsent');
             const response = await apiClient.post(endpoint, {
                 patientID,
                 requestID,
-            }).catch(() => apiClient.post(blockchainUrl('/provideConsent'), { patientID, requestID }));
+            });
 
             Alert.alert("Consent Granted", "Request accepted successfully!");
-            if (updateStatus) updateStatus("CONSENT_GRANTED");
-            if (expandCardFunc) expandCardFunc();
+            if (updateStatus) updateStatus(response.data?.data?.status || "ACTIVE");
         } catch (error) {
             console.error("Error Accepting Request:", error.response?.data || error.message);
-            Alert.alert("Action Failed", error.response?.data?.error || error.message || "Could not accept request.");
+            Alert.alert("Action Failed", error.response?.data?.error?.message || error.response?.data?.message || error.message || "Could not accept request.");
         } finally {
             if (setrequestLoadingFunc) setrequestLoadingFunc(false);
             setLoading(false);
@@ -49,18 +38,13 @@ const AccesptReject = ({ requestID, patientID, updateStatus, setCardStatus, setr
                 patientID,
                 requestID,
                 rejectionReason: reason,
-            }).catch(() => apiClient.post(blockchainUrl('/rejectRequest'), {
-                patientID,
-                requestID,
-                rejectionReason: reason,
-            }));
+            });
 
             Alert.alert("Request Rejected", "Request rejected successfully.");
             if (updateStatus) updateStatus("REJECTED");
-            if (expandCardFunc) expandCardFunc();
         } catch (error) {
             console.error("Error Rejecting Request:", error.response?.data || error.message);
-            Alert.alert("Action Failed", error.response?.data?.error || error.message || "Could not reject request.");
+            Alert.alert("Action Failed", error.response?.data?.error?.message || error.response?.data?.message || error.message || "Could not reject request.");
         } finally {
             if (setrequestLoadingFunc) setrequestLoadingFunc(false);
             setLoading(false);

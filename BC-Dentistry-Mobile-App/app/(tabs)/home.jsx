@@ -25,7 +25,7 @@ const Home = () => {
     try {
       const list = await fetchPatientRequests(patientID);
 
-      const completed = list.filter((r) => r.status === 'CONSENT_GRANTED').length;
+      const completed = list.filter((r) => r.status === 'ACTIVE' || r.status === 'COMPLETED').length;
       const pending = list.filter((r) => r.status === 'PENDING_PATIENT_CONSENT').length;
       const rejected = list.filter((r) => r.status === 'REJECTED' || r.status === 'REQUEST_REJECTED').length;
 

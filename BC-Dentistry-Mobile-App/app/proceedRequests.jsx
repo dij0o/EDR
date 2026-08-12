@@ -37,7 +37,7 @@ const ProceedRequests = () => {
     }
   };
 
-  const activeGrantedRequests = reqests.filter((request) => request.status === 'CONSENT_GRANTED');
+  const activeGrantedRequests = reqests.filter((request) => request.status === 'ACTIVE');
 
   return (
     <SafeAreaView className="bg-white flex-1">
@@ -64,7 +64,8 @@ const ProceedRequests = () => {
                     <DataRequest
                       key={request.requestID}
                       type={request.type || "on-chain"}
-                      from={request.doctorID}
+                      doctorName={request.doctorName || 'Requesting doctor'}
+                      clinicName={request.requestingClinicName || request.doctorClinicName || 'Clinic unavailable'}
                       to={request.patientID}
                       status={request.status}
                       id={request.requestID}

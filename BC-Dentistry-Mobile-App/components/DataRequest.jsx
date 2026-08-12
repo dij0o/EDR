@@ -1,35 +1,25 @@
-import { View, Text, TouchableOpacity, Animated, Alert } from 'react-native'
-import React, { useRef, useState } from 'react'
+import { View, Text, Alert } from 'react-native'
+import React, { useRef, useState, useEffect } from 'react'
 
 import CustomButton from './CustomButton';
 import DataRequestElement from './DataRequestElement';
 import AccesptReject from './AccesptReject';
 import StatusUpdateLoading from './StatusUpdateLoading';
-import apiClient, { databaseUrl, blockchainUrl } from '../services/apiClient';
+import apiClient, { databaseUrl } from '../services/apiClient';
 
-const DataRequest = ({ type, from, to, status, id, about, date, time, optionsVisible = true, showRevoke = false, onStatusChange }) => {
+const DataRequest = ({ type, doctorName, clinicName, to, status, id, about, date, time, optionsVisible = true, showRevoke = false, onStatusChange }) => {
     const requestCard = useRef()
     const [isExpanded, setIsExpanded] = useState(false);
     const [requestLoading, setRequestLoading] = useState(false);
-    const animatedHeight = useRef(new Animated.Value(0)).current;
     const [currentStatus, setCurrentStatus] = useState(status);
     const requestCardButton = useRef();
 
+    useEffect(() => {
+        setCurrentStatus(status);
+    }, [status]);
+
     const expandCard = () => {
-        if (isExpanded) {
-            Animated.timing(animatedHeight, {
-                toValue: 0,
-                duration: 300,
-                useNativeDriver: false,
-            }).start(() => setIsExpanded(false));
-        } else {
-            setIsExpanded(true);
-            Animated.timing(animatedHeight, {
-                toValue: 250,
-                duration: 300,
-                useNativeDriver: false,
-            }).start();
-        }
+        setIsExpanded((expanded) => !expanded);
     };
 
     const handleRevokeConsent = () => {
@@ -47,19 +37,15 @@ const DataRequest = ({ type, from, to, status, id, about, date, time, optionsVis
                             await apiClient.post(databaseUrl('/patient/revokeConsent'), {
                                 patientID: to,
                                 requestID: id,
-                                reason: "Patient revoked consent",
-                            }).catch(() => apiClient.post(blockchainUrl('/revokeConsent'), {
-                                patientID: to,
-                                requestID: id,
-                                reason: "Patient revoked consent",
-                            }));
+                                revocationReason: "Patient revoked consent",
+                            });
 
                             Alert.alert("Consent Revoked", "Record access has been revoked successfully.");
                             setCurrentStatus("REVOKED");
                             if (onStatusChange) onStatusChange(id, "REVOKED");
                         } catch (error) {
                             console.error("[DataRequest] Revoke error:", error.response?.data || error.message);
-                            Alert.alert("Revocation Failed", error.response?.data?.error || error.message || "Could not revoke consent.");
+                            Alert.alert("Revocation Failed", error.response?.data?.error?.message || error.response?.data?.message || error.message || "Could not revoke consent.");
                         } finally {
                             setRequestLoading(false);
                         }
@@ -89,8 +75,16 @@ const DataRequest = ({ type, from, to, status, id, about, date, time, optionsVis
                     containerClasses={""}
                     header={"Request from:"}
                     headerClasses={"text-xl"}
-                    details={`Dr. ${from}`}
+                    details={doctorName}
                     detailsClasses={"text-2xl font-bold"}
+                />
+
+                <DataRequestElement
+                    containerClasses={"flex flex-row justify-between gap-x-8"}
+                    header={"Clinic:"}
+                    headerClasses={"text-xl"}
+                    details={clinicName}
+                    detailsClasses={"grow text-right text-xl font-semibold"}
                 />
 
                 {!optionsVisible && (
@@ -103,8 +97,8 @@ const DataRequest = ({ type, from, to, status, id, about, date, time, optionsVis
                     />
                 )}
 
-                <Animated.View style={{ height: animatedHeight, overflow: 'hidden' }}>
-                    <>
+                {isExpanded && (
+                    <View>
                         <DataRequestElement 
                             header={"ID:"}
                             containerClasses={"flex flex-col justify-between overflow-hidden"}
@@ -136,37 +130,39 @@ const DataRequest = ({ type, from, to, status, id, about, date, time, optionsVis
                             detailsClasses={"text-lg text-gray-300 font-normal italic"}
                         />
                             
-                        <AccesptReject
-                            requestID={id}
-                            patientID={to}
-                            updateStatus={(newStatus) => {
-                                setCurrentStatus(newStatus);
-                                if (onStatusChange) onStatusChange(id, newStatus);
-                            }}
-                            setCardStatus={setIsExpanded}
-                            requestLoadingStatus={requestLoading}
-                            setrequestLoadingFunc={setRequestLoading}
-                            expandCardFunc={expandCard}
-                        />
-                    </>
-                </Animated.View>
+                    </View>
+                )}
 
                 <DataRequestElement 
                     header={"Status:"}
                     containerClasses={"flex flex-row justify-between gap-x-8"}
                     headerClasses={"text-xl"}
                     details={
-                        currentStatus === "CONSENT_GRANTED" ? "GRANTED" :
+                        currentStatus === "ACTIVE" ? "ACTIVE" :
+                        currentStatus === "COMPLETED" ? "COMPLETED" :
                         currentStatus === "PENDING_PATIENT_CONSENT" ? "PENDING" :
                         currentStatus === "REVOKED" ? "REVOKED" : "REJECTED"
                     }
                     detailsClasses={`grow text-right text-xl uppercase font-bold 
                         ${currentStatus === 'PENDING_PATIENT_CONSENT' ? 'text-[#FF9500]' :
-                        currentStatus === 'CONSENT_GRANTED' ? 'text-green-500' :
+                        (currentStatus === 'ACTIVE' || currentStatus === 'COMPLETED') ? 'text-green-500' :
                         'text-red-600'}`}
                 />
 
-                {(showRevoke || currentStatus === 'CONSENT_GRANTED') && (
+                {currentStatus === 'PENDING_PATIENT_CONSENT' && (
+                    <AccesptReject
+                        requestID={id}
+                        patientID={to}
+                        updateStatus={(newStatus) => {
+                            setCurrentStatus(newStatus);
+                            if (onStatusChange) onStatusChange(id, newStatus);
+                        }}
+                        setCardStatus={setIsExpanded}
+                        setrequestLoadingFunc={setRequestLoading}
+                    />
+                )}
+
+                {showRevoke && currentStatus === 'ACTIVE' && (
                     <CustomButton
                         key="revoke"
                         containerClasses="bg-red-600 p-3 rounded-xl items-center mt-2"

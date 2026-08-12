@@ -1,4 +1,4 @@
-import { View, Text, SafeAreaView, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, RefreshControl } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
@@ -54,8 +54,6 @@ const Requests = () => {
         }
     };
 
-    console.log(requests)
-
     return (
         <View className="flex-1 bg-white">
             <StatusBar style='light' />
@@ -78,7 +76,8 @@ const Requests = () => {
                             <DataRequest
                                 key={request.requestID}
                                 type={request.type || "on-chain"}
-                                from={request.doctorID}
+                                doctorName={request.doctorName || 'Requesting doctor'}
+                                clinicName={request.requestingClinicName || request.doctorClinicName || 'Clinic unavailable'}
                                 to={request.patientID}
                                 status={request.status}
                                 id={request.requestID}
