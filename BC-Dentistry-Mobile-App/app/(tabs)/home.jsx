@@ -5,7 +5,7 @@ import { useFocusEffect } from 'expo-router'
 import { UserBar, Statstic, AppointmentsSection } from '../../components/index'
 import { icons } from '../../constants'
 import { StatusBar } from 'expo-status-bar'
-import { fetchPatientRequests, getPatientBlockchainID } from '../../services/apiClient'
+import { fetchPatientRequests, getPatientBlockchainID, getRequestLifecycleStatus } from '../../services/apiClient'
 import { useUser } from '../../Context/UserContext'
 
 const Home = () => {
@@ -25,9 +25,9 @@ const Home = () => {
     try {
       const list = await fetchPatientRequests(patientID);
 
-      const completed = list.filter((r) => r.status === 'ACTIVE' || r.status === 'COMPLETED').length;
-      const pending = list.filter((r) => r.status === 'PENDING_PATIENT_CONSENT').length;
-      const rejected = list.filter((r) => r.status === 'REJECTED' || r.status === 'REQUEST_REJECTED').length;
+      const completed = list.filter((r) => ['ACTIVE', 'COMPLETED'].includes(getRequestLifecycleStatus(r))).length;
+      const pending = list.filter((r) => getRequestLifecycleStatus(r) === 'PENDING_PATIENT_CONSENT').length;
+      const rejected = list.filter((r) => ['REJECTED', 'REQUEST_REJECTED'].includes(getRequestLifecycleStatus(r))).length;
 
       setCounts({ completed, pending, rejected });
     } catch (error) {

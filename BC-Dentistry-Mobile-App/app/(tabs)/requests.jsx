@@ -4,7 +4,7 @@ import React, { useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 
 import { RequestsHeader, DataRequest, NoRequests } from '../../components';
-import { fetchPatientRequests, getPatientBlockchainID } from '../../services/apiClient';
+import { fetchPatientRequests, getPatientBlockchainID, getRequestLifecycleStatus } from '../../services/apiClient';
 import { useUser } from '../../Context/UserContext';
 
 const Requests = () => {
@@ -25,7 +25,7 @@ const Requests = () => {
             const list = await fetchPatientRequests(patientID);
 
             if (list.length > 0) {
-                setRequests(list.filter((request) => request.status === 'PENDING_PATIENT_CONSENT'));
+                setRequests(list.filter((request) => getRequestLifecycleStatus(request) === 'PENDING_PATIENT_CONSENT'));
             } else {
                 setRequests([]);
             }
@@ -72,14 +72,14 @@ const Requests = () => {
                     ) : requests.length === 0 ? (
                         <NoRequests text={"All done, you don't have any pending requests!"} />
                     ) : (
-                        requests.filter((request) => request.status === 'PENDING_PATIENT_CONSENT').map((request) => (
+                        requests.filter((request) => getRequestLifecycleStatus(request) === 'PENDING_PATIENT_CONSENT').map((request) => (
                             <DataRequest
                                 key={request.requestID}
                                 type={request.type || "on-chain"}
                                 doctorName={request.doctorName || 'Requesting doctor'}
                                 clinicName={request.requestingClinicName || request.doctorClinicName || 'Clinic unavailable'}
                                 to={request.patientID}
-                                status={request.status}
+                                status={getRequestLifecycleStatus(request)}
                                 id={request.requestID}
                                 about={request.about || "N/A"}
                                 date={request.date || "N/A"}

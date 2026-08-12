@@ -1,35 +1,40 @@
 import { View, Text, ScrollView, SafeAreaView, ActivityIndicator } from 'react-native'
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useState } from 'react'
+import { useFocusEffect } from 'expo-router'
 
 import { DataRequest, NoRequests } from '../components'
-import { fetchPatientRequests, getPatientBlockchainID } from '../services/apiClient';
+import { fetchPatientRequests, getPatientBlockchainID, getRequestLifecycleStatus } from '../services/apiClient';
 import { useUser } from '../Context/UserContext';
 
 const ProceedRequests = () => {
   const { user } = useUser();
   const [reqests, setRequests] = useState([])
   const [isLoading, setIsLoading] = useState(true)
+  const [fetchError, setFetchError] = useState('')
 
   const patientID = getPatientBlockchainID(user);
 
-  useEffect(() => {
+  const fetchRequests = useCallback(async () => {
     if (!patientID) {
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
-    fetchPatientRequests(patientID)
-      .then((list) => {
-        setRequests(list);
-      })
-      .catch((error) => {
-        console.error("[ProceedRequests] Error:", error.message);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+    setFetchError('');
+    try {
+      setRequests(await fetchPatientRequests(patientID));
+    } catch (error) {
+      console.error("[ProceedRequests] Error:", error.message);
+      setFetchError(error.response?.data?.error?.message || error.message || 'Unable to load approved requests.');
+    } finally {
+      setIsLoading(false);
+    }
   }, [patientID]);
+
+  useFocusEffect(useCallback(() => {
+    fetchRequests();
+  }, [fetchRequests]));
 
   const handleStatusChange = (requestId, newStatus) => {
     if (newStatus === 'REVOKED' || newStatus === 'REJECTED') {
@@ -37,7 +42,7 @@ const ProceedRequests = () => {
     }
   };
 
-  const activeGrantedRequests = reqests.filter((request) => request.status === 'ACTIVE');
+  const activeGrantedRequests = reqests.filter((request) => getRequestLifecycleStatus(request) === 'ACTIVE');
 
   return (
     <SafeAreaView className="bg-white flex-1">
@@ -56,6 +61,8 @@ const ProceedRequests = () => {
                 <ActivityIndicator size="large" color="#1E3A8A" className="mt-8" />
               ) : !patientID ? (
                 <NoRequests text={"Unable to load your data. Patient account ID is missing."} />
+              ) : fetchError ? (
+                <NoRequests text={fetchError} />
               ) : activeGrantedRequests.length === 0 ? (
                 <NoRequests text={"You haven't approved any active data requests yet."} />
               ) : (
@@ -67,7 +74,7 @@ const ProceedRequests = () => {
                       doctorName={request.doctorName || 'Requesting doctor'}
                       clinicName={request.requestingClinicName || request.doctorClinicName || 'Clinic unavailable'}
                       to={request.patientID}
-                      status={request.status}
+                      status={getRequestLifecycleStatus(request)}
                       id={request.requestID}
                       about={request.about || "N/A"}
                       date={request.date || "N/A"}

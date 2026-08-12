@@ -1,37 +1,42 @@
 import { View, Text, ScrollView, SafeAreaView, ActivityIndicator } from 'react-native'
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useState } from 'react'
+import { useFocusEffect } from 'expo-router'
 
 import { DataRequest, NoRequests } from '../components'
-import { fetchPatientRequests, getPatientBlockchainID } from '../services/apiClient';
+import { fetchPatientRequests, getPatientBlockchainID, getRequestLifecycleStatus } from '../services/apiClient';
 import { useUser } from '../Context/UserContext';
 
 const RejectedRequests = () => {
   const { user } = useUser();
   const [reqests, setRequests] = useState([])
   const [isLoading, setIsLoading] = useState(true)
+  const [fetchError, setFetchError] = useState('')
 
   const patientID = getPatientBlockchainID(user);
 
-  useEffect(() => {
+  const fetchRequests = useCallback(async () => {
     if (!patientID) {
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
-    fetchPatientRequests(patientID)
-      .then((list) => {
-        setRequests(list);
-      })
-      .catch((error) => {
-        console.error("[RejectedRequests] Error:", error.message);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+    setFetchError('');
+    try {
+      setRequests(await fetchPatientRequests(patientID));
+    } catch (error) {
+      console.error("[RejectedRequests] Error:", error.message);
+      setFetchError(error.response?.data?.error?.message || error.message || 'Unable to load rejected requests.');
+    } finally {
+      setIsLoading(false);
+    }
   }, [patientID]);
 
-  const rejectedList = reqests.filter((request) => request.status === 'REQUEST_REJECTED' || request.status === 'REJECTED');
+  useFocusEffect(useCallback(() => {
+    fetchRequests();
+  }, [fetchRequests]));
+
+  const rejectedList = reqests.filter((request) => ['REQUEST_REJECTED', 'REJECTED'].includes(getRequestLifecycleStatus(request)));
 
   return (
     <SafeAreaView className="bg-white flex-1">
@@ -50,6 +55,8 @@ const RejectedRequests = () => {
                 <ActivityIndicator size="large" color="#1E3A8A" className="mt-8" />
               ) : !patientID ? (
                 <NoRequests text={"Unable to load your data. Patient account ID is missing."} />
+              ) : fetchError ? (
+                <NoRequests text={fetchError} />
               ) : rejectedList.length === 0 ? (
                 <NoRequests text={"No rejected requests found."} />
               ) : (
@@ -61,7 +68,7 @@ const RejectedRequests = () => {
                       doctorName={request.doctorName || 'Requesting doctor'}
                       clinicName={request.requestingClinicName || request.doctorClinicName || 'Clinic unavailable'}
                       to={request.patientID}
-                      status={request.status}
+                      status={getRequestLifecycleStatus(request)}
                       id={request.requestID}
                       about={request.about || "N/A"}
                       date={request.date || "N/A"}

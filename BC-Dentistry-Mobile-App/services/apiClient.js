@@ -143,6 +143,7 @@ apiClient.interceptors.response.use(
 
 export const createAbortController = () => (typeof AbortController !== 'undefined' ? new AbortController() : null);
 export const getPatientBlockchainID = (user) => user?.blockchainID || null;
+export const getRequestLifecycleStatus = (request) => request?.lifecycleStatus || request?.status || '';
 
 export const fetchPatientRequests = async (patientID) => {
   if (!patientID) return [];
@@ -158,7 +159,7 @@ export const fetchPatientRequests = async (patientID) => {
     return Array.isArray(list) ? list : [];
   } catch (error) {
     console.warn(`[fetchPatientRequests] GET /getAllRequestsForPatient/${patientID} failed:`, error.response?.data?.error?.message || error.message);
-    return [];
+    throw error;
   }
 };
 

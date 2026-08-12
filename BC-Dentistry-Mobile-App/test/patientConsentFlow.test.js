@@ -27,3 +27,18 @@ test('patient consent controls are not clipped inside a fixed-height animated de
   assert.doesNotMatch(card, /toValue: 250|height: animatedHeight/);
   assert.match(card, /showRevoke && currentStatus === 'ACTIVE'/);
 });
+
+test('dashboard and history screens use lifecycleStatus and refresh on focus', () => {
+  const api = read(path.join('services', 'apiClient.js'));
+  const home = read(path.join('app', '(tabs)', 'home.jsx'));
+  const approved = read(path.join('app', 'proceedRequests.jsx'));
+  const rejected = read(path.join('app', 'rejectedRequests.jsx'));
+
+  assert.match(api, /request\?\.lifecycleStatus \|\| request\?\.status/);
+  assert.match(api, /throw error/);
+  assert.match(home, /getRequestLifecycleStatus/);
+  assert.match(approved, /useFocusEffect/);
+  assert.match(approved, /getRequestLifecycleStatus\(request\) === 'ACTIVE'/);
+  assert.match(rejected, /useFocusEffect/);
+  assert.match(rejected, /getRequestLifecycleStatus\(request\)/);
+});
