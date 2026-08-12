@@ -15,13 +15,13 @@ function argumentsFor(runId) {
         `          runId: ${runId}`,
         '          rawLatencyFile: benchmark-output/current/raw-latency.jsonl',
         '          adminIdentity: BenchAdminOrigin',
-        '          adminID: BENCH-ADMIN-ORIGIN',
+        '          adminID: AdminClinic2',
         '          adminClinicID: "2"',
         '          clinicID: "2"',
         '          doctorIdentity: BenchDoctor',
         '          patientIdentity: BenchPatient',
         '          invokerIdentity: BenchAdminOrigin',
-        '          doctorIDs: [BENCH-DOCTOR-ASSIGNED]'
+        '          doctorIDs: [Doctor-BENCH-001]'
     ].join('\n');
 }
 

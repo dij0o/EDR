@@ -11,7 +11,7 @@ let fixtures;
 try { fixtures = JSON.parse(fs.readFileSync(path.join(root, 'caliper/fixtures/benchmark-fixtures.json'), 'utf8')); }
 catch (error) { failures.push(`Fixture manifest is not readable JSON: ${error.message}`); }
 if (fixtures) {
-    const placeholder = /REPLACE-WITH|BENCH-(READ|DELETE|CROSS)-001/;
+    const placeholder = /REPLACE-WITH|BENCH-(READ|DELETE)-001|Patient-BENCH-CROSS-001/;
     for (const [pool, items] of Object.entries(fixtures)) {
         if (pool === 'metadata') continue;
         if (!Array.isArray(items) || items.length === 0) failures.push(`Fixture pool ${pool} is empty`);

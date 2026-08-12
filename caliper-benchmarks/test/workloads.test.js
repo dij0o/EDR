@@ -40,3 +40,11 @@ test('generated matrix contains every isolated run required by the plan', () => 
     assert.equal(count(matrix.consent), 30);
     assert.equal(count(matrix.scalability, true), 54);
 });
+
+test('synthetic actor IDs satisfy the enforced role prefixes', () => {
+    const identities = fs.readFileSync(path.join(root, 'caliper', 'IDENTITY_REQUIREMENTS.md'), 'utf8');
+    assert.match(identities, /actorID=Doctor-BENCH-001/);
+    assert.match(identities, /actorID=Patient-BENCH-001/);
+    assert.match(identities, /actorID=AdminClinic2/);
+    assert.doesNotMatch(identities, /actorID=BENCH-(DOCTOR|PATIENT|ADMIN)/);
+});

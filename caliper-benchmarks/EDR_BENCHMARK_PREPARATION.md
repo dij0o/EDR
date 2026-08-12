@@ -51,7 +51,7 @@ The largest isolated run requires at least:
 - 500 distinct patients eligible for deletion;
 - 200 distinct doctor/patient/origin-clinic combinations for new access requests;
 - 200 requests in `PENDING_ADMIN_APPROVAL` for PERF-05;
-- 200 different requests belonging to `BENCH-PATIENT-001` in `PENDING_PATIENT_CONSENT` for PERF-06;
+- 200 different requests belonging to `Patient-BENCH-001` in `PENDING_PATIENT_CONSENT` for PERF-06;
 - assigned synthetic patients for record-entry and retrieval operations.
 
 Use a fresh network snapshot and fresh fixture manifest before every generated configuration. Never reuse a consumed deletion, approval, or consent fixture.

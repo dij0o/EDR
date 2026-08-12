@@ -5,12 +5,12 @@
   },
   "patientReads": [{ "patientID": "BENCH-READ-001" }],
   "patientsForDeletion": [{ "patientID": "BENCH-DELETE-001" }],
-  "dentalRecordPatients": [{ "patientID": "BENCH-PAT-001", "doctorID": "BENCH-DOCTOR-001" }],
-  "radiographPatients": [{ "patientID": "BENCH-PAT-001", "doctorID": "BENCH-DOCTOR-001" }],
-  "recordRetrievalPatients": [{ "patientID": "BENCH-PAT-001" }],
+  "dentalRecordPatients": [{ "patientID": "Patient-BENCH-ASSIGNED-001", "doctorID": "Doctor-BENCH-001" }],
+  "radiographPatients": [{ "patientID": "Patient-BENCH-ASSIGNED-001", "doctorID": "Doctor-BENCH-001" }],
+  "recordRetrievalPatients": [{ "patientID": "Patient-BENCH-ASSIGNED-001" }],
   "crossClinicRequests": [{
-    "doctorID": "BENCH-DOCTOR-001",
-    "patientID": "BENCH-CROSS-001",
+    "doctorID": "Doctor-BENCH-001",
+    "patientID": "Patient-BENCH-CROSS-001",
     "dataOriginClinicID": 2,
     "dataType": "Dental and Medical Records",
     "purpose": "benchmark evaluation",
@@ -19,7 +19,7 @@
   "pendingAdminApprovals": [{ "requestID": "REPLACE-WITH-PENDING-ADMIN-REQUEST-ID" }],
   "pendingPatientConsents": [{
     "requestID": "REPLACE-WITH-PENDING-PATIENT-REQUEST-ID",
-    "patientID": "BENCH-PATIENT-001",
+    "patientID": "Patient-BENCH-001",
     "patientIdentity": "BenchPatient"
   }]
 }

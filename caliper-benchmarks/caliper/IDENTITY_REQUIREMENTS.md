@@ -4,9 +4,9 @@ Create these identities only in the isolated benchmark Fabric network. Their enr
 
 | Caliper alias | MSP | Required certificate attributes | Purpose |
 |---|---|---|---|
-| `BenchAdminOrigin` | Org1MSP | `role=admin`, `actorID=BENCH-ADMIN-ORIGIN`, `clinicID=2` | Patient registration, deletion, and origin-clinic approval |
-| `BenchPatient` | Org1MSP | `role=patient`, `actorID=BENCH-PATIENT-001`, `clinicID=2` | Consent grant transactions |
-| `BenchDoctor` | Org2MSP | `role=doctor`, `actorID=BENCH-DOCTOR-001`, `clinicID=1` | Cross-clinic requests and clinical record operations |
+| `BenchAdminOrigin` | Org1MSP | `role=admin`, `actorID=AdminClinic2`, `clinicID=2` | Patient registration, deletion, and origin-clinic approval |
+| `BenchPatient` | Org1MSP | `role=patient`, `actorID=Patient-BENCH-001`, `clinicID=2` | Consent grant transactions |
+| `BenchDoctor` | Org2MSP | `role=doctor`, `actorID=Doctor-BENCH-001`, `clinicID=1` | Cross-clinic requests and clinical record operations |
 
 Registration and enrollment must be performed through the Fabric CA administrator appropriate to each organization. Include each attribute with `:ecert` during registration or request the attributes during enrollment. Do not substitute ordinary `User1` certificates: those certificates do not prove the application role, actor, and clinic required by the chaincode.
 
