@@ -4,7 +4,7 @@ import React, { useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 
 import { RequestsHeader, DataRequest, NoRequests } from '../../components';
-import apiClient, { databaseUrl, blockchainUrl, getPatientBlockchainID } from '../../services/apiClient';
+import { fetchPatientRequests, getPatientBlockchainID } from '../../services/apiClient';
 import { useUser } from '../../Context/UserContext';
 
 const Requests = () => {
@@ -22,12 +22,7 @@ const Requests = () => {
         }
 
         try {
-            const response = await apiClient.get(databaseUrl(`/getAllRequestsForPatient/${patientID}`));
-            const list = Array.isArray(response.data?.data)
-                ? response.data.data
-                : Array.isArray(response.data)
-                ? response.data
-                : [];
+            const list = await fetchPatientRequests(patientID);
 
             if (list.length > 0) {
                 setRequests(list.filter((request) => request.status === 'PENDING_PATIENT_CONSENT'));
@@ -58,6 +53,8 @@ const Requests = () => {
             setRequests((prev) => prev.filter((r) => r.requestID !== requestId));
         }
     };
+
+    console.log(requests)
 
     return (
         <View className="flex-1 bg-white">

@@ -1,4 +1,4 @@
-import { View, Text, SafeAreaView, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, SafeAreaView, ScrollView, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
 import React, { useEffect, useState, useCallback } from 'react';
 import apiClient, { databaseUrl, getPatientBlockchainID } from '../services/apiClient';
 import { useUser } from '../Context/UserContext';
@@ -7,6 +7,8 @@ import { NoRequests } from '../components';
 const AuditHistoryScreen = () => {
   const { user } = useUser();
   const [logs, setLogs] = useState([]);
+  const [rawResponse, setRawResponse] = useState(null);
+  const [showRaw, setShowRaw] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -20,15 +22,20 @@ const AuditHistoryScreen = () => {
 
     try {
       const response = await apiClient.get(databaseUrl(`/audit/clinical-access/${patientID}`));
+      console.log('[AuditHistory] Raw API Response:', JSON.stringify(response.data, null, 2));
+      setRawResponse(response.data);
+
       const list = Array.isArray(response.data?.data)
         ? response.data.data
         : Array.isArray(response.data)
-        ? response.data
-        : response.data?.logs || [];
+          ? response.data
+          : response.data?.logs || [];
 
       setLogs(list);
     } catch (error) {
-      console.error('[AuditHistory] Error fetching clinical access logs:', error.response?.data || error.message);
+      const errData = error.response?.data || error.message;
+      console.error('[AuditHistory] Error fetching clinical access logs:', errData);
+      setRawResponse({ error: errData });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -53,10 +60,27 @@ const AuditHistoryScreen = () => {
         }
       >
         <View className="flex flex-col gap-4 p-6">
-          <Text className="text-2xl font-bold">Access Audit History</Text>
+          <View className="flex flex-row justify-between items-center">
+            <Text className="text-2xl font-bold">Access Audit History</Text>
+            {/* <TouchableOpacity
+              onPress={() => setShowRaw((prev) => !prev)}
+              className="bg-gray-200 px-3 py-1.5 rounded-lg"
+            >
+              <Text className="text-xs font-bold text-gray-800">{showRaw ? "Hide Raw JSON" : "Show Raw JSON"}</Text>
+            </TouchableOpacity> */}
+          </View>
+
           <Text className="text-sm text-gray-500 mb-2 leading-5">
             Immutable log of clinical record access events for your patient account.
           </Text>
+
+          {showRaw && (
+            <View className="bg-gray-900 p-4 rounded-xl mb-4">
+              <Text className="text-green-400 font-mono text-xs">
+                {JSON.stringify(rawResponse, null, 2) || "No response data loaded"}
+              </Text>
+            </View>
+          )}
 
           {loading ? (
             <ActivityIndicator size="large" color="#1E3A8A" className="mt-8" />

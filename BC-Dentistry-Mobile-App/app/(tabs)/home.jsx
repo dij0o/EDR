@@ -5,7 +5,7 @@ import { useFocusEffect } from 'expo-router'
 import { UserBar, Statstic, AppointmentsSection } from '../../components/index'
 import { icons } from '../../constants'
 import { StatusBar } from 'expo-status-bar'
-import apiClient, { databaseUrl, getPatientBlockchainID } from '../../services/apiClient'
+import { fetchPatientRequests, getPatientBlockchainID } from '../../services/apiClient'
 import { useUser } from '../../Context/UserContext'
 
 const Home = () => {
@@ -23,12 +23,7 @@ const Home = () => {
     }
 
     try {
-      const response = await apiClient.get(databaseUrl(`/getAllRequestsForPatient/${patientID}`));
-      const list = Array.isArray(response.data?.data)
-        ? response.data.data
-        : Array.isArray(response.data)
-        ? response.data
-        : [];
+      const list = await fetchPatientRequests(patientID);
 
       const completed = list.filter((r) => r.status === 'CONSENT_GRANTED').length;
       const pending = list.filter((r) => r.status === 'PENDING_PATIENT_CONSENT').length;

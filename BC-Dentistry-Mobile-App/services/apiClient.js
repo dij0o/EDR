@@ -144,4 +144,22 @@ apiClient.interceptors.response.use(
 export const createAbortController = () => (typeof AbortController !== 'undefined' ? new AbortController() : null);
 export const getPatientBlockchainID = (user) => user?.blockchainID || null;
 
+export const fetchPatientRequests = async (patientID) => {
+  if (!patientID) return [];
+
+  try {
+    const response = await apiClient.get(databaseUrl(`/getAllRequestsForPatient/${patientID}`));
+    const list = Array.isArray(response.data?.data)
+      ? response.data.data
+      : Array.isArray(response.data)
+      ? response.data
+      : response.data?.requests || [];
+
+    return Array.isArray(list) ? list : [];
+  } catch (error) {
+    console.warn(`[fetchPatientRequests] GET /getAllRequestsForPatient/${patientID} failed:`, error.response?.data?.error?.message || error.message);
+    return [];
+  }
+};
+
 export default apiClient;

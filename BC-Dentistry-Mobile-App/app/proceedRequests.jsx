@@ -2,7 +2,7 @@ import { View, Text, ScrollView, SafeAreaView, ActivityIndicator } from 'react-n
 import React, { useEffect, useState } from 'react'
 
 import { DataRequest, NoRequests } from '../components'
-import apiClient, { databaseUrl, blockchainUrl, getPatientBlockchainID } from '../services/apiClient';
+import { fetchPatientRequests, getPatientBlockchainID } from '../services/apiClient';
 import { useUser } from '../Context/UserContext';
 
 const ProceedRequests = () => {
@@ -19,17 +19,12 @@ const ProceedRequests = () => {
     }
 
     setIsLoading(true);
-    apiClient.get(databaseUrl(`/getAllRequestsForPatient/${patientID}`))
-      .then((response) => {
-        const list = Array.isArray(response.data?.data)
-          ? response.data.data
-          : Array.isArray(response.data)
-          ? response.data
-          : [];
+    fetchPatientRequests(patientID)
+      .then((list) => {
         setRequests(list);
       })
       .catch((error) => {
-        console.error("[proceedRequests] API error:", error.message);
+        console.error("[ProceedRequests] Error:", error.message);
       })
       .finally(() => {
         setIsLoading(false);

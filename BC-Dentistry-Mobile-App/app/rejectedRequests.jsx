@@ -1,8 +1,8 @@
-import { View, Text, ScrollView, SafeAreaView } from 'react-native'
+import { View, Text, ScrollView, SafeAreaView, ActivityIndicator } from 'react-native'
 import React, { useEffect, useState } from 'react'
 
 import { DataRequest, NoRequests } from '../components'
-import apiClient, { blockchainUrl, getPatientBlockchainID } from '../services/apiClient';
+import { fetchPatientRequests, getPatientBlockchainID } from '../services/apiClient';
 import { useUser } from '../Context/UserContext';
 
 const RejectedRequests = () => {
@@ -19,37 +19,41 @@ const RejectedRequests = () => {
     }
 
     setIsLoading(true);
-    apiClient.get(blockchainUrl(`/getAllRequestsForPatient/${patientID}`))
-      .then((response) => {
-        setRequests(response.data || [])
+    fetchPatientRequests(patientID)
+      .then((list) => {
+        setRequests(list);
       })
       .catch((error) => {
-        console.error("API error", error.message);
+        console.error("[RejectedRequests] Error:", error.message);
       })
       .finally(() => {
-        setIsLoading(false)
-      })
-  }, [patientID])
+        setIsLoading(false);
+      });
+  }, [patientID]);
+
+  const rejectedList = reqests.filter((request) => request.status === 'REQUEST_REJECTED' || request.status === 'REJECTED');
 
   return (
-    <SafeAreaView>
+    <SafeAreaView className="bg-white flex-1">
         <View className='flex flex-col gap-4 p-6'>
           <View>
-            <Text className='text-2xl font-semibold mb-2'>Rejected Requests</Text>
-            <Text className='text-lg font-light text-justify leading-6'>here you can find all the request that you rejected to share your data with</Text>
+            <Text className='text-2xl font-semibold'>Rejected Requests</Text>
+            <Text className='text-lg font-light leading-6 text-gray-500'>
+              Here you can find all the data access requests you have declined.
+            </Text>
           </View>
 
           <ScrollView className='pb-4 h-[82vh]'>
             <View className="flex flex-col gap-y-4">
               {
                 isLoading ? (
-                  <View><Text>it is loading</Text></View>
+                  <ActivityIndicator size="large" color="#1E3A8A" className="mt-8" />
                 ) : !patientID ? (
                   <NoRequests text={"Unable to load your data. Patient account ID is missing."} />
-                ) : reqests.filter((request) => request.status === 'REQUEST_REJECTED' || request.status === 'REJECTED').length === 0 ? (
+                ) : rejectedList.length === 0 ? (
                   <NoRequests text={"No rejected requests found."} />
                 ) : (
-                  reqests.filter((request) => request.status === 'REQUEST_REJECTED' || request.status === 'REJECTED').map((request) => {
+                  rejectedList.map((request) => {
                     return (
                       <DataRequest
                           key={request.requestID}
