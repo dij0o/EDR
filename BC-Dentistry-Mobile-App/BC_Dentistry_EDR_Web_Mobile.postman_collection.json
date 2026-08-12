@@ -1,0 +1,1887 @@
+{
+  "info": {
+    "_postman_id": "02fa1974-8b0c-4da5-9947-ed2202607290",
+    "name": "BC Dentistry EDR - Web and Mobile APIs",
+    "description": "Source-derived Postman collection for the clean release branch.\n\nThe Web and Mobile trees intentionally duplicate overlapping routes so each team can export or use its own folder independently.\n\nMobile request descriptions explain purpose, authorization/identity constraints, and side effects, including the implemented rotating refresh-token lifecycle.\n\nAll web and mobile requests use one public application API. The private Blockchain API has no collection variable or client request and requires internal service authentication.\n\nUse non-production test accounts and never commit real passwords, JWTs, refresh tokens, patient data, or push tokens into this collection.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Web",
+      "description": "APIs invoked by the React web frontend.",
+      "item": [
+        {
+          "name": "Authentication & Account",
+          "item": [
+            {
+              "name": "Login",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Authenticates a web user and returns a short-lived JWT plus the user profile. The test script stores the JWT and identity values as collection variables.",
+                "url": "{{databaseApiBaseUrl}}/login",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\",\n  \"clientType\": \"web\",\n  \"deviceLabel\": \"Postman web session\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Login succeeded\", () => pm.response.to.have.status(200));",
+                      "const payload = pm.response.json();",
+                      "if (payload.token) pm.collectionVariables.set(\"accessToken\", payload.token);",
+                      "if (payload.refreshToken) pm.collectionVariables.set(\"refreshToken\", payload.refreshToken);",
+                      "if (payload.csrfToken) pm.collectionVariables.set(\"csrfToken\", payload.csrfToken);",
+                      "if (payload.user) {",
+                      "  pm.collectionVariables.set(\"userId\", String(payload.user.id || \"\"));",
+                      "  pm.collectionVariables.set(\"patientId\", String(payload.user.blockchainID || \"\"));",
+                      "  pm.collectionVariables.set(\"doctorId\", String(payload.user.blockchainID || \"\"));",
+                      "  pm.collectionVariables.set(\"clinicId\", String(payload.user.organizationId || \"\"));",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Refresh Web Session",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-CSRF-Token",
+                    "value": "{{csrfToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Rotates the HttpOnly refresh cookie and issues a new short-lived web access cookie. In a browser the X-CSRF-Token header must match the readable CSRF cookie.",
+                "url": "{{databaseApiBaseUrl}}/auth/refresh"
+              },
+              "response": []
+            },
+            {
+              "name": "Logout Current Session",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Revokes the current server session and clears web authentication cookies.",
+                "url": "{{databaseApiBaseUrl}}/auth/logout"
+              },
+              "response": []
+            },
+            {
+              "name": "Get Current User",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Returns the authoritative profile for the current active session.",
+                "url": "{{databaseApiBaseUrl}}/auth/me"
+              },
+              "response": []
+            },
+            {
+              "name": "List Active Sessions",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Lists active devices and marks the current session.",
+                "url": "{{databaseApiBaseUrl}}/auth/sessions"
+              },
+              "response": []
+            },
+            {
+              "name": "Revoke Selected Session",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Revokes one session owned by the current user.",
+                "url": "{{databaseApiBaseUrl}}/auth/sessions/{{sessionId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Logout All Sessions",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Requires the current password and revokes every active session for the user.",
+                "url": "{{databaseApiBaseUrl}}/auth/logout-all",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"currentPassword\": \"{{userPassword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Change Password",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Changes the authenticated user password. Required for accounts flagged mustChangePassword; returns a replacement JWT.",
+                "url": "{{databaseApiBaseUrl}}/change-password",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"currentPassword\": \"{{userPassword}}\",\n  \"newPassword\": \"{{newPassword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Register Clinic Admin",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "System-admin-only route used by the web signup/admin provisioning flow to create a clinic admin for an existing clinic.",
+                "url": "{{databaseApiBaseUrl}}/register",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstName\": \"Ayesha\",\n  \"lastName\": \"Admin\",\n  \"username\": \"ayesha.admin@example.com\",\n  \"contactNumber\": \"+971500000001\",\n  \"organizationId\": \"{{clinicId}}\",\n  \"password\": \"{{temporaryPassword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Clinic Management",
+          "item": [
+            {
+              "name": "List Clinics",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "System-admin-only list of application-level clinics and their admin counts.",
+                "url": "{{databaseApiBaseUrl}}/clinics"
+              },
+              "response": []
+            },
+            {
+              "name": "Create Clinic and Primary Admin",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "System-admin-only atomic creation of a clinic and its required first clinic admin.",
+                "url": "{{databaseApiBaseUrl}}/clinics",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Example Dental Clinic\",\n  \"address\": \"Dubai, UAE\",\n  \"description\": \"Postman example clinic\",\n  \"coordinates\": \"25.2048,55.2708\",\n  \"type\": \"Dental Clinic\",\n  \"admin\": {\n    \"firstName\": \"Primary\",\n    \"lastName\": \"Admin\",\n    \"email\": \"primary.admin@example.com\",\n    \"contactNumber\": \"+971500000002\",\n    \"password\": \"{{temporaryPassword}}\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Clinic Status or Details",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "System-admin-only update of clinic details and active status.",
+                "url": "{{databaseApiBaseUrl}}/clinics/{{clinicId}}",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Example Dental Clinic\",\n  \"address\": \"Dubai, UAE\",\n  \"description\": \"Updated through Postman\",\n  \"coordinates\": \"25.2048,55.2708\",\n  \"type\": \"Dental Clinic\",\n  \"isActive\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Doctor Management",
+          "item": [
+            {
+              "name": "List Doctors",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Lists doctors in the authenticated clinic admin’s clinic.",
+                "url": "{{databaseApiBaseUrl}}/doctors"
+              },
+              "response": []
+            },
+            {
+              "name": "Create Doctor",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Creates a doctor through the public application API. The backend commits MySQL/Fabric records and synchronously enrolls the actor-bound Fabric identity; clients never contact the private Blockchain API.",
+                "url": "{{databaseApiBaseUrl}}/doctors",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstName\": \"Omar\",\n  \"lastName\": \"Dentist\",\n  \"email\": \"omar.dentist@example.com\",\n  \"contactNumber\": \"+971500000003\",\n  \"password\": \"{{temporaryPassword}}\",\n  \"worksAt\": \"Example Dental Clinic\",\n  \"speciality\": \"General Dentistry\",\n  \"licenseNumber\": \"LIC-POSTMAN-001\",\n  \"emiratesID\": \"784-0000-0000000-1\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Doctor",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Updates a doctor in MySQL and Fabric. doctorId is the doctor blockchain ID.",
+                "url": "{{databaseApiBaseUrl}}/doctors/{{doctorId}}",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstName\": \"Omar\",\n  \"lastName\": \"Dentist\",\n  \"email\": \"omar.dentist@example.com\",\n  \"contactNumber\": \"+971500000003\",\n  \"worksAt\": \"Example Dental Clinic\",\n  \"speciality\": \"Orthodontics\",\n  \"licenseNumber\": \"LIC-POSTMAN-001\",\n  \"emiratesID\": \"784-0000-0000000-1\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Doctor",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Deletes a doctor record from MySQL and Fabric. Operational Fabric identity revocation remains a deployment task.",
+                "url": "{{databaseApiBaseUrl}}/doctors/{{doctorId}}"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Patient Management",
+          "item": [
+            {
+              "name": "List Clinic Patients",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Clinic-admin list of patients belonging to the authenticated clinic.",
+                "url": "{{databaseApiBaseUrl}}/patients"
+              },
+              "response": []
+            },
+            {
+              "name": "List My Assigned Patients",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Doctor-only list of patients assigned to the authenticated doctor.",
+                "url": "{{databaseApiBaseUrl}}/doctor/me/assigned-patients"
+              },
+              "response": []
+            },
+            {
+              "name": "Get Patient",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Loads one authorized patient record for admin, assigned doctor, or the patient themself.",
+                "url": "{{databaseApiBaseUrl}}/patients/{{patientId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Create Patient",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Creates a patient through the public application API, stores PII in MySQL, anchors metadata/hash on Fabric, enrolls the patient identity, and applies doctor assignments.",
+                "url": "{{databaseApiBaseUrl}}/patients",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstName\": \"Fatima\",\n  \"lastName\": \"Patient\",\n  \"dateOfBirth\": \"1995-05-15\",\n  \"gender\": \"Female\",\n  \"contactNumber\": \"+971500000004\",\n  \"email\": \"fatima.patient@example.com\",\n  \"password\": \"{{temporaryPassword}}\",\n  \"emiratesID\": \"784-1995-0000000-2\",\n  \"nationality\": \"Emirati\",\n  \"address\": \"Dubai, UAE\",\n  \"bloodType\": \"O+\",\n  \"medicalHistory\": [\n    \"Replace with medical history\"\n  ],\n  \"allergies\": [\n    \"Replace with allergies or use an empty array\"\n  ],\n  \"medications\": [\n    \"Replace with medications or use an empty array\"\n  ],\n  \"insuranceDetails\": {\n    \"provider\": \"Example Insurance\",\n    \"policyNumber\": \"POL-001\",\n    \"coverageType\": \"Dental\"\n  },\n  \"clinicID\": \"{{clinicId}}\",\n  \"doctors\": [\n    \"{{doctorId}}\"\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Patient",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Clinic-admin update of a patient record in MySQL and Fabric.",
+                "url": "{{databaseApiBaseUrl}}/patients/{{patientId}}",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstName\": \"Fatima\",\n  \"lastName\": \"Patient\",\n  \"dateOfBirth\": \"1995-05-15\",\n  \"gender\": \"Female\",\n  \"contactNumber\": \"+971500000004\",\n  \"email\": \"fatima.patient@example.com\",\n  \"emiratesID\": \"784-1995-0000000-2\",\n  \"nationality\": \"Emirati\",\n  \"address\": \"Dubai, UAE\",\n  \"bloodType\": \"O+\",\n  \"medicalHistory\": [\n    \"Updated medical history\"\n  ],\n  \"allergies\": [],\n  \"medications\": [],\n  \"insuranceDetails\": {\n    \"provider\": \"Example Insurance\",\n    \"policyNumber\": \"POL-001\",\n    \"coverageType\": \"Dental\"\n  },\n  \"clinicID\": \"{{clinicId}}\",\n  \"doctors\": [\n    \"{{doctorId}}\"\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Assign Patient to Doctor",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Assigns a patient through the public application API. The backend validates clinic scope, refreshes patient metadata/hash, and updates both ledger relationship directions.",
+                "url": "{{databaseApiBaseUrl}}/patients/{{patientId}}/assign",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"doctorID\": \"{{doctorId}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Patient",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Clinic-admin deletion of a patient from MySQL and Fabric.",
+                "url": "{{databaseApiBaseUrl}}/patients/{{patientId}}"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Clinical Records",
+          "item": [
+            {
+              "name": "Get Medical Records",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Loads medical records for an authorized doctor or the patient and records the stated access purpose.",
+                "url": "{{databaseApiBaseUrl}}/patients/{{patientId}}/clinical-records/medical?purpose=patient%20record%20view"
+              },
+              "response": []
+            },
+            {
+              "name": "Get Dental Records",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Loads dental chart records for an authorized doctor or the patient and records the stated access purpose.",
+                "url": "{{databaseApiBaseUrl}}/patients/{{patientId}}/clinical-records/dental?purpose=patient%20record%20view"
+              },
+              "response": []
+            },
+            {
+              "name": "Create Clinical Record",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Doctor-only creation of a medical or dental record; persists the record and anchors its metadata on Fabric.",
+                "url": "{{databaseApiBaseUrl}}/clinical-records",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"patientID\": \"{{patientId}}\",\n  \"recordType\": \"medical\",\n  \"payload\": {\n    \"diagnosis\": \"Example diagnosis\",\n    \"treatment\": \"Example treatment\",\n    \"notes\": \"Replace with clinical data\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Appointments & Lab Results",
+          "item": [
+            {
+              "name": "List Appointments",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Role-scoped appointment list used by web dashboards and appointment pages.",
+                "url": "{{databaseApiBaseUrl}}/appointments"
+              },
+              "response": []
+            },
+            {
+              "name": "List Appointment Doctors",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Clinic-admin list of doctors available for appointment creation and patient assignment.",
+                "url": "{{databaseApiBaseUrl}}/appointment-options/doctors"
+              },
+              "response": []
+            },
+            {
+              "name": "Create Appointment",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Clinic-admin creation of an appointment for a patient and doctor.",
+                "url": "{{databaseApiBaseUrl}}/appointments",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"patientID\": \"{{patientId}}\",\n  \"doctorID\": \"{{doctorId}}\",\n  \"appointmentDateTime\": \"2026-08-15T10:00:00.000Z\",\n  \"specialty\": \"General Dentistry\",\n  \"meetingFor\": \"Dental check-up\",\n  \"notes\": \"Postman example appointment\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Appointment",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Clinic-admin update of appointment date, specialty, reason, or notes. The backend resets the status to scheduled.",
+                "url": "{{databaseApiBaseUrl}}/appointments/{{appointmentId}}",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"appointmentDateTime\": \"2026-08-15T11:00:00.000Z\",\n  \"specialty\": \"General Dentistry\",\n  \"meetingFor\": \"Dental check-up\",\n  \"notes\": \"Rescheduled through Postman\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Cancel Appointment",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Clinic-admin cancellation with a required cancellation reason.",
+                "url": "{{databaseApiBaseUrl}}/appointments/{{appointmentId}}/cancel",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"Patient requested cancellation\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "List Lab Results",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Loads lab results for authenticated clinic admins and doctors.",
+                "url": "{{databaseApiBaseUrl}}/Lab_Results"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Data Access & Consent",
+          "item": [
+            {
+              "name": "List Requests for Clinic Admin",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Lists cross-clinic data-access requests through the public application API for the authenticated clinic admin.",
+                "url": "{{databaseApiBaseUrl}}/getRequestsForAdmin/{{clinicId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Approve Request as Admin",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Clinic admin approves the request’s administrative stage; patient consent is still required.",
+                "url": "{{databaseApiBaseUrl}}/approveRequest",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"adminID\": \"{{userId}}\",\n  \"requestID\": \"{{requestId}}\",\n  \"adminClinicID\": \"{{clinicId}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Reject Request as Admin",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Clinic admin rejects a cross-clinic access request and records the reason on the workflow.",
+                "url": "{{databaseApiBaseUrl}}/admin/rejectRequest",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"adminID\": \"{{userId}}\",\n  \"requestID\": \"{{requestId}}\",\n  \"adminClinicID\": \"{{clinicId}}\",\n  \"rejectionReason\": \"Request does not meet clinic policy\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Request Patient Data Access",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Doctor initiates a purpose-bound request to access a patient record held by another clinic.",
+                "url": "{{databaseApiBaseUrl}}/requestAccess",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"doctorID\": \"{{doctorId}}\",\n  \"patientID\": \"{{patientId}}\",\n  \"dataOriginClinicID\": \"{{clinicId}}\",\n  \"dataType\": \"Medical and Dental Records\",\n  \"purpose\": \"Continuity of care\",\n  \"reason\": \"Continuity of care\",\n  \"notes\": \"Postman example request\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Get Clinical Access Audit",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Loads the clinical-access audit trail for a patient. Authorization is role and identity scoped.",
+                "url": "{{databaseApiBaseUrl}}/audit/clinical-access/{{patientId}}"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Radiographic & DICOM Files",
+          "item": [
+            {
+              "name": "List Patient Radiographic Files",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Lists Fabric-anchored radiographic/DICOM metadata through the public application API.",
+                "url": "{{databaseApiBaseUrl}}/patients/{{patientId}}/radiographic-files"
+              },
+              "response": []
+            },
+            {
+              "name": "Upload Radiographic File",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/octet-stream",
+                    "type": "text"
+                  },
+                  {
+                    "key": "x-patient-id",
+                    "value": "{{patientId}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "x-file-name",
+                    "value": "example.dcm",
+                    "type": "text"
+                  },
+                  {
+                    "key": "x-file-media-type",
+                    "value": "application/dicom",
+                    "type": "text"
+                  }
+                ],
+                "description": "Doctor uploads raw file bytes to private storage and anchors SHA-256 metadata on Fabric. Select a local .dcm or image file in Postman.",
+                "url": "{{databaseApiBaseUrl}}/radiographic-files"
+              },
+              "response": []
+            },
+            {
+              "name": "Verify Radiographic File Integrity",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Recomputes the stored file hash and compares it with Fabric metadata through the public application API.",
+                "url": "{{databaseApiBaseUrl}}/radiographic-files/{{fileId}}/verify-integrity"
+              },
+              "response": []
+            },
+            {
+              "name": "Download/View Radiographic File",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Streams a file through the public application API only after integrity verification and logs the access purpose.",
+                "url": "{{databaseApiBaseUrl}}/radiographic-files/{{fileId}}/content?purpose=radiographic%20image%20view"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Notifications & Push Devices",
+          "item": [
+            {
+              "name": "List Notifications",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Lists ledger-backed notifications through the public application API. status may be ALL, READ, or UNREAD.",
+                "url": "{{databaseApiBaseUrl}}/notifications?status=ALL"
+              },
+              "response": []
+            },
+            {
+              "name": "Mark Notification Read",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Marks one notification as read through the public application API.",
+                "url": "{{databaseApiBaseUrl}}/notifications/{{notificationId}}/read"
+              },
+              "response": []
+            },
+            {
+              "name": "Get Push Configuration",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Returns server push readiness and token staleness configuration through the public application API.",
+                "url": "{{databaseApiBaseUrl}}/push/config"
+              },
+              "response": []
+            },
+            {
+              "name": "List Push Subscriptions",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Lists notification device registrations owned by the authenticated actor.",
+                "url": "{{databaseApiBaseUrl}}/push/subscriptions"
+              },
+              "response": []
+            },
+            {
+              "name": "Register Web Push Token",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Registers a browser Firebase token for the authenticated actor.",
+                "url": "{{databaseApiBaseUrl}}/push/subscriptions",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"platform\": \"web\",\n  \"token\": \"{{pushToken}}\",\n  \"deviceLabel\": \"Chrome on team workstation\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Unregister Current Push Token",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "Unregisters a push token, normally during logout.",
+                "url": "{{databaseApiBaseUrl}}/push/subscriptions",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"{{pushToken}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Remove Push Subscription by ID",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "Removes a selected notification device belonging to the authenticated actor.",
+                "url": "{{databaseApiBaseUrl}}/push/subscriptions/{{subscriptionId}}"
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Mobile",
+      "description": "APIs invoked by the Expo patient mobile app through the public application API only.",
+      "item": [
+        {
+          "name": "Authentication",
+          "description": "Authentication calls used or required by the patient mobile app.",
+          "item": [
+            {
+              "name": "Patient Login",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "**Purpose:** Authenticate a patient and obtain the short-lived access token and rotating refresh token required by protected mobile APIs.\n\n**Current behavior:** Native login returns `{ token, refreshToken, user }`. The app rejects non-patient users and stores refresh credentials in OS-backed SecureStore. The test script stores session and patient identity values as collection variables.",
+                "url": "{{databaseApiBaseUrl}}/login",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{patientEmail}}\",\n  \"password\": \"{{patientPassword}}\",\n  \"clientType\": \"android\",\n  \"deviceLabel\": \"Postman mobile session\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Login succeeded\", () => pm.response.to.have.status(200));",
+                      "const payload = pm.response.json();",
+                      "if (payload.token) pm.collectionVariables.set(\"accessToken\", payload.token);",
+                      "if (payload.refreshToken) pm.collectionVariables.set(\"refreshToken\", payload.refreshToken);",
+                      "if (payload.csrfToken) pm.collectionVariables.set(\"csrfToken\", payload.csrfToken);",
+                      "if (payload.user) {",
+                      "  pm.collectionVariables.set(\"userId\", String(payload.user.id || \"\"));",
+                      "  pm.collectionVariables.set(\"patientId\", String(payload.user.blockchainID || \"\"));",
+                      "  pm.collectionVariables.set(\"doctorId\", String(payload.user.blockchainID || \"\"));",
+                      "  pm.collectionVariables.set(\"clinicId\", String(payload.user.organizationId || \"\"));",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Appointments",
+          "description": "Read-only appointment data shown on the patient home screen.",
+          "item": [
+            {
+              "name": "List Patient Appointments",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "**Purpose:** Show the signed-in patient’s upcoming or past appointments.\n\n**How it is scoped:** The backend derives the patient from the verified JWT; the mobile app supplies only the `period` filter.\n\n**Query:** Set `appointmentPeriod` to the UI period value, typically `upcoming` or `past`.\n\n**Authorization:** Patient bearer token required.",
+                "url": "{{databaseApiBaseUrl}}/appointments?period={{appointmentPeriod}}"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Data Requests & Consent",
+          "description": "Patient-facing review and control of cross-clinic record-access requests.",
+          "item": [
+            {
+              "name": "List All Patient Data Requests",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "**Purpose:** Populate Pending, Approved, Rejected, and Documents views with all data-access requests for the signed-in patient.\n\n**Identity rule:** `patientId` must match the blockchain ID in the verified JWT; another patient ID is rejected.\n\n**Authorization:** Patient bearer token required.",
+                "url": "{{databaseApiBaseUrl}}/getAllRequestsForPatient/{{patientId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Grant Consent",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "**Purpose:** Let the patient approve a clinic-admin-approved request so the requesting doctor can access the specified data for the recorded purpose.\n\n**Effect:** Changes the request to `CONSENT_GRANTED`, writes the decision to Fabric, and can trigger a notification.\n\n**Identity rule:** `patientID` must match the patient blockchain ID in the JWT.",
+                "url": "{{databaseApiBaseUrl}}/grantConsent",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"patientID\": \"{{patientId}}\",\n  \"requestID\": \"{{requestId}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Reject Data Request",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "**Purpose:** Let the patient deny a pending data-access request and record the reason.\n\n**Effect:** Changes the workflow status to rejected on Fabric and can notify the requester.\n\n**Identity rule:** `patientID` must match the patient blockchain ID in the JWT.",
+                "url": "{{databaseApiBaseUrl}}/patient/rejectRequest",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"patientID\": \"{{patientId}}\",\n  \"requestID\": \"{{requestId}}\",\n  \"rejectionReason\": \"Not authorized\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Revoke Previously Granted Consent",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "**Purpose:** Let the patient withdraw previously granted access.\n\n**Effect:** Revokes consent for the selected request on Fabric and notifies relevant actors. This does not delete the underlying health record.\n\n**Identity rule:** `patientID` must match the patient blockchain ID in the JWT.",
+                "url": "{{databaseApiBaseUrl}}/patient/revokeConsent",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"patientID\": \"{{patientId}}\",\n  \"requestID\": \"{{requestId}}\",\n  \"revocationReason\": \"Revoked from patient mobile app\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Secure Session Lifecycle",
+          "description": "Implemented native session lifecycle. Mobile stores the rotating refresh token in OS-backed SecureStore and keeps the short-lived access token in memory.",
+          "item": [
+            {
+              "name": "Refresh Access Token",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "description": "**Purpose:** Rotate the one-time-use refresh token and obtain a new short-lived access token without asking the patient to sign in again.\n\n**Security behavior:** The submitted refresh token becomes unusable. Reusing it revokes the complete session family. The test script stores the replacement credentials.",
+                "url": "{{databaseApiBaseUrl}}/auth/refresh",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Login succeeded\", () => pm.response.to.have.status(200));",
+                      "const payload = pm.response.json();",
+                      "if (payload.token) pm.collectionVariables.set(\"accessToken\", payload.token);",
+                      "if (payload.refreshToken) pm.collectionVariables.set(\"refreshToken\", payload.refreshToken);",
+                      "if (payload.csrfToken) pm.collectionVariables.set(\"csrfToken\", payload.csrfToken);",
+                      "if (payload.user) {",
+                      "  pm.collectionVariables.set(\"userId\", String(payload.user.id || \"\"));",
+                      "  pm.collectionVariables.set(\"patientId\", String(payload.user.blockchainID || \"\"));",
+                      "  pm.collectionVariables.set(\"doctorId\", String(payload.user.blockchainID || \"\"));",
+                      "  pm.collectionVariables.set(\"clinicId\", String(payload.user.organizationId || \"\"));",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Logout / Revoke Current Session",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "**Purpose:** Immediately revoke the current mobile session on the server before SecureStore and in-memory state are cleared.\n\n**Effect:** Previously issued access and refresh credentials for this session are rejected by both APIs.",
+                "url": "{{databaseApiBaseUrl}}/auth/logout"
+              },
+              "response": []
+            },
+            {
+              "name": "Get Current Patient Session",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "**Purpose:** Restore and confirm the authoritative patient identity after startup refresh.\n\n**Authorization:** A current mobile access token is required.",
+                "url": "{{databaseApiBaseUrl}}/auth/me"
+              },
+              "response": []
+            },
+            {
+              "name": "List Patient Devices",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "**Purpose:** Show active web and mobile sessions so the patient can identify and revoke devices.",
+                "url": "{{databaseApiBaseUrl}}/auth/sessions"
+              },
+              "response": []
+            },
+            {
+              "name": "Revoke Selected Device",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Origin",
+                    "value": "{{webOrigin}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "**Purpose:** Immediately revoke one session/device owned by the signed-in patient.",
+                "url": "{{databaseApiBaseUrl}}/auth/sessions/{{sessionId}}"
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Security Boundary",
+      "description": "Negative validation proving the private Blockchain API is not exposed to clients.",
+      "item": [
+        {
+          "name": "Public Blockchain Route Is Not Exposed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Must return HTTP 404. Web, mobile, and Postman use databaseApiBaseUrl; only the application API can reach the Blockchain API over the private service network.",
+            "url": "{{webOrigin}}/api/blockchain/health"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Private blockchain route is not public\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "databaseApiBaseUrl",
+      "value": "https://edr.bizcenter.tech/api/database",
+      "type": "string"
+    },
+    {
+      "key": "webOrigin",
+      "value": "https://edr.bizcenter.tech",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userPassword",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "patientEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "patientPassword",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "newPassword",
+      "value": "ReplaceMe2!Strong",
+      "type": "string"
+    },
+    {
+      "key": "temporaryPassword",
+      "value": "ReplaceMe1!Strong",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "clinicId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "doctorId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "patientId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "appointmentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "appointmentPeriod",
+      "value": "upcoming",
+      "type": "string"
+    },
+    {
+      "key": "requestId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fileId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "notificationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "subscriptionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sessionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "csrfToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pushToken",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

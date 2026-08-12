@@ -1,91 +1,81 @@
-import { View, Text, ScrollView, SafeAreaView } from 'react-native'
+import { View, Text, ScrollView, SafeAreaView, ActivityIndicator } from 'react-native'
 import React, { useEffect, useState } from 'react'
 
 import { DataRequest, NoRequests } from '../components'
-import axios from 'axios';
-import { authHeaders, databaseUrl, getPatientBlockchainID } from '../utils/api';
+import { fetchPatientRequests, getPatientBlockchainID } from '../services/apiClient';
 import { useUser } from '../Context/UserContext';
 
-
-const rejectedRequests = () => {
-
+const RejectedRequests = () => {
+  const { user } = useUser();
   const [reqests, setRequests] = useState([])
-  const [isLoading, setIsLoading] = useState(false)
-  const { user, token } = useUser()
-  const patientID = getPatientBlockchainID(user)
+  const [isLoading, setIsLoading] = useState(true)
 
+  const patientID = getPatientBlockchainID(user);
 
   useEffect(() => {
-    if (!token || !patientID) {
-      return
+    if (!patientID) {
+      setIsLoading(false);
+      return;
     }
 
-    axios.get(databaseUrl(`/getAllRequestsForPatient/${patientID}`), {
-      headers: authHeaders(token),
-    })
-    .then((response)=> {
-      setRequests(response.data?.data || response.data || [])
-      setIsLoading(true)
-    })
-    .finally(() => {
-      setIsLoading(false)
-    })
+    setIsLoading(true);
+    fetchPatientRequests(patientID)
+      .then((list) => {
+        setRequests(list);
+      })
+      .catch((error) => {
+        console.error("[RejectedRequests] Error:", error.message);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [patientID]);
 
-  }, [token, patientID])
-
-
-
-
+  const rejectedList = reqests.filter((request) => request.status === 'REQUEST_REJECTED' || request.status === 'REJECTED');
 
   return (
-    <SafeAreaView>
-        <View className='flex flex-col gap-4 p-6'>
-          <View>
-            <Text className='text-2xl font-semibold mb-2'>Rejected Requests</Text>
-            <Text className='text-lg font-light text-justify leading-6'>here you can find all the request that you rejected to share your data with</Text>
-          </View>
+    <SafeAreaView className="bg-white flex-1">
+      <View className='flex flex-col gap-4 p-6'>
+        <View>
+          <Text className='text-2xl font-semibold'>Rejected Requests</Text>
+          <Text className='text-lg font-light leading-6 text-gray-500'>
+            Here you can find all the data access requests you have declined.
+          </Text>
+        </View>
 
-          <ScrollView className='pb-4 h-[82vh]'>
-            <View className="flex flex-col gap-y-4">
-              {
-                isLoading && <View><Text>it is loading</Text></View>
-              }
-
-              {
-                !isLoading && reqests.filter((request)=>request.status == 'REJECTED').map((request) => {
+        <ScrollView className='pb-4 h-[82vh]'>
+          <View className="flex flex-col gap-y-4">
+            {
+              isLoading ? (
+                <ActivityIndicator size="large" color="#1E3A8A" className="mt-8" />
+              ) : !patientID ? (
+                <NoRequests text={"Unable to load your data. Patient account ID is missing."} />
+              ) : rejectedList.length === 0 ? (
+                <NoRequests text={"No rejected requests found."} />
+              ) : (
+                rejectedList.map((request) => {
                   return (
                     <DataRequest
-                        key={request.requestID}  // Use API ID
-                        type={request.type || "on-chain"}  
-                        from={request.doctorID}
-                        to={request.patientID}
-                        status={request.status}
-                        id={request.requestID}
-                        about={request.rejectionReason || request.purpose || request.reason || "N/A"}
-                        date={request.rejectedAt ? request.rejectedAt.slice(0, 10) : "N/A"}
-                        time={request.rejectedAt ? request.rejectedAt.slice(11, 16) : "N/A"}
-                        optionsVisible={false}
+                      key={request.requestID}
+                      type={request.type || "on-chain"}
+                      from={request.doctorID}
+                      to={request.patientID}
+                      status={request.status}
+                      id={request.requestID}
+                      about={request.about || "N/A"}
+                      date={request.date || "N/A"}
+                      time={request.time || "N/A"}
+                      optionsVisible={false}
                     />
                   )
                 })
-              }
-
-              {
-                isLoading && <NoRequests text={"You didn't reject and data requests"} />
-              }
-
-
-
-
-
-            </View>
-               
-          </ScrollView>
-        </View>
-
-
+              )
+            }
+          </View>
+        </ScrollView>
+      </View>
     </SafeAreaView>
   )
 }
 
-export default rejectedRequests
+export default RejectedRequests;
